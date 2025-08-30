@@ -1,0 +1,190 @@
+문제의 핵심은 라우팅 충돌 + 라우터 혼용(wouter vs react-router) + 쿼리/렌더 로직 미스매치입니다. 아래 순서대로 고치면 isReadOnly가 정상적으로 true로 전달되고, 읽기전용 캔버스의 노드가 바로 렌더링됩니다.
+
+1) 라우터 혼용 금지: wouter → react-router로 통일
+
+ReadOnlyCanvas.tsx에서 wouter의 useRoute를 쓰면, 상위가 react-router일 때 항상 매칭 실패합니다. 결과적으로 canvasId가 undefined → enabled:false로 쿼리가 안 돕니다.
+useRoute 제거하고 react-router의 useParams로 교체하세요.
+
+// ReadOnlyCanvas.tsx
+import { useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+
+type Params = { canvasId: string };
+
+export default function ReadOnlyCanvas() {
+  const { canvasId } = useParams<Params>();
+
+  const { data: canvas } = useQuery({
+    queryKey: ['/api/public/canvas', canvasId],
+    enabled: !!canvasId,
+    queryFn: async () => {
+      const res = await fetch(`/api/public/canvas/${canvasId}`);
+      if (!res.ok) throw new Error('Failed to fetch canvas');
+      return res.json();
+    },
+  });
+
+  const { data: canvasState } = useQuery({
+    queryKey: ['/api/public/canvas', canvasId, 'state'],
+    enabled: !!canvasId,
+    queryFn: async () => {
+      const res = await fetch(`/api/public/canvas/${canvasId}/state`);
+      if (!res.ok) throw new Error('Failed to fetch canvas state');
+      return res.json();
+    },
+  });
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="flex-1">
+        <CanvasArea
+          canvas={canvas}
+          canvasState={canvasState}
+          onNodeSelect={() => {}}
+          selectedNodeId={null}
+          isReadOnly={true}
+          externalMemos={[]}
+        />
+      </div>
+    </div>
+  );
+}
+
+
+추가 포인트: 기존 코드엔 queryFn이 없었습니다. TanStack Query(v4/v5)에서는 기본 fetcher가 없으니 반드시 넣어주세요.
+
+2) 라우팅 우선순위/매칭 정정: exact와 보호 라우트 분리
+
+path="/"가 exact 없이 있으면 무엇이든 매칭됩니다. 가끔 상태 변화(로그인 상태 토글) 중에 /share/...보다 먼저 잡히면서 일반 Canvas/Home 경로가 렌더될 수 있습니다. 아래처럼 exact를 붙이고, 퍼블릭/보호 라우트를 명확히 분리하세요.
+
+// App.tsx (Router)
+import { Switch, Route, Redirect } from "react-router-dom";
+
+function Router() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  return (
+    <Switch>
+      {/* 1) 퍼블릭: 반드시 최상단 + exact */}
+      <Route exact path="/share/:canvasId" component={ReadOnlyCanvas} />
+
+      {/* 2) 보호 라우트: 별도 게이트 */}
+      {!isLoading && isAuthenticated && (
+        <>
+          <Route exact path="/" component={Home} />
+          <Route exact path="/canvas/:canvasId" component={Canvas} />
+          <Route exact path="/admin" component={Admin} />
+        </>
+      )}
+
+      {/* 3) 로딩/비로그인: 랜딩으로 리다이렉트(share는 예외로 이미 처리됨) */}
+      {(!isAuthenticated || isLoading) && (
+        <>
+          <Route exact path="/" component={Landing} />
+          <Redirect to="/" />
+        </>
+      )}
+
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+
+핵심: /share/:canvasId가 항상 먼저 매칭되고, / 라우트들은 exact로 제한합니다. 이렇게 해야 ReadOnlyCanvas가 확실히 렌더됩니다.
+
+3) CanvasArea에서 읽기전용 경로를 확정적으로 사용
+
+finalNodes가 정의되지 않았거나 상태 전개 순서상 undefined일 수 있습니다.
+
+읽기전용에선 서버가 준 flowJson.nodes만 쓰도록 고정하고, 좌표 안전가드도 포함하세요.
+
+// CanvasArea.tsx
+import { useMemo } from "react";
+
+export default function CanvasArea({
+  canvasState,
+  isReadOnly = false,
+  // ... 생략
+}: CanvasAreaProps) {
+  const flowData = (canvasState?.flowJson as any) || { nodes: [], edges: [] };
+
+  const renderNodes = useMemo(() => {
+    const srcNodes = isReadOnly ? (flowData?.nodes ?? []) : (flowData?.nodes ?? []);
+    // 읽기전용에서는 서버 좌표 그대로(없는 경우만 최소값)
+    return (srcNodes || []).map((node: any) => ({
+      ...node,
+      position: {
+        x: Number.isFinite(node?.position?.x) ? node.position.x : 50,
+        y: Number.isFinite(node?.position?.y) ? node.position.y : 50,
+      },
+      draggable: false,
+      selectable: false,
+    }));
+  }, [isReadOnly, flowData]);
+
+  return (
+    <div className="canvas-content">
+      {renderNodes.map((node: any, i: number) => {
+        // 디버그: 읽기전용이 반드시 true여야 함
+        // console.log('🎯 node', i, node.id, { isReadOnly });
+        return (
+          <FunnelNode
+            key={node.id ?? i}
+            node={node}
+            isReadOnly={isReadOnly}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+
+요지: 읽기전용에선 로컬 상태나 편집 파이프라인을 전혀 타지 않게 고정합니다.
+
+4) 서버 공개 API 경로 일치 확인
+
+프론트에서 호출하는 경로와 서버 라우트가 1:1로 일치해야 합니다. 앞서 queryFn에서 /api/public/canvas/${canvasId}와 /api/public/canvas/${canvasId}/state를 호출했으니, 서버도 동일한 라우트를 노출해야 합니다.
+
+// server/routes.ts (public)
+app.get('/api/public/canvas/:canvasId', async (req, res) => {
+  try {
+    const { canvasId } = req.params;
+    const canvas = await storage.getCanvas(canvasId);
+    if (!canvas) return res.status(404).json({ message: "Canvas not found" });
+    res.json(canvas);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message: "Failed to fetch canvas" });
+  }
+});
+
+app.get('/api/public/canvas/:canvasId/state', async (req, res) => {
+  try {
+    const { canvasId } = req.params;
+    const canvas = await storage.getCanvas(canvasId);
+    if (!canvas) return res.status(404).json({ message: "Canvas not found" });
+
+    const canvasState = await storage.getLatestCanvasState(canvasId);
+    if (!canvasState) return res.json({ flowJson: { nodes: [], edges: [] } });
+    res.json(canvasState);
+  } catch (error) {
+    console.error("Error fetching public canvas state:", error);
+    res.status(500).json({ message: "Failed to fetch canvas state" });
+  }
+});
+
+5) 흔한 함정 점검 체크리스트
+
+ /share/:canvasId에 exact 붙였는가?
+
+ **useRoute(wouter) → useParams(react-router)**로 교체했는가?
+
+ TanStack Query에 **queryFn**을 넣었는가?
+
+ 읽기전용 경로에서 **로컬 편집 상태/finalNodes**를 참조하지 않는가?
+
+ FunnelNode 내부에서 드래그/선택을 props.isReadOnly로 차단하는가?
+
+ 서버 공개 엔드포인트 경로가 프론트와 정확히 일치하는가?

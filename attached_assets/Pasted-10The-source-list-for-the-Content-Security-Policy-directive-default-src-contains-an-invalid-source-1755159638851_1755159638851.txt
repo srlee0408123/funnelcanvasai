@@ -1,0 +1,187 @@
+10The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+10The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+10The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+_app-e8e03ea2547d612b.js:13 
+      /////////////////////
+   ///////////////////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////        Curious and driven?
+  ///////////////@@@@@@@///////        Work with us!
+  ///////////////@@@@@@@///////
+  ///////////////@@@@@@@///////        https://join.replit.com/hack.with.us
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@#//////////////
+   ///////////////////////////
+      /////////////////////
+      
+FunnelCanvasAI:1  The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.
+FunnelCanvasAI:1  The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?
+FunnelCanvasAI:1  The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.
+_app-e8e03ea2547d612b.js:13 [LaunchDarkly] LaunchDarkly client initialized
+29Tracking Prevention blocked access to storage for <URL>.
+recaptcha__ko.js:56 [Intervention] Slow network is detected. See https://www.chromestatus.com/feature/5636954674692096 for more details. Fallback font will be used while loading: https://fonts.gstatic.com/s/roboto/v18/KFOmCnqEu92Fr1Mu4mxK.woff2
+recaptcha__ko.js:56 [Intervention] Slow network is detected. See https://www.chromestatus.com/feature/5636954674692096 for more details. Fallback font will be used while loading: https://fonts.gstatic.com/s/roboto/v18/KFOlCnqEu92Fr1MmEU9fBBc4.woff2
+framework-ff5b86d4b2eaf15c.js:1  Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'ambient-light-sensor'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'battery'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'execution-while-not-rendered'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'execution-while-out-of-viewport'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'layout-animations'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'legacy-image-formats'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'navigation-override'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'oversized-images'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'publickey-credentials'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'speaker-selection'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'unoptimized-images'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'unsized-media'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Unrecognized feature: 'pointer-lock'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Allow attribute will take precedence over 'allowfullscreen'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+framework-ff5b86d4b2eaf15c.js:1  Allow attribute will take precedence over 'allowpaymentrequest'.
+_ @ framework-ff5b86d4b2eaf15c.js:1
+(anonymous) @ framework-ff5b86d4b2eaf15c.js:1
+uD @ framework-ff5b86d4b2eaf15c.js:1
+uI @ framework-ff5b86d4b2eaf15c.js:1
+uM @ framework-ff5b86d4b2eaf15c.js:1
+uS @ framework-ff5b86d4b2eaf15c.js:1
+C @ framework-ff5b86d4b2eaf15c.js:1
+z @ framework-ff5b86d4b2eaf15c.js:1
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'ambient-light-sensor'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'battery'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'execution-while-not-rendered'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'execution-while-out-of-viewport'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'layout-animations'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'legacy-image-formats'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'navigation-override'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'oversized-images'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'publickey-credentials'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'speaker-selection'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'unoptimized-images'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Unrecognized feature: 'unsized-media'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Allow attribute will take precedence over 'allowfullscreen'.
+workspace_iframe.html?initialPath=%2F&id=%3Arc0%3A:32  Allow attribute will take precedence over 'allowpaymentrequest'.

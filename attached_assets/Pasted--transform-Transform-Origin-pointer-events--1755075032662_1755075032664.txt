@@ -1,0 +1,201 @@
+“가운데에서만 이벤트가 먹는” 증상은 대개 transform 기준점(Transform Origin) 불일치 + 레이어의 pointer-events 섞임으로 생깁니다. 아래 순서대로 적용하시면 ‘화면 전체’에서 클릭/드래그/더블클릭이 정상 동작합니다. (변경은 최소 침습으로 잡았습니다.)
+
+핵심 원인
+SVG/노드 레이어에 translate/scale만 주고 transform-origin(기본 50% 50%) 을 안 바꾸면, 화면 가장자리로 갈수록 “보이는 위치”와 “좌표계/타겟 계산”이 어긋납니다.
+
+배경/노드/SVG의 pointer-events 가 서로 가로채면서, 실제로는 canvasRef까지 이벤트가 안 오거나, 타겟 판정이 엉뚱해집니다.
+
+“배경일 때만 허용” 같은 타겟 필터가 과도해서, 합법적인 클릭이 차단됩니다.
+
+수정 지침 (요약)
+모든 변환 레이어에 transformOrigin: '0 0'을 지정 (좌측 상단 기준 → 좌표 일치)
+
+이벤트 수집은 한 곳에서: 최상위 캔버스(canvasRef)가 전부 받되, 노드 위 클릭만 제외
+
+배경은 pointer-events: none(이벤트 통과)
+
+노드 요소에 data-node 속성을 부여해 노드 여부를 안정적으로 판정
+
+좌표 변환은 getBoundingClientRect + viewport 공식을 유지
+
+1) 이벤트 핸들러 정리 (노드 위 클릭만 제외)
+tsx
+복사
+편집
+// 노드 DOM 최상위에 data-node 속성을 부여해주세요.
+// <div data-node ...> 같은 형태 (아래 3)에서 예시)
+
+// 캔버스 마우스 다운 (패닝 시작)
+const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+  const el = e.target as HTMLElement;
+
+  // 노드 위라면 캔버스 패닝 금지 (노드 자체에서 처리하도록)
+  if (el.closest('[data-node]')) return;
+
+  // 선택 해제
+  onNodeSelect('');
+
+  // 배경/빈 공간이면 패닝 시작
+  setIsPanning(true);
+  setPanStart({ x: e.clientX, y: e.clientY });
+  setLastPanPoint({ x: viewport.x, y: viewport.y });
+  e.preventDefault();
+}, [viewport.x, viewport.y, onNodeSelect]);
+
+// 더블클릭: 노드 생성 (노드 위면 무시)
+const handleCanvasDoubleClick = useCallback((e: React.MouseEvent) => {
+  const el = e.target as HTMLElement;
+  if (el.closest('[data-node]')) return; // 노드 위 더블클릭은 무시
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  const { x, y } = getCanvasCoordinates(e.clientX, e.clientY);
+  setNodeCreationPosition({ x, y });
+  setShowNodeCreationModal(true);
+}, [getCanvasCoordinates]);
+🔑 포인트: “배경인지 판별”을 classList/tagName로 하지 말고, **“노드 위면 제외”**만 검사하세요. 이렇게 하면 어느 레이어를 클릭하든 안정적으로 동작합니다.
+
+2) 좌표 변환 함수는 유지 (이미 정확함)
+tsx
+복사
+편집
+const getCanvasCoordinates = useCallback((clientX: number, clientY: number) => {
+  if (!canvasRef.current) return { x: 0, y: 0 };
+  const rect = canvasRef.current.getBoundingClientRect();
+  const x = (clientX - rect.left - viewport.x) / viewport.zoom;
+  const y = (clientY - rect.top - viewport.y) / viewport.zoom;
+  return { x, y };
+}, [viewport.x, viewport.y, viewport.zoom]);
+이 공식은 transformOrigin: '0 0'일 때 일관되게 맞습니다.
+
+3) 캔버스 HTML 구조(스타일) 변경점
+tsx
+복사
+편집
+<div 
+  ref={canvasRef}
+  className="flex-1 relative overflow-hidden canvas-content"
+  style={{ 
+    cursor: isPanning ? 'grabbing' : (draggedNodeId ? 'move' : 'grab'),
+    width: '100%',
+    height: '100%'
+  }}
+  onMouseDown={handleCanvasMouseDown}
+  onMouseMove={handleCanvasMouseMove}
+  onMouseUp={handleCanvasMouseUp}
+  onDoubleClick={handleCanvasDoubleClick}
+  onWheel={handleWheel}
+  onDragOver={handleDragOver}
+  onDrop={handleDrop}
+>
+  {/* Grid Background */}
+  <div
+    className="absolute inset-0 opacity-50 canvas-background"
+    style={{
+      backgroundImage: 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)',
+      backgroundSize: `${20 * viewport.zoom}px ${20 * viewport.zoom}px`,
+      backgroundPosition: `${viewport.x}px ${viewport.y}px`,
+      width: '100%',
+      height: '100%',
+      // ⬇⬇⬇ 변경: 배경은 이벤트 가로채지 않게
+      pointerEvents: 'none'
+    }}
+  />
+
+  {/* SVG for Connection Lines */}
+  <svg 
+    className="absolute inset-0 w-full h-full" 
+    style={{ 
+      zIndex: 1,
+      transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+      // ⬇⬇⬇ 핵심: 좌상단 기준으로 스케일/이동
+      transformOrigin: '0 0',
+      pointerEvents: 'none' // 라인 자체는 클릭 방해 X
+    }}
+  >
+    {/* ... */}
+  </svg>
+  
+  {/* Canvas Nodes */}
+  <div
+    className="absolute inset-0"
+    style={{ 
+      zIndex: 2,
+      transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+      // ⬇⬇⬇ 핵심: 좌상단 기준
+      transformOrigin: '0 0',
+      width: '100%',
+      height: '100%',
+      pointerEvents: 'auto'
+    }}
+  >
+    {/* 노드 예시: 각 노드의 최상위에 data-node 부여 */}
+    {nodes.map(n => (
+      <div
+        key={n.id}
+        data-node
+        style={{
+          position: 'absolute',
+          left: n.x,
+          top: n.y,
+          // 노드 자체는 인터랙션 허용
+          pointerEvents: 'auto'
+        }}
+        onMouseDown={(e) => {
+          // 노드 드래그 시작 등 노드 전용 로직
+          e.stopPropagation(); // 캔버스로 버블업 X
+        }}
+      >
+        {/* 노드 내용물... */}
+      </div>
+    ))}
+  </div>
+</div>
+🔑 포인트
+
+SVG & 노드 레이어에 transformOrigin: '0 0' 반드시 추가
+
+배경은 pointer-events: none 로 통과
+
+노드는 data-node + stopPropagation() 으로 상위(캔버스)와 역할 분리
+
+4) CSS 정리
+css
+복사
+편집
+.canvas-content {
+  touch-action: none;
+  user-select: none;
+  width: 100% !important;
+  height: 100% !important;
+  position: relative;
+}
+
+/* 배경은 이벤트 가로채지 않도록 */
+.canvas-background {
+  pointer-events: none !important;
+  touch-action: none;
+}
+
+/* 루트 컨테이너들이 100% 높이를 보장해야 전체 영역이 진짜로 채워집니다 */
+html, body, #root, #__next {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* (선택) 스무딩 */
+.transform-layer {
+  will-change: transform;
+}
+5) 흔한 함정 체크리스트
+부모 레이아웃 중 하나라도 height: 100%가 아니면, 실제 상호작용 면적이 가운데만 남습니다. **#root/#__next 까지 100%**를 꼭 주십시오.
+
+노드 내부에서 onMouseDown을 쓰면, 반드시 e.stopPropagation() 해주세요. (안 그러면 캔버스 패닝과 충돌)
+
+휠 줌/패닝에서 preventDefault()를 호출하는데, 간혹 스크롤 컨테이너와 충돌합니다. 이때는 상위 스크롤을 끄거나, 캔버스 영역에만 스크롤을 막아주세요.
+
+더블클릭 생성은 노드 위 제외만 체크하면 충분합니다. (배경/라인/빈공간을 일일이 화이트리스트로 잡지 마세요)
+

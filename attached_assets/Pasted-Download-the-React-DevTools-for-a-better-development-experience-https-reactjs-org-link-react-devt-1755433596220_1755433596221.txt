@@ -1,0 +1,52 @@
+Download the React DevTools for a better development experience: https://reactjs.org/link/react-devtools
+CanvasArea.tsx:106 📊 Flow data extracted: 
+{nodes: 9, edges: 10, canvasStateId: '0bc22b71-02dc-4685-9ab7-305f719d6fd4', isReadOnly: true, rawData: {…}}
+CanvasArea.tsx:169 🔍 ReadOnly Debug: 
+{isReadOnly: true, flowData: {…}, flowDataNodes: Array(9), nodeCount: 9, canvasState: {…}}
+CanvasArea.tsx:188 🔍 Processed nodes: 
+(9) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
+CanvasArea.tsx:169 🔍 ReadOnly Debug: 
+{isReadOnly: true, flowData: {…}, flowDataNodes: Array(9), nodeCount: 9, canvasState: {…}}
+CanvasArea.tsx:188 🔍 Processed nodes: 
+(9) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
+CanvasArea.tsx:169 🔍 ReadOnly Debug: 
+{isReadOnly: true, flowData: {…}, flowDataNodes: Array(9), nodeCount: 9, canvasState: {…}}
+CanvasArea.tsx:188 🔍 Processed nodes: 
+(9) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
+CanvasArea.tsx:169 🔍 ReadOnly Debug: 
+{isReadOnly: true, flowData: {…}, flowDataNodes: Array(9), nodeCount: 9, canvasState: {…}}
+CanvasArea.tsx:188 🔍 Processed nodes: 
+(9) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
+0
+: 
+{id: '레퍼런스-1755163540179', data: {…}, type: 'custom', position: {…}, draggable: false, …}
+1
+: 
+{id: '디저트-크리에이터-섭외-1755163616590', data: {…}, type: 'custom', position: {…}, draggable: false, …}
+2
+: 
+{id: 'pb-미국-진출-1755163722142', data: {…}, type: 'custom', position: {…}, draggable: false, …}
+3
+: 
+{id: 'pb-한국-진출-1755163733407', data: {…}, type: 'custom', position: {…}, draggable: false, …}
+4
+: 
+{id: '숏폼-푸드-mcn-1755163811327', data: {…}, type: 'custom', position: {…}, draggable: false, …}
+5
+: 
+{id: 'f&b-브랜드와-관계쌓기,-노하우-습득-1755163833870', data: {…}, type: 'custom', position: {…}, draggable: false, …}
+6
+: 
+{id: '브랜드-인수-or-pb-개발-1755163949350', data: {…}, type: 'custom', position: {…}, draggable: false, …}
+7
+: 
+{id: 'mcn-크리에이터-네트워크-적극-활용-1755164019539', data: {…}, type: 'custom', position: {…}, draggable: false, …}
+8
+: 
+{id: 'f&b-브랜드(온오프라인)-섭외-1755425731164', data: {…}, type: 'custom', position: {…}, draggable: false, …}
+length
+: 
+9
+[[Prototype]]
+: 
+Array(0)

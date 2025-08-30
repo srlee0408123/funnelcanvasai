@@ -1,0 +1,255 @@
+이미지 “핫링크”만 허용(재호스팅 금지) 전략으로 가시려면, 기술/보안/정책 측면을 모두 고려해 아래처럼 구현하시면 됩니다. Replit에 바로 붙일 수 있도록 DB 스키마, 백엔드 라우트, 프런트 컴포넌트, 보안·정책 가드레일까지 구체 코드로 드리겠습니다.
+
+1) 개념 정리 (핵심 원칙)
+
+서버 저장(다운로드/리사이즈/캐시) 금지: 원본 서버의 URL을 그대로 <img src="...">에 넣습니다.
+
+창작물·상표 보호: 크리에이터가 올리는 이미지 URL은 본인이 사용 권한을 가진 URL이어야 함을 명시 고지합니다.
+
+표시 실패 대비: 원본 사이트의 Referrer 정책/방화벽 등으로 로딩이 막힐 수 있으므로, 플레이스홀더/대체 문구를 준비합니다.
+
+SSRF/보안: 외부 URL 입력을 화이트리스트/정규식/프로토콜 검증으로 엄격히 필터링합니다.
+
+2) DB 스키마 (Prisma)
+
+이미지를 업로드하지 않고 URL만 저장합니다. (필요 시 alt/출처 표기도 함께 저장)
+
+model Product {
+  id            String   @id @default(cuid())
+  creatorId     String
+  provider      String   // 'coupang' | 'manual' 등
+  title         String
+  description   String?
+  imageUrl      String   // 핫링크 URL
+  imageAlt      String?  // 접근성/저작권 표기
+  imageSource   String?  // 출처(도메인/브랜드명)
+  affiliateUrl  String   // 딥링크 or 원본 링크
+  lastSyncedAt  DateTime?
+  createdAt     DateTime @default(now())
+}
+
+
+이미 AffiliateTrack를 따로 두셨다면 affiliateUrl은 거기에 두셔도 되고, 여기엔 보기 편하게만 담아도 됩니다.
+
+3) 백엔드: “수동 등록 + 검증 후 저장” 라우트
+
+핫링크 URL 입력을 받아 저장합니다.
+
+안전성 검증: 프로토콜(https:), 허용 도메인(옵션), 길이 제한, 데이터 URL 금지.
+
+쿠팡 딥링크가 있으면 affiliateUrl에 저장.
+
+// src/web/product.manual.route.ts
+import { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
+const prisma = new PrismaClient();
+
+// (선택) 도메인 화이트리스트 — 운영 정책에 따라 확장/해제
+const ALLOW_HOSTS = new Set([
+  'static.coupangcdn.com',
+  'image10.coupangcdn.com',
+  'image6.coupangcdn.com',
+  // 필요한 경우 추가
+]);
+
+const NewProductSchema = z.object({
+  creatorId: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  imageUrl: z.string().url(),
+  imageAlt: z.string().optional(),
+  imageSource: z.string().optional(),
+  affiliateUrl: z.string().url(), // 쿠팡 딥링크(또는 타 제휴 링크)
+});
+
+function validateHotlink(urlStr: string) {
+  const u = new URL(urlStr);
+  // 1) 프로토콜 제한
+  if (u.protocol !== 'https:') throw new Error('이미지는 https만 허용합니다.');
+  // 2) data/file 등 금지
+  if (u.protocol === 'data:' || u.protocol === 'file:') throw new Error('지원하지 않는 이미지 URL입니다.');
+  // 3) (선택) 호스트 화이트리스트
+  if (ALLOW_HOSTS.size && !ALLOW_HOSTS.has(u.hostname)) {
+    // 화이트리스트를 쓰지 않으려면 이 체크를 제거하십시오.
+    throw new Error(`허용되지 않은 이미지 호스트입니다: ${u.hostname}`);
+  }
+  // 4) 경로 길이/확장자 간단 체크(선택)
+  if (u.href.length > 2000) throw new Error('URL 길이가 너무 깁니다.');
+  return true;
+}
+
+export async function registerManualProductRoute(app: any) {
+  app.post('/api/products/manual', async (req: any, reply: any) => {
+    try {
+      const parsed = NewProductSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: '유효하지 않은 요청', detail: parsed.error.flatten() });
+      }
+      const { creatorId, title, description, imageUrl, imageAlt, imageSource, affiliateUrl } = parsed.data;
+
+      // 핫링크 URL 보안 검증
+      validateHotlink(imageUrl);
+
+      // 저장
+      const p = await prisma.product.create({
+        data: { creatorId, provider: 'manual', title, description: description || null,
+          imageUrl, imageAlt: imageAlt || null, imageSource: imageSource || null,
+          affiliateUrl, lastSyncedAt: new Date()
+        }
+      });
+
+      return reply.send({ ok: true, id: p.id });
+    } catch (e: any) {
+      return reply.code(400).send({ error: String(e?.message || e) });
+    }
+  });
+}
+
+
+화이트리스트는 운영 초기에는 빡세게 걸고, 이후 정책·파트너십 상황에 따라 완화하시는 것을 권장드립니다.
+
+4) 프런트엔드: 이미지 핫링크 컴포넌트
+
+lazy loading / aspect-ratio / 오류 시 플레이스홀더 / 출처 표기
+
+referrerpolicy는 기본(default)로 두되, 특정 호스트에서 필요 시 호스트별 override(예: no-referrer)를 적용할 수 있게 설계합니다.
+
+// client/src/components/HotlinkImage.tsx
+import React, { useState } from 'react';
+
+type Props = {
+  src: string;
+  alt?: string;
+  className?: string;
+  ratio?: '1/1' | '4/5' | '16/9';
+  referrerPolicyOverride?: React.ImgHTMLAttributes<HTMLImageElement>['referrerPolicy'];
+  onFallback?: () => void;
+};
+
+const ratioToClass: Record<string, string> = {
+  '1/1': 'aspect-square',
+  '4/5': 'aspect-[4/5]',
+  '16/9': 'aspect-video'
+};
+
+export default function HotlinkImage({
+  src, alt, className, ratio = '1/1', referrerPolicyOverride, onFallback
+}: Props) {
+  const [broken, setBroken] = useState(false);
+
+  const handleError = () => {
+    setBroken(true);
+    onFallback && onFallback();
+  };
+
+  if (broken) {
+    return (
+      <div className={`flex items-center justify-center bg-gray-100 text-xs text-gray-500 rounded ${ratioToClass[ratio]} ${className || ''}`}>
+        이미지가 표시되지 않습니다
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${ratioToClass[ratio]} overflow-hidden rounded ${className || ''}`}>
+      <img
+        src={src}
+        alt={alt || 'product image'}
+        loading="lazy"
+        decoding="async"
+        referrerPolicy={referrerPolicyOverride /* 필요 시 호스트별로 'no-referrer' 지정 */}
+        className="w-full h-full object-cover"
+        onError={handleError}
+      />
+    </div>
+  );
+}
+
+
+호스트별 Referrer 정책 적용 예시:
+
+// client/src/lib/referrerPolicy.ts
+export function referrerPolicyFor(hostname: string) {
+  // 특정 호스트가 Referer 차단 요구 시 'no-referrer' 등으로 변경
+  const overrides: Record<string, React.ImgHTMLAttributes<HTMLImageElement>['referrerPolicy']> = {
+    // 'example.com': 'no-referrer',
+  };
+  return overrides[hostname] || undefined;
+}
+
+5) 스토어 카드 예시 (핫링크 이미지 사용)
+// client/src/components/ProductCard.tsx
+import HotlinkImage from './HotlinkImage';
+
+export default function ProductCard({ p }: { p: any }) {
+  const host = (() => { try { return new URL(p.imageUrl).hostname; } catch { return ''; } })();
+  return (
+    <a href={`/r/${p.id}`} className="block rounded-2xl border hover:shadow transition">
+      <HotlinkImage src={p.imageUrl} alt={p.imageAlt || p.title} ratio="1/1" />
+      <div className="p-3">
+        <div className="text-sm line-clamp-2">{p.title}</div>
+        {p.imageSource && <div className="mt-1 text-[11px] text-gray-500">이미지 출처: {p.imageSource}</div>}
+      </div>
+    </a>
+  );
+}
+
+
+클릭은 /r/:productId로 보내 서버에서 subid={click_id} 주입 후 302 리다이렉트하세요(기존 설계 그대로).
+
+6) 보안·컴플라이언스 가드레일
+
+입력 검증
+
+https만 허용, data:/file: 금지
+
+(선택) 도메인 화이트리스트
+
+URL 길이 제한, XSS 방지(alt/출처는 텍스트 sanitize)
+
+CSP 헤더
+
+img-src에 허용할 도메인만 명시(self + 필요한 CDN).
+
+예) Content-Security-Policy: img-src 'self' https://*.coupangcdn.com https://image10.coupangcdn.com;
+
+법적 고지
+
+페이지 상단/하단에 대가성(제휴) 고지, 가격 변동 가능 고지, 이미지 출처를 명시합니다.
+
+예) “본 페이지는 제휴 링크를 포함할 수 있으며, 이미지와 상표는 각 권리자 소유입니다.”
+
+장애 대비
+
+이미지 로드 실패 시 플레이스홀더 노출 및 “출처에서 이미지 표시가 제한될 수 있음” 안내.
+
+운영 정책
+
+사용자(크리에이터)에게 권리 보유 또는 사용 허락된 이미지 URL만 등록하도록 약관/체크박스 제공.
+
+7) (선택) “프록시 모드” 옵션 설계
+
+정책상 재호스팅은 금지지만, 어떤 출처는 Referrer/Hotlink 차단으로 이미지를 못 붙이는 경우가 있습니다.
+이때 기본값은 프록시 비활성화로 두고, 특정 파트너와 계약해 허용받은 경우에만 서명된 이미지 프록시를 켜는 옵션을 설계할 수 있습니다.
+
+/img-proxy?u=<encoded>&sig=<hmac> 형태로, 서버는 캐싱 없이 스트리밍 프록시만 수행(디스크 저장 금지).
+
+계약·정책적으로 허용된 도메인만 통과(화이트리스트).
+
+기본 운영에서는 OFF.
+
+요청하시면 이 프록시(서명/HMAC, 화이트리스트, 캐시 금지) 코드도 별도로 드릴 수 있습니다.
+
+8) UI 고지 문구 예시
+
+상단 고정 배너(필수):
+
+“본 페이지의 일부 링크는 제휴 링크로, 구매 시 일정 수수료를 받을 수 있습니다.
+표시되는 이미지는 각 권리자 소유이며, 원본 사이트의 정책에 따라 표시가 제한될 수 있습니다.
+상품 가격은 판매처에서 최종 확인해 주세요.”
+
+결론
+
+핫링크만 허용하는 현재 방향은 정책 리스크를 최소화하면서 빠르게 MVP를 운영하기에 적합합니다.
+
+위 코드와 가드레일(검증·CSP·고지·플레이스홀더)을 그대로 적용하시면 Replit에서도 안정적으로 구동하실 수 있습니다.
