@@ -29,35 +29,17 @@ import type {
 
 // Canvas State
 export async function getCanvasState(canvasId: string, version: number): Promise<CanvasState | null> {
-  const supabase = createServiceClient();
-  const { data } = await supabase
-    .from("canvas_states")
-    .select("id, canvas_id, version, flow_json, flow_hash, created_at")
-    .eq("canvas_id", canvasId)
-    .eq("version", version)
-    .single();
-
-  if (!data) return null;
-
-  // 런타임 매핑 (snake_case -> camelCase)
-  const mapped: CanvasState = {
-    id: (data as any).id,
-    canvasId: (data as any).canvas_id,
-    version: (data as any).version,
-    flowJson: (data as any).flow_json,
-    flowHash: (data as any).flow_hash,
-    createdAt: (data as any).created_at ?? null,
-  };
-  return mapped;
+  // 실제 DB에는 version 컬럼이 없으므로 최신 상태를 반환
+  return getLatestCanvasState(canvasId);
 }
 
 export async function getLatestCanvasState(canvasId: string): Promise<CanvasState | null> {
   const supabase = createServiceClient();
   const { data } = await supabase
     .from("canvas_states")
-    .select("id, canvas_id, version, flow_json, flow_hash, created_at")
+    .select("id, canvas_id, state, user_id, created_at")
     .eq("canvas_id", canvasId)
-    .order("version", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -65,9 +47,8 @@ export async function getLatestCanvasState(canvasId: string): Promise<CanvasStat
   const mapped: CanvasState = {
     id: (data as any).id,
     canvasId: (data as any).canvas_id,
-    version: (data as any).version,
-    flowJson: (data as any).flow_json,
-    flowHash: (data as any).flow_hash,
+    state: (data as any).state,
+    userId: (data as any).user_id,
     createdAt: (data as any).created_at ?? null,
   };
   return mapped;

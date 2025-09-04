@@ -112,25 +112,22 @@ export interface Database {
         Row: {
           id: string
           canvas_id: string
-          version: number
-          flow_json: Json
-          flow_hash: string | null
+          state: Json
+          user_id: string
           created_at: string
         }
         Insert: {
           id?: string
           canvas_id: string
-          version: number
-          flow_json: Json
-          flow_hash?: string | null
+          state: Json
+          user_id: string
           created_at?: string
         }
         Update: {
           id?: string
           canvas_id?: string
-          version?: number
-          flow_json?: Json
-          flow_hash?: string | null
+          state?: Json
+          user_id?: string
           created_at?: string
         }
         Relationships: []

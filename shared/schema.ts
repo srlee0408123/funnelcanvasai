@@ -74,13 +74,11 @@ export const canvases = pgTable("canvases", {
 export const canvasStates = pgTable("canvas_states", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   canvasId: uuid("canvas_id").references(() => canvases.id).notNull(),
-  version: integer("version").notNull(),
-  flowJson: jsonb("flow_json").notNull(),
-  flowHash: varchar("flow_hash"),
+  state: jsonb("state").notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table: any) => [
-  index("canvas_states_canvas_id_version_idx").on(table.canvasId, table.version),
-  index("canvas_states_flow_hash_idx").on(table.flowHash),
+  index("canvas_states_canvas_id_idx").on(table.canvasId),
 ]);
 
 // Text memos for canvas annotations

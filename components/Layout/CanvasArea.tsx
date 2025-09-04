@@ -108,8 +108,8 @@ export default function CanvasArea({
 
   // Get nodes and edges from canvas state, or use empty defaults
   const flowData = useMemo(() => {
-    if (canvasState?.flowJson) {
-      const data = canvasState.flowJson as any;
+    if (canvasState?.state) {
+      const data = canvasState.state as any;
       console.log('📊 Flow data extracted:', {
         nodes: data.nodes?.length || 0,
         edges: data.edges?.length || 0,
@@ -131,8 +131,8 @@ export default function CanvasArea({
   
   // Update local nodes when canvas state changes
   useEffect(() => {
-    if (canvasState?.flowJson && (canvasState.flowJson as any)?.nodes) {
-      const nodes = (canvasState.flowJson as any).nodes;
+    if (canvasState?.state && (canvasState.state as any)?.nodes) {
+      const nodes = (canvasState.state as any).nodes;
       setLocalNodes(nodes);
     } else if (flowData?.nodes) {
       setLocalNodes(flowData.nodes);
@@ -147,8 +147,8 @@ export default function CanvasArea({
   
   // Update edges when canvas state changes
   useEffect(() => {
-    if (canvasState?.flowJson && (canvasState.flowJson as any)?.edges) {
-      const edges = (canvasState.flowJson as any).edges;
+    if (canvasState?.state && (canvasState.state as any)?.edges) {
+      const edges = (canvasState.state as any).edges;
       setEdges(edges);
     } else if (flowData?.edges) {
       setEdges(flowData.edges);
