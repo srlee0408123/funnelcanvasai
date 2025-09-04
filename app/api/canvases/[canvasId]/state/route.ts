@@ -112,11 +112,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Missing flowJson in body' }, { status: 400 });
     }
 
-    const insertPayload: Database['public']['Tables']['canvas_states']['Insert'] = {
+    const insertPayload = {
       canvas_id: canvasId,
-      version: 1, // 임시로 버전 1로 설정
-      flow_json: statePayload,
-      flow_hash: null,
+      state: statePayload,
+      user_id: userId,
     };
 
     const { data: inserted, error: insertError } = await supabase

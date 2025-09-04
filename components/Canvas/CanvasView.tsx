@@ -8,7 +8,7 @@ import Sidebar from "@/components/Layout/Sidebar";
 import CanvasArea from "@/components/Layout/CanvasArea";
 import RightPanel from "@/components/Layout/RightPanel";
 import { AIFeedbackButton } from "@/components/Ui/buttons";
-import FloatingChatButton from "@/components/Chat/FloatingChatButton";
+import SidebarChat from "@/components/Chat/SidebarChat";
 import TodoSticker, { TodoStickerToggle } from "@/components/TodoSticker/TodoSticker";
 import UploadModal from "@/components/Modals/UploadModal";
 import TemplateModal from "@/components/Modals/TemplateModal";
@@ -59,6 +59,9 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   
   // Todo sticker state
   const [showTodoSticker, setShowTodoSticker] = useState(true);
+  
+  // Chat sidebar state
+  const [chatCollapsed, setChatCollapsed] = useState(false);
 
   // Handlers - Canvas.tsx와 동일한 구조
   const handleNodeSelect = (nodeId: string) => {
@@ -93,6 +96,10 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
 
   const handleRequestAIFeedback = () => {
     setShowAIModal(true);
+  };
+
+  const handleToggleChatSidebar = () => {
+    setChatCollapsed(!chatCollapsed);
   };
 
 
@@ -148,7 +155,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   }, [workspaceId, canvas.id]);
 
   return (
-    <div className="flex min-h-screen h-screen bg-gray-50 overflow-hidden w-full max-w-full">
+    <div className="flex min-h-screen h-screen bg-gray-50 overflow-hidden w-full max-w-full relative">
       {/* Left Sidebar */}
       <Sidebar
         collapsed={sidebarCollapsed}
@@ -174,20 +181,25 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         isReadOnly={isPublic}
       />
 
-      {/* Right Panel */}
-      {showRightPanel && selectedNodeId && (
+      {/* Right Panel - 노드가 선택된 경우 우선 표시 */}
+      {showRightPanel && selectedNodeId ? (
         <RightPanel
           nodeId={selectedNodeId}
           canvasId={canvas.id}
           onClose={handleCloseRightPanel}
         />
+      ) : (
+        /* Chat Sidebar - 항상 고정으로 표시 */
+        <SidebarChat 
+          canvasId={canvas.id} 
+          isReadOnly={isPublic}
+          onToggle={handleToggleChatSidebar}
+          isCollapsed={chatCollapsed}
+        />
       )}
 
       {/* AI Feedback Button */}
       <AIFeedbackButton onRequestFeedback={handleRequestAIFeedback} />
-
-      {/* Floating Chat Button */}
-      <FloatingChatButton canvasId={canvas.id} isReadOnly={isPublic} />
 
       {/* Todo Sticker */}
       {showTodoSticker ? (

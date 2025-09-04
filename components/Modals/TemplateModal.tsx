@@ -155,95 +155,7 @@ export default function TemplateModal({
     }
   };
 
-  // Mock templates if none loaded
-  const mockTemplates: TemplateWithDetails[] = [
-    {
-      id: "template-1",
-      title: "온라인 강의 판매",
-      description: "교육 콘텐츠를 판매하는 퍼널 템플릿",
-      category: "education",
-      thumbnail: null,
-      nodeData: {},
-      edgeData: {},
-      isPublic: true,
-      isOfficial: true,
-      createdBy: null,
-      usageCount: 0,
-      rating: 4.5,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      preview: {
-        nodeCount: 5,
-        category: "education",
-        difficulty: "초급자",
-      },
-    },
-    {
-      id: "template-2",
-      title: "컨설팅 서비스",
-      description: "B2B 컨설팅 서비스 판매 퍼널",
-      category: "consulting",
-      thumbnail: null,
-      nodeData: {},
-      edgeData: {},
-      isPublic: true,
-      isOfficial: true,
-      createdBy: null,
-      usageCount: 0,
-      rating: 4.2,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      preview: {
-        nodeCount: 7,
-        category: "consulting",
-        difficulty: "중급자",
-      },
-    },
-    {
-      id: "template-3",
-      title: "모바일 앱 다운로드",
-      description: "모바일 앱 다운로드 유도 퍼널",
-      category: "app",
-      thumbnail: null,
-      nodeData: {},
-      edgeData: {},
-      isPublic: true,
-      isOfficial: true,
-      createdBy: null,
-      usageCount: 0,
-      rating: 4.7,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      preview: {
-        nodeCount: 6,
-        category: "app",
-        difficulty: "고급자",
-      },
-    },
-    {
-      id: "template-4",
-      title: "이커머스 복합 퍼널",
-      description: "전자상거래 종합 마케팅 퍼널",
-      category: "ecommerce",
-      thumbnail: null,
-      nodeData: {},
-      edgeData: {},
-      isPublic: true,
-      isOfficial: true,
-      createdBy: null,
-      usageCount: 0,
-      rating: 4.3,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      preview: {
-        nodeCount: 9,
-        category: "ecommerce",
-        difficulty: "전문가",
-      },
-    },
-  ];
-
-  const displayTemplates = templates && templates.length > 0 ? templates : mockTemplates;
+  const displayTemplates = templates || [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -255,14 +167,32 @@ export default function TemplateModal({
         <div className="flex-1 overflow-y-auto pr-2">
           {templatesLoading ? (
             <div className="flex items-center justify-center py-12">
-                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : displayTemplates.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center mb-4">
+                <i className="fas fa-project-diagram text-gray-400 text-xl"></i>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">사용 가능한 템플릿이 없습니다</h3>
+              <p className="text-sm text-gray-500 mb-4 max-w-md">
+                아직 등록된 퍼널 템플릿이 없습니다. 관리자에게 문의하여 템플릿을 추가해달라고 요청하세요.
+              </p>
+              <div className="text-xs text-gray-400">
+                <p>템플릿 기능은 다음과 같이 작동합니다:</p>
+                <ul className="mt-2 text-left space-y-1">
+                  <li>• 미리 제작된 퍼널 구조를 빠르게 적용</li>
+                  <li>• 업종별 맞춤형 노드 구성</li>
+                  <li>• 전문가가 검증한 마케팅 플로우</li>
+                </ul>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-4 min-h-0">
               {displayTemplates.map((template) => (
                 <div
                   key={template.id}
-                                      className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                  className={`border rounded-lg p-4 cursor-pointer transition-colors ${
                     selectedTemplate === template.id
                       ? "border-primary bg-accent"
                       : "border-border hover:border-primary"

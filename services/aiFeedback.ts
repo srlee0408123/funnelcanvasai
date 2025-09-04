@@ -56,7 +56,7 @@ export class AIFeedbackService {
     }
 
     // Generate flow and knowledge base hashes
-    const flowHash = generateFlowHash(state.flowJson);
+    const flowHash = generateFlowHash(state.state);
     const kbData = await this.getKnowledgeBase(canvas.workspaceId, userId);
     const kbHash = generateKnowledgeHash(kbData);
 
@@ -85,7 +85,7 @@ export class AIFeedbackService {
     const startTime = Date.now();
     
     const feedbackItems = await openaiService.generateFunnelFeedback({
-      flowJson: state.flowJson,
+      flowJson: state.state,
       knowledgeBase: kbData,
     });
 
@@ -94,7 +94,7 @@ export class AIFeedbackService {
     // Save feedback run
     const feedbackRun = await storage.createFeedbackRun({
       canvasId,
-      stateVersion: state.version,
+      stateVersion: 1, // 기본값 사용
       flowHash,
       kbHash,
       promptVersion: FEEDBACK_PROMPT_VERSION,
