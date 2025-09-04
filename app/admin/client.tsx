@@ -8,13 +8,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/Ui/layout
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/Ui/data-display";
 import Link from "next/link";
 
+interface AdminStats {
+  totalUsers: number;
+  totalCanvases: number;
+  totalTemplates: number;
+}
+
 export default function AdminClient() {
   const [activeTab, setActiveTab] = useState("overview");
 
   // Fetch admin stats
-  const { data: stats } = useQuery({
+  const { data: stats } = useQuery<AdminStats>({
     queryKey: ["/api/admin/stats"],
-    queryFn: () => apiRequest("GET", "/api/admin/stats"),
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/admin/stats");
+      return response as AdminStats;
+    },
   });
 
   return (

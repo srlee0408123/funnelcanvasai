@@ -1,13 +1,12 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import AdminClient from "./client";
 
 export default async function AdminPage() {
-  const session = await getServerSession(authOptions);
+  const { userId } = auth();
   
-  if (!session) {
-    redirect("/");
+  if (!userId) {
+    redirect("/sign-in");
   }
   
   // TODO: Add admin role check

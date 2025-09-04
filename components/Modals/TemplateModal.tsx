@@ -17,6 +17,7 @@ interface TemplateModalProps {
 interface TemplateWithDetails extends FunnelTemplate {
   id: string;
   title: string;
+  description?: string | null;
   category?: string;
   preview?: {
     nodeCount: number;
@@ -158,13 +159,19 @@ export default function TemplateModal({
   const mockTemplates: TemplateWithDetails[] = [
     {
       id: "template-1",
-      name: "온라인 강의 판매",
+      title: "온라인 강의 판매",
+      description: "교육 콘텐츠를 판매하는 퍼널 템플릿",
       category: "education",
-      tags: ["교육", "초급자"],
-      ownerScope: "public",
-      ownerWorkspaceId: null,
-      currentVersion: 1,
+      thumbnail: null,
+      nodeData: {},
+      edgeData: {},
+      isPublic: true,
+      isOfficial: true,
+      createdBy: null,
+      usageCount: 0,
+      rating: 4.5,
       createdAt: new Date(),
+      updatedAt: new Date(),
       preview: {
         nodeCount: 5,
         category: "education",
@@ -173,13 +180,19 @@ export default function TemplateModal({
     },
     {
       id: "template-2",
-      name: "컨설팅 서비스",
+      title: "컨설팅 서비스",
+      description: "B2B 컨설팅 서비스 판매 퍼널",
       category: "consulting",
-      tags: ["B2B", "중급자"],
-      ownerScope: "public",
-      ownerWorkspaceId: null,
-      currentVersion: 1,
+      thumbnail: null,
+      nodeData: {},
+      edgeData: {},
+      isPublic: true,
+      isOfficial: true,
+      createdBy: null,
+      usageCount: 0,
+      rating: 4.2,
       createdAt: new Date(),
+      updatedAt: new Date(),
       preview: {
         nodeCount: 7,
         category: "consulting",
@@ -188,13 +201,19 @@ export default function TemplateModal({
     },
     {
       id: "template-3",
-      name: "모바일 앱 다운로드",
+      title: "모바일 앱 다운로드",
+      description: "모바일 앱 다운로드 유도 퍼널",
       category: "app",
-      tags: ["앱", "고급자"],
-      ownerScope: "public",
-      ownerWorkspaceId: null,
-      currentVersion: 1,
+      thumbnail: null,
+      nodeData: {},
+      edgeData: {},
+      isPublic: true,
+      isOfficial: true,
+      createdBy: null,
+      usageCount: 0,
+      rating: 4.7,
       createdAt: new Date(),
+      updatedAt: new Date(),
       preview: {
         nodeCount: 6,
         category: "app",
@@ -203,13 +222,19 @@ export default function TemplateModal({
     },
     {
       id: "template-4",
-      name: "이커머스 복합 퍼널",
+      title: "이커머스 복합 퍼널",
+      description: "전자상거래 종합 마케팅 퍼널",
       category: "ecommerce",
-      tags: ["쇼핑몰", "전문가"],
-      ownerScope: "public",
-      ownerWorkspaceId: null,
-      currentVersion: 1,
+      thumbnail: null,
+      nodeData: {},
+      edgeData: {},
+      isPublic: true,
+      isOfficial: true,
+      createdBy: null,
+      usageCount: 0,
+      rating: 4.3,
       createdAt: new Date(),
+      updatedAt: new Date(),
       preview: {
         nodeCount: 9,
         category: "ecommerce",

@@ -48,9 +48,10 @@ interface CanvasViewProps {
   };
   canvasState?: any;
   isPublic?: boolean;
+  readOnly?: boolean;
 }
 
-export function CanvasView({ canvas, canvasState, isPublic = false }: CanvasViewProps) {
+export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = false }: CanvasViewProps) {
   const { toast } = useToast();
   
   // UI State - Canvas.tsx와 동일한 구조

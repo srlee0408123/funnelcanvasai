@@ -53,7 +53,7 @@ export class AIFeedbackService {
           kbHash: existingRun.kbHash!,
           createdAt: existingRun.createdAt!,
         },
-        items: items.map(item => ({
+        items: items.map((item: any) => ({
           nodeId: item.nodeId!,
           suggestion: item.suggestion,
           severity: item.severity as "low" | "medium" | "high",
