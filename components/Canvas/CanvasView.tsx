@@ -60,8 +60,8 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   // Todo sticker state
   const [showTodoSticker, setShowTodoSticker] = useState(true);
   
-  // Chat sidebar state
-  const [chatCollapsed, setChatCollapsed] = useState(false);
+  // Chat sidebar state - 기본은 닫힌 상태로 시작
+  const [chatCollapsed, setChatCollapsed] = useState(true);
 
   // Handlers - Canvas.tsx와 동일한 구조
   const handleNodeSelect = (nodeId: string) => {
@@ -199,7 +199,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
       )}
 
       {/* AI Feedback Button */}
-      <AIFeedbackButton onRequestFeedback={handleRequestAIFeedback} />
+      {/* <AIFeedbackButton onRequestFeedback={handleRequestAIFeedback} /> */}
 
       {/* Todo Sticker */}
       {showTodoSticker ? (

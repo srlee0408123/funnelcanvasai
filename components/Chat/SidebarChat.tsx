@@ -41,7 +41,7 @@ export default function SidebarChat({
   canvasId, 
   isReadOnly = false, 
   onToggle,
-  isCollapsed = false 
+  isCollapsed = true 
 }: SidebarChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentMessage, setCurrentMessage] = useState('');
