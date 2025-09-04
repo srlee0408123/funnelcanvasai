@@ -54,7 +54,7 @@ export const workspaceMembers = pgTable("workspace_members", {
   userId: varchar("user_id").references(() => users.id).notNull(),
   role: varchar("role").notNull().default("editor"), // owner, admin, editor, viewer
   invitedAt: timestamp("invited_at").defaultNow(),
-}, (table) => [
+}, (table: any) => [
   index("workspace_members_workspace_id_idx").on(table.workspaceId),
   index("workspace_members_user_id_idx").on(table.userId),
 ]);
@@ -78,7 +78,7 @@ export const canvasStates = pgTable("canvas_states", {
   flowJson: jsonb("flow_json").notNull(),
   flowHash: varchar("flow_hash"),
   createdAt: timestamp("created_at").defaultNow(),
-}, (table) => [
+}, (table: any) => [
   index("canvas_states_canvas_id_version_idx").on(table.canvasId, table.version),
   index("canvas_states_flow_hash_idx").on(table.flowHash),
 ]);
@@ -92,7 +92,7 @@ export const textMemos = pgTable("text_memos", {
   size: jsonb("size"), // { width: number, height: number }
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
+}, (table: any) => [
   index("text_memos_canvas_id_idx").on(table.canvasId),
 ]);
 
@@ -104,7 +104,7 @@ export const chatMessages = pgTable("chat_messages", {
   role: varchar("role").notNull(), // 'user' or 'assistant'
   content: text("content").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
-}, (table) => [
+}, (table: any) => [
   index("chat_messages_canvas_id_idx").on(table.canvasId),
   index("chat_messages_created_at_idx").on(table.createdAt),
 ]);
@@ -122,7 +122,7 @@ export const assets = pgTable("assets", {
   metaJson: jsonb("meta_json"),
   status: varchar("status").default("pending"), // pending, processing, completed, failed
   createdAt: timestamp("created_at").defaultNow(),
-}, (table) => [
+}, (table: any) => [
   index("assets_workspace_id_idx").on(table.workspaceId),
   index("assets_canvas_id_idx").on(table.canvasId), // New index for canvas-specific queries
   index("assets_content_sha256_idx").on(table.contentSha256),
@@ -137,7 +137,7 @@ export const assetChunks = pgTable("asset_chunks", {
   embedding: text("embedding"), // JSON string of vector
   tokens: integer("tokens"),
   createdAt: timestamp("created_at").defaultNow(),
-}, (table) => [
+}, (table: any) => [
   index("asset_chunks_asset_id_seq_idx").on(table.assetId, table.seq),
 ]);
 
@@ -165,7 +165,7 @@ export const feedbackRuns = pgTable("feedback_runs", {
   model: varchar("model"),
   latencyMs: integer("latency_ms"),
   createdAt: timestamp("created_at").defaultNow(),
-}, (table) => [
+}, (table: any) => [
   index("feedback_runs_flow_kb_hash_idx").on(table.flowHash, table.kbHash),
 ]);
 
@@ -259,7 +259,7 @@ export const canvasKnowledge = pgTable("canvas_knowledge", {
   metadata: jsonb("metadata"), // Additional asset-specific metadata
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
+}, (table: any) => [
   index("canvas_knowledge_canvas_id_idx").on(table.canvasId),
   index("canvas_knowledge_asset_id_idx").on(table.assetId),
 ]);
@@ -273,8 +273,49 @@ export const canvasTodos = pgTable("canvas_todos", {
   position: integer("position").default(0), // For ordering
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
+}, (table: any) => [
   index("canvas_todos_canvas_id_idx").on(table.canvasId),
+]);
+
+// Canvas nodes for individual node storage with JSON metadata
+export const canvasNodes = pgTable("canvas_nodes", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  canvasId: uuid("canvas_id").references(() => canvases.id, { onDelete: "cascade" }).notNull(),
+  nodeId: varchar("node_id").notNull(), // Frontend node ID
+  type: varchar("type").notNull(), // Node type (landing, form, email, etc.)
+  position: jsonb("position").notNull(), // { x: number, y: number }
+  data: jsonb("data").notNull(), // Node data (title, subtitle, icon, color, etc.)
+  metadata: jsonb("metadata").default('{}'), // Additional metadata for the node
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table: any) => [
+  index("canvas_nodes_canvas_id_idx").on(table.canvasId),
+  index("canvas_nodes_type_idx").on(table.type),
+  index("canvas_nodes_created_by_idx").on(table.createdBy),
+  // Ensure unique node_id per canvas
+  index("canvas_nodes_canvas_node_unique_idx").on(table.canvasId, table.nodeId),
+]);
+
+// Canvas edges for storing connections between nodes
+export const canvasEdges = pgTable("canvas_edges", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  canvasId: uuid("canvas_id").references(() => canvases.id, { onDelete: "cascade" }).notNull(),
+  edgeId: varchar("edge_id").notNull(), // Frontend edge ID
+  sourceNodeId: varchar("source_node_id").notNull(), // Source node ID
+  targetNodeId: varchar("target_node_id").notNull(), // Target node ID
+  type: varchar("type").default("default"), // Edge type
+  data: jsonb("data").default('{}'), // Edge data (label, style, etc.)
+  metadata: jsonb("metadata").default('{}'), // Additional metadata for the edge
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table: any) => [
+  index("canvas_edges_canvas_id_idx").on(table.canvasId),
+  index("canvas_edges_source_idx").on(table.sourceNodeId),
+  index("canvas_edges_target_idx").on(table.targetNodeId),
+  // Ensure unique edge_id per canvas
+  index("canvas_edges_canvas_edge_unique_idx").on(table.canvasId, table.edgeId),
 ]);
 
 // Canvas shares for individual canvas access control
@@ -285,19 +326,19 @@ export const canvasShares = pgTable("canvas_shares", {
   role: varchar("role").notNull().default("editor"), // owner, editor, viewer
   sharedBy: varchar("shared_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
-}, (table) => [
+}, (table: any) => [
   index("canvas_shares_canvas_id_idx").on(table.canvasId),
   index("canvas_shares_user_id_idx").on(table.userId),
 ]);
 
 // Relations
-export const usersRelations = relations(users, ({ many, one }) => ({
+export const usersRelations = relations(users, ({ many, one }: any) => ({
   ownedWorkspaces: many(workspaces),
   workspaceMemberships: many(workspaceMembers),
   createdCanvases: many(canvases),
 }));
 
-export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
+export const workspacesRelations = relations(workspaces, ({ one, many }: any) => ({
   owner: one(users, { fields: [workspaces.ownerUserId], references: [users.id] }),
   members: many(workspaceMembers),
   canvases: many(canvases),
@@ -305,12 +346,12 @@ export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
   templates: many(funnelTemplates),
 }));
 
-export const workspaceMembersRelations = relations(workspaceMembers, ({ one }) => ({
+export const workspaceMembersRelations = relations(workspaceMembers, ({ one }: any) => ({
   workspace: one(workspaces, { fields: [workspaceMembers.workspaceId], references: [workspaces.id] }),
   user: one(users, { fields: [workspaceMembers.userId], references: [users.id] }),
 }));
 
-export const canvasesRelations = relations(canvases, ({ one, many }) => ({
+export const canvasesRelations = relations(canvases, ({ one, many }: any) => ({
   workspace: one(workspaces, { fields: [canvases.workspaceId], references: [workspaces.id] }),
   creator: one(users, { fields: [canvases.createdBy], references: [users.id] }),
   states: many(canvasStates),
@@ -318,25 +359,40 @@ export const canvasesRelations = relations(canvases, ({ one, many }) => ({
   knowledge: many(canvasKnowledge),
   feedbackRuns: many(feedbackRuns),
   shares: many(canvasShares),
+  nodes: many(canvasNodes),
+  edges: many(canvasEdges),
+  todos: many(canvasTodos),
+  textMemos: many(textMemos),
+  chatMessages: many(chatMessages),
 }));
 
-export const canvasSharesRelations = relations(canvasShares, ({ one }) => ({
+export const canvasSharesRelations = relations(canvasShares, ({ one }: any) => ({
   canvas: one(canvases, { fields: [canvasShares.canvasId], references: [canvases.id] }),
   user: one(users, { fields: [canvasShares.userId], references: [users.id] }),
   sharedByUser: one(users, { fields: [canvasShares.sharedBy], references: [users.id] }),
 }));
 
-export const canvasKnowledgeRelations = relations(canvasKnowledge, ({ one }) => ({
+export const canvasNodesRelations = relations(canvasNodes, ({ one }: any) => ({
+  canvas: one(canvases, { fields: [canvasNodes.canvasId], references: [canvases.id] }),
+  creator: one(users, { fields: [canvasNodes.createdBy], references: [users.id] }),
+}));
+
+export const canvasEdgesRelations = relations(canvasEdges, ({ one }: any) => ({
+  canvas: one(canvases, { fields: [canvasEdges.canvasId], references: [canvases.id] }),
+  creator: one(users, { fields: [canvasEdges.createdBy], references: [users.id] }),
+}));
+
+export const canvasKnowledgeRelations = relations(canvasKnowledge, ({ one }: any) => ({
   canvas: one(canvases, { fields: [canvasKnowledge.canvasId], references: [canvases.id] }),
   asset: one(assets, { fields: [canvasKnowledge.assetId], references: [assets.id] }),
 }));
 
-export const canvasStatesRelations = relations(canvasStates, ({ one, many }) => ({
+export const canvasStatesRelations = relations(canvasStates, ({ one, many }: any) => ({
   canvas: one(canvases, { fields: [canvasStates.canvasId], references: [canvases.id] }),
   nodeInstances: many(nodeInstances),
 }));
 
-export const assetsRelations = relations(assets, ({ one, many }) => ({
+export const assetsRelations = relations(assets, ({ one, many }: any) => ({
   workspace: one(workspaces, { fields: [assets.workspaceId], references: [workspaces.id] }),
   canvas: one(canvases, { fields: [assets.canvasId], references: [canvases.id] }),
   chunks: many(assetChunks),
@@ -393,6 +449,10 @@ export type CanvasTodo = typeof canvasTodos.$inferSelect;
 export type InsertCanvasTodo = typeof canvasTodos.$inferInsert;
 export type CanvasShare = typeof canvasShares.$inferSelect;
 export type InsertCanvasShare = typeof canvasShares.$inferInsert;
+export type CanvasNode = typeof canvasNodes.$inferSelect;
+export type InsertCanvasNode = typeof canvasNodes.$inferInsert;
+export type CanvasEdge = typeof canvasEdges.$inferSelect;
+export type InsertCanvasEdge = typeof canvasEdges.$inferInsert;
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertWorkspaceSchema = createInsertSchema(workspaces).omit({ id: true, createdAt: true, updatedAt: true });
@@ -428,3 +488,7 @@ export const insertCanvasTodoSchema = createInsertSchema(canvasTodos).omit({ id:
 export type InsertCanvasTodoType = z.infer<typeof insertCanvasTodoSchema>;
 export const insertCanvasShareSchema = createInsertSchema(canvasShares).omit({ id: true, createdAt: true });
 export type InsertCanvasShareType = z.infer<typeof insertCanvasShareSchema>;
+export const insertCanvasNodeSchema = createInsertSchema(canvasNodes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCanvasNodeType = z.infer<typeof insertCanvasNodeSchema>;
+export const insertCanvasEdgeSchema = createInsertSchema(canvasEdges).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCanvasEdgeType = z.infer<typeof insertCanvasEdgeSchema>;

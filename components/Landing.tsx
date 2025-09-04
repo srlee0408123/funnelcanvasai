@@ -1,7 +1,7 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/Ui/layout";
+import { Button } from "@/components/Ui/buttons";
 import Link from "next/link";
 
 export default function Landing() {
@@ -10,23 +10,23 @@ export default function Landing() {
       <div className="max-w-4xl mx-auto text-center">
         <div className="mb-8">
           <div className="flex items-center justify-center space-x-3 mb-6">
-            <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
-              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center">
+              <svg className="w-7 h-7 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">FunnelCanvas AI</h1>
-              <p className="text-lg text-gray-600">AI-Powered Funnel Builder</p>
+              <h1 className="text-3xl font-bold text-foreground">FunnelCanvas AI</h1>
+              <p className="text-lg text-muted-foreground">AI-Powered Funnel Builder</p>
             </div>
           </div>
           
-          <h2 className="text-5xl font-bold text-gray-900 mb-6">
+          <h2 className="text-5xl font-bold text-foreground mb-6">
             Build and Optimize <br />
-            <span className="text-blue-600">Marketing Funnels with AI</span>
+            <span className="text-primary">Marketing Funnels with AI</span>
           </h2>
           
-          <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
+          <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
             Create high-converting marketing funnels with drag-and-drop simplicity, 
             powered by AI insights and real-time optimization.
           </p>
@@ -43,7 +43,7 @@ export default function Landing() {
               <CardTitle className="text-xl">Knowledge Upload</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-600">
+              <p className="text-muted-foreground">
                 Upload PDFs, YouTube videos, and websites. 
                 AI analyzes your content for insights.
               </p>
@@ -60,7 +60,7 @@ export default function Landing() {
               <CardTitle className="text-xl">Visual Funnel Design</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-600">
+              <p className="text-muted-foreground">
                 Intuitive drag-and-drop interface to design 
                 and connect your marketing funnel stages.
               </p>
@@ -77,7 +77,7 @@ export default function Landing() {
               <CardTitle className="text-xl">AI Optimization</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-600">
+              <p className="text-muted-foreground">
                 Real-time AI analysis provides improvement 
                 suggestions and optimization strategies.
               </p>
@@ -107,7 +107,7 @@ export default function Landing() {
             </Link>
           </div>
           
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             Start for free. No credit card required.
           </p>
         </div>

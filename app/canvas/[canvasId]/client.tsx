@@ -1,10 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiRequest } from "@/lib/queryClient";
 import { CanvasView } from "@/components/Canvas/CanvasView";
-import type { Canvas } from "@shared/schema";
+import { createClient } from "@/lib/supabase/client";
 
 interface CanvasClientProps {
   canvasId: string;
@@ -12,17 +11,39 @@ interface CanvasClientProps {
 
 export default function CanvasClient({ canvasId }: CanvasClientProps) {
   const router = useRouter();
+  const [canvas, setCanvas] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const { data: canvas, isLoading, error } = useQuery<Canvas>({
-    queryKey: ["/api/canvases", canvasId],
-    queryFn: () => apiRequest("GET", `/api/canvases/${canvasId}`),
-    retry: false,
-  });
+  useEffect(() => {
+    const fetchCanvas = async () => {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('canvases')
+          .select('*')
+          .eq('id', canvasId)
+          .single();
+
+        if (error) throw error;
+        if (!data) throw new Error('Canvas not found');
+
+        setCanvas(data);
+      } catch (err) {
+        console.error('Error fetching canvas:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch canvas');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCanvas();
+  }, [canvasId]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-500"></div>
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     );
   }
@@ -39,7 +60,7 @@ export default function CanvasClient({ canvasId }: CanvasClientProps) {
           </p>
           <button
             onClick={() => router.push("/dashboard")}
-            className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600"
+            className="px-4 py-2 bg-blue-600 text-primary-foreground rounded-lg hover:bg-blue-700"
           >
             대시보드로 돌아가기
           </button>

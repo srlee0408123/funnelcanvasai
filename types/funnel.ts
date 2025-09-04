@@ -5,6 +5,7 @@ export interface FunnelNode {
   position: Position;
   metrics?: NodeMetrics;
   feedback?: NodeFeedback[];
+  metadata?: NodeMetadata;
 }
 
 export interface NodeData {
@@ -28,6 +29,8 @@ export interface FunnelEdge {
   label?: string;
   type?: EdgeType;
   animated?: boolean;
+  data?: EdgeData;
+  metadata?: EdgeMetadata;
 }
 
 export interface FunnelFlow {
@@ -298,4 +301,161 @@ export interface ImportOptions {
   mergeStrategy: "replace" | "merge" | "append";
   preserveIds?: boolean;
   validateFlow?: boolean;
+}
+
+// Database-specific types for node and edge metadata
+export interface NodeMetadata {
+  // 성능 관련 메타데이터
+  performance?: {
+    conversionRate?: number;
+    clickThroughRate?: number;
+    bounceRate?: number;
+    avgTimeOnPage?: number;
+    lastOptimized?: Date;
+  };
+  
+  // 콘텐츠 관련 메타데이터
+  content?: {
+    version?: string;
+    lastUpdated?: Date;
+    author?: string;
+    approvalStatus?: "draft" | "pending" | "approved" | "rejected";
+    reviewNotes?: string;
+    language?: string;
+    wordCount?: number;
+  };
+  
+  // 기술적 메타데이터
+  technical?: {
+    integrationId?: string;
+    externalId?: string;
+    apiEndpoint?: string;
+    webhookUrl?: string;
+    lastSyncAt?: Date;
+    syncStatus?: "synced" | "pending" | "failed";
+    errorLog?: string[];
+  };
+  
+  // 분석 및 추적 메타데이터
+  analytics?: {
+    trackingId?: string;
+    pixelId?: string;
+    goalId?: string;
+    customEvents?: string[];
+    utmParameters?: Record<string, string>;
+    conversionGoals?: ConversionGoal[];
+  };
+  
+  // 사용자 정의 메타데이터
+  custom?: Record<string, any>;
+  
+  // 시스템 메타데이터
+  system?: {
+    createdBy?: string;
+    lastModifiedBy?: string;
+    version?: number;
+    tags?: string[];
+    notes?: string;
+    priority?: "low" | "medium" | "high" | "critical";
+    status?: "active" | "inactive" | "archived";
+  };
+}
+
+export interface EdgeMetadata {
+  // 연결 관련 메타데이터
+  connection?: {
+    weight?: number; // 연결 강도 (0-1)
+    probability?: number; // 전환 확률
+    conditions?: EdgeCondition[];
+    triggers?: EdgeTrigger[];
+  };
+  
+  // 성능 메타데이터
+  performance?: {
+    conversionRate?: number;
+    dropOffRate?: number;
+    avgTransitionTime?: number;
+    lastOptimized?: Date;
+  };
+  
+  // 스타일 및 표시 메타데이터
+  display?: {
+    color?: string;
+    strokeWidth?: number;
+    dashArray?: string;
+    label?: string;
+    labelPosition?: "start" | "middle" | "end";
+    showArrow?: boolean;
+  };
+  
+  // 사용자 정의 메타데이터
+  custom?: Record<string, any>;
+  
+  // 시스템 메타데이터
+  system?: {
+    createdBy?: string;
+    lastModifiedBy?: string;
+    version?: number;
+    notes?: string;
+    status?: "active" | "inactive" | "archived";
+  };
+}
+
+export interface EdgeData {
+  label?: string;
+  style?: Record<string, any>;
+  markerEnd?: string;
+  animated?: boolean;
+}
+
+export interface ConversionGoal {
+  id: string;
+  name: string;
+  type: "page_view" | "click" | "form_submit" | "purchase" | "custom";
+  value?: number;
+  currency?: string;
+  conditions?: Record<string, any>;
+}
+
+export interface EdgeCondition {
+  type: "user_segment" | "time_based" | "behavior" | "attribute" | "random";
+  operator: "equals" | "not_equals" | "contains" | "greater_than" | "less_than" | "in" | "not_in";
+  field?: string;
+  value: any;
+  probability?: number; // 0-1 for random conditions
+}
+
+export interface EdgeTrigger {
+  type: "immediate" | "delay" | "event" | "condition";
+  delay?: number; // milliseconds for delay triggers
+  event?: string; // event name for event triggers
+  condition?: EdgeCondition; // condition for condition triggers
+}
+
+// Database entity types (matching the database schema)
+export interface CanvasNodeEntity {
+  id: string; // UUID
+  canvas_id: string;
+  node_id: string; // Frontend node ID
+  type: string;
+  position: { x: number; y: number };
+  data: NodeData;
+  metadata: NodeMetadata;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CanvasEdgeEntity {
+  id: string; // UUID
+  canvas_id: string;
+  edge_id: string; // Frontend edge ID
+  source_node_id: string;
+  target_node_id: string;
+  type: string;
+  data: EdgeData;
+  metadata: EdgeMetadata;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
 }

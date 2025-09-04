@@ -37,6 +37,9 @@
       "@/types/*": [
         "./types/*"
       ],
+      "@/services/*": [
+        "./services/*"
+      ],
       "@shared/*": [
         "./shared/*"
       ],

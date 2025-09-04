@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { X, MessageCircle, Bot, Eye, Send } from "lucide-react";
+import { Button } from "@/components/Ui/buttons";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -142,10 +142,10 @@ export default function FloatingChatButton({ canvasId, isReadOnly = false }: Flo
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-110 z-50"
+        className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-primary-foreground rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-110 z-50"
         title="AI 어시스턴트와 채팅"
       >
-        <i className="fas fa-comments text-xl"></i>
+        <MessageCircle className="h-6 w-6" />
       </button>
     );
   }
@@ -153,9 +153,9 @@ export default function FloatingChatButton({ canvasId, isReadOnly = false }: Flo
   return (
     <div className="fixed bottom-6 right-6 w-96 h-[500px] bg-white rounded-lg shadow-2xl border border-gray-200 flex flex-col z-50">
       {/* Header */}
-      <div className="bg-blue-600 text-white p-4 rounded-t-lg flex items-center justify-between">
+      <div className="bg-blue-600 text-primary-foreground p-4 rounded-t-lg flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          <i className="fas fa-robot text-lg"></i>
+          <Bot className="h-5 w-5" />
           <div>
             <h3 className="font-medium">두더지 AI</h3>
             <p className="text-xs text-blue-100">퍼널 전문 어시스턴트</p>
@@ -163,7 +163,7 @@ export default function FloatingChatButton({ canvasId, isReadOnly = false }: Flo
         </div>
         <button
           onClick={() => setIsOpen(false)}
-          className="text-white hover:text-gray-200 transition-colors"
+          className="text-primary-foreground hover:text-gray-200 transition-colors"
         >
           <X size={20} />
         </button>
@@ -179,7 +179,7 @@ export default function FloatingChatButton({ canvasId, isReadOnly = false }: Flo
             <div
               className={`max-w-[80%] p-3 rounded-lg ${
                 message.role === 'user'
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-blue-600 text-primary-foreground'
                   : 'bg-gray-100 text-gray-900'
               }`}
             >
@@ -216,8 +216,8 @@ export default function FloatingChatButton({ canvasId, isReadOnly = false }: Flo
       <div className="p-4 border-t border-gray-200">
         {isReadOnly ? (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
-            <p className="text-sm text-blue-700 mb-2">
-              <i className="fas fa-eye mr-2"></i>
+            <p className="text-sm text-blue-700 mb-2 flex items-center justify-center">
+              <Eye className="h-4 w-4 mr-2" />
               읽기 전용 모드
             </p>
             <p className="text-xs text-blue-600">
@@ -241,17 +241,17 @@ export default function FloatingChatButton({ canvasId, isReadOnly = false }: Flo
               size="sm"
               className="px-3"
             >
-              <i className="fas fa-paper-plane text-sm"></i>
+              <Send className="h-4 w-4" />
             </Button>
           </div>
         )}
         
         <div className="text-xs text-gray-500 mt-2 space-y-1">
           {Array.isArray(canvasKnowledge) && canvasKnowledge.length > 0 && (
-            <p>💡 업로드된 자료 {canvasKnowledge.length}개</p>
+            <p>업로드된 자료 {canvasKnowledge.length}개</p>
           )}
           {Array.isArray(canvasTodos) && canvasTodos.length > 0 && (
-            <p>📋 할일 체크리스트 {canvasTodos.length}개 (완료: {canvasTodos.filter((todo: any) => todo.completed).length}개)</p>
+            <p>할일 체크리스트 {canvasTodos.length}개 (완료: {canvasTodos.filter((todo: any) => todo.completed).length}개)</p>
           )}
           {(Array.isArray(canvasKnowledge) && canvasKnowledge.length > 0) || 
            (Array.isArray(canvasTodos) && canvasTodos.length > 0) ? (

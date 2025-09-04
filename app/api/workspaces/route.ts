@@ -1,72 +1,79 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { workspaces, workspaceMembers } from "@shared/schema";
-import { eq } from "drizzle-orm";
-import { z } from "zod";
-
-const createWorkspaceSchema = z.object({
-  name: z.string().min(1).max(100),
-});
+import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { createServiceClient } from "@/lib/supabase/service";
 
 export async function GET() {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const userWorkspaces = await db
-      .select({
-        id: workspaces.id,
-        name: workspaces.name,
-        createdAt: workspaces.createdAt,
-        updatedAt: workspaces.updatedAt,
-      })
-      .from(workspaces)
-      .innerJoin(workspaceMembers, eq(workspaces.id, workspaceMembers.workspaceId))
-      .where(eq(workspaceMembers.userId, session.user.id));
-
-    return NextResponse.json(userWorkspaces);
-  } catch (error) {
-    console.error("Failed to fetch workspaces:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  const { userId } = await auth();
+  
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const supabase = createServiceClient();
+  
+  const { data, error } = await supabase
+    .from('workspaces')
+    .select('*')
+    .eq('owner_id', userId);
+  
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  
+  return NextResponse.json(data);
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const { userId } = await auth();
+    
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { name } = createWorkspaceSchema.parse(body);
-
+    const { name } = await req.json();
+    
+    if (!name) {
+      return NextResponse.json({ error: "Workspace name is required" }, { status: 400 });
+    }
+    
+    const supabase = createServiceClient();
+    
     // Create workspace
-    const [workspace] = await db
-      .insert(workspaces)
-      .values({
+    const { data: workspace, error: workspaceError } = await supabase
+      .from('workspaces')
+      .insert({
         name,
-        ownerId: session.user.id,
+        owner_id: userId,
       })
-      .returning();
-
-    // Add owner as member
-    await db.insert(workspaceMembers).values({
-      workspaceId: workspace.id,
-      userId: session.user.id,
-      role: "owner",
-    });
-
+      .select()
+      .single();
+    
+    if (workspaceError) {
+      console.error("Error creating workspace:", workspaceError);
+      return NextResponse.json({ error: workspaceError.message }, { status: 500 });
+    }
+    
+    // Add user as member
+    const { error: memberError } = await supabase
+      .from('workspace_members')
+      .insert({
+        workspace_id: workspace.id,
+        user_id: userId,
+        role: 'owner',
+      });
+    
+    if (memberError) {
+      console.error("Error adding workspace member:", memberError);
+      return NextResponse.json({ error: memberError.message }, { status: 500 });
+    }
+    
     return NextResponse.json(workspace);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors }, { status: 400 });
-    }
-    console.error("Failed to create workspace:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    console.error("Unexpected error in POST /api/workspaces:", error);
+    return NextResponse.json({ 
+      error: "Internal server error", 
+      details: error instanceof Error ? error.message : "Unknown error" 
+    }, { status: 500 });
   }
 }

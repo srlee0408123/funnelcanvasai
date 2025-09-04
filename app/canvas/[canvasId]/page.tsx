@@ -1,20 +1,21 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import CanvasClient from "./client";
 
 interface CanvasPageProps {
-  params: {
+  params: Promise<{
     canvasId: string;
-  };
+  }>;
 }
 
 export default async function CanvasPage({ params }: CanvasPageProps) {
-  const session = await getServerSession(authOptions);
+  const { userId } = await auth();
   
-  if (!session) {
-    redirect("/");
+  if (!userId) {
+    redirect("/sign-in");
   }
   
-  return <CanvasClient canvasId={params.canvasId} />;
+  const { canvasId } = await params;
+  
+  return <CanvasClient canvasId={canvasId} />;
 }

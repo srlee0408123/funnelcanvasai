@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/Ui/data-display";
+import { Button, Badge } from "@/components/Ui/buttons";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -159,8 +158,8 @@ export default function AIFeedbackModal({
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden">
         <DialogHeader>
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-              <i className="fas fa-brain text-white text-sm"></i>
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <i className="fas fa-brain text-primary-foreground text-sm"></i>
             </div>
             <DialogTitle>두더지ai</DialogTitle>
           </div>
@@ -170,8 +169,8 @@ export default function AIFeedbackModal({
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mx-auto mb-4"></div>
-                <p className="text-sm text-gray-600">AI가 퍼널을 분석하고 있습니다...</p>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-sm text-muted-foreground">AI가 퍼널을 분석하고 있습니다...</p>
               </div>
             </div>
           ) : error ? (
@@ -179,8 +178,8 @@ export default function AIFeedbackModal({
               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <i className="fas fa-exclamation-triangle text-red-500"></i>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">분석 실패</h3>
-              <p className="text-gray-600 mb-4">AI 분석에 실패했습니다. 다시 시도해주세요.</p>
+              <h3 className="text-lg font-medium text-foreground mb-2">분석 실패</h3>
+              <p className="text-muted-foreground mb-4">AI 분석에 실패했습니다. 다시 시도해주세요.</p>
               <Button onClick={() => onOpenChange(false)}>
                 닫기
               </Button>
@@ -192,8 +191,8 @@ export default function AIFeedbackModal({
                   <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <i className="fas fa-check text-green-500"></i>
                   </div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">완벽한 퍼널입니다!</h3>
-                  <p className="text-gray-600">현재 퍼널에서 개선이 필요한 부분을 찾지 못했습니다.</p>
+                  <h3 className="text-lg font-medium text-foreground mb-2">완벽한 퍼널입니다!</h3>
+                  <p className="text-muted-foreground">현재 퍼널에서 개선이 필요한 부분을 찾지 못했습니다.</p>
                 </div>
               ) : (
                 displayFeedback.items.map((item, index) => (
@@ -206,20 +205,20 @@ export default function AIFeedbackModal({
                         item.severity === "high" ? "bg-red-500" :
                         item.severity === "medium" ? "bg-orange-500" : "bg-green-500"
                       }`}>
-                        <i className={`${getSeverityIcon(item.severity)} text-white text-xs`}></i>
+                        <i className={`${getSeverityIcon(item.severity)} text-primary-foreground text-xs`}></i>
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center space-x-2 mb-2">
-                          <h4 className="font-medium text-gray-900">
+                          <h4 className="font-medium text-foreground">
                             {getNodeDisplayName(item.nodeId)}
                           </h4>
                           <Badge className={getSeverityBadgeColor(item.severity)}>
                             {getSeverityLabel(item.severity)}
                           </Badge>
                         </div>
-                        <p className="text-sm text-gray-700 mb-2">{item.suggestion}</p>
+                        <p className="text-sm text-foreground mb-2">{item.suggestion}</p>
                         {item.rationale && (
-                          <p className="text-xs text-gray-600">{item.rationale}</p>
+                          <p className="text-xs text-muted-foreground">{item.rationale}</p>
                         )}
                       </div>
                     </div>

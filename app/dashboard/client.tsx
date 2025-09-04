@@ -2,61 +2,130 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useSession } from "next-auth/react";
+import { useUser, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/Ui/layout";
+import { Button } from "@/components/Ui/buttons";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/Ui/data-display";
+import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
-import { Share } from "lucide-react";
-import type { Workspace, Canvas } from "@shared/schema";
+import { queryClient } from "@/lib/queryClient";
+import { FolderOpen, Users, Calendar } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
-export default function DashboardClient() {
-  const { data: session, status } = useSession();
+interface DashboardClientProps {
+  userId: string;
+}
+
+export default function DashboardClient({ userId }: DashboardClientProps) {
+  const { user } = useUser();
   const router = useRouter();
   const { toast } = useToast();
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [newCanvasTitle, setNewCanvasTitle] = useState("");
   const [showWorkspaceDialog, setShowWorkspaceDialog] = useState(false);
-  const [showCanvasDialog, setShowCanvasDialog] = useState(false);
-  const [shareCanvas, setShareCanvas] = useState<Canvas | null>(null);
 
-  // Fetch workspaces
-  const { data: workspaces, isLoading: workspacesLoading } = useQuery<Workspace[]>({
-    queryKey: ["/api/workspaces"],
-    enabled: !!session,
-    retry: false,
+  // Fetch workspaces directly from Supabase for real-time updates
+  const { data: workspaces, isLoading: workspacesLoading } = useQuery({
+    queryKey: ["workspaces", userId],
+    queryFn: async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('workspaces')
+        .select('*')
+        .eq('owner_id', userId)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching workspaces:', error);
+        throw error;
+      }
+      return data || [];
+    },
+    enabled: !!userId,
+    refetchInterval: false,
   });
 
-  // Fetch user accessible canvases
-  const { data: allCanvases = [], isLoading: canvasesLoading } = useQuery<Canvas[]>({
-    queryKey: ["/api/user/canvases"],
-    enabled: !!session,
-    retry: false,
-    staleTime: 0,
-    gcTime: 0,
-    refetchOnWindowFocus: true,
-  });
-
-  // Show workspace creation dialog for new users
+  // Sync user to Supabase when component mounts
   useEffect(() => {
-    if (session && workspaces !== undefined && workspaces.length === 0 && !showWorkspaceDialog) {
-      setShowWorkspaceDialog(true);
-    }
-  }, [session, workspaces, showWorkspaceDialog]);
+    const syncUser = async () => {
+      if (userId) {
+        try {
+          const response = await fetch('/api/sync-user', { method: 'POST' });
+          if (!response.ok) {
+            console.error('Failed to sync user');
+          } else {
+            console.log('User synced successfully');
+            queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+          }
+        } catch (error) {
+          console.error('Error syncing user:', error);
+        }
+      }
+    };
+    
+    syncUser();
+  }, [userId]);
+
+  // Setup Supabase realtime subscription for workspaces
+  useEffect(() => {
+    if (!userId) return;
+
+    const supabase = createClient();
+    console.log('Setting up realtime subscription for user:', userId);
+    
+    // Subscribe to workspace changes
+    const workspaceChannel = supabase
+      .channel('workspaces-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'workspaces',
+          filter: `owner_id=eq.${userId}`
+        },
+        (payload) => {
+          console.log('Workspace change received:', payload);
+          queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+        }
+      )
+      .subscribe((status) => {
+        console.log('Workspace subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to workspace changes');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Failed to subscribe to workspace changes');
+        } else if (status === 'TIMED_OUT') {
+          console.error('Subscription timed out');
+        } else if (status === 'CLOSED') {
+          console.log('Channel closed');
+        }
+      });
+
+    // Test the connection
+    console.log('Channel state:', workspaceChannel);
+
+    // Cleanup subscriptions on unmount
+    return () => {
+      console.log('Cleaning up workspace subscription');
+      supabase.removeChannel(workspaceChannel);
+    };
+  }, [userId]);
 
   // Create workspace mutation
   const createWorkspaceMutation = useMutation({
     mutationFn: async (name: string) => {
-      await apiRequest("POST", "/api/workspaces", { name });
+      const response = await fetch('/api/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) throw new Error('Failed to create workspace');
+      return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
       setShowWorkspaceDialog(false);
       setNewWorkspaceName("");
       toast({ title: "워크스페이스가 생성되었습니다." });
@@ -70,31 +139,10 @@ export default function DashboardClient() {
     },
   });
 
-  // Create canvas mutation
-  const createCanvasMutation = useMutation({
-    mutationFn: async (title: string) => {
-      if (!workspaces?.[0]?.id) throw new Error("No workspace found");
-      await apiRequest("POST", `/api/workspaces/${workspaces[0].id}/canvases`, { title });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/user/canvases"] });
-      setShowCanvasDialog(false);
-      setNewCanvasTitle("");
-      toast({ title: "캔버스가 생성되었습니다." });
-    },
-    onError: () => {
-      toast({ 
-        title: "오류", 
-        description: "캔버스 생성에 실패했습니다.", 
-        variant: "destructive" 
-      });
-    },
-  });
-
-  if (status === "loading") {
+  if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-500"></div>
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
       </div>
     );
   }
@@ -106,24 +154,21 @@ export default function DashboardClient() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-                <i className="fas fa-brain text-white text-sm"></i>
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">두더지 AI</h1>
-                <p className="text-sm text-gray-600">Funnel Canvas</p>
+                <h1 className="text-xl font-bold text-gray-900">FunnelCanvas AI</h1>
+                <p className="text-sm text-gray-600">Workspaces</p>
               </div>
             </div>
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-600">
-                {session?.user?.email}
+                {user.emailAddresses[0]?.emailAddress}
               </span>
-              <Link href="/admin">
-                <Button variant="outline" size="sm">
-                  <i className="fas fa-cog mr-2"></i>
-                  관리자
-                </Button>
-              </Link>
+              <UserButton afterSignOutUrl="/" />
             </div>
           </div>
         </div>
@@ -132,137 +177,109 @@ export default function DashboardClient() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6 flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-gray-900">내 캔버스</h2>
-          <Dialog open={showCanvasDialog} onOpenChange={setShowCanvasDialog}>
+          <h2 className="text-2xl font-bold text-gray-900">My Workspaces</h2>
+          <Dialog open={showWorkspaceDialog} onOpenChange={setShowWorkspaceDialog}>
             <DialogTrigger asChild>
-              <Button>
-                <i className="fas fa-plus mr-2"></i>
-                새 캔버스
+              <Button variant="secondary">
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New Workspace
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>새 캔버스 만들기</DialogTitle>
+                <DialogTitle>Create New Workspace</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="title">캔버스 제목</Label>
+                  <Label htmlFor="workspace-name">Workspace Name</Label>
                   <Input
-                    id="title"
-                    value={newCanvasTitle}
-                    onChange={(e) => setNewCanvasTitle(e.target.value)}
-                    placeholder="예: Q1 마케팅 퍼널"
+                    id="workspace-name"
+                    value={newWorkspaceName}
+                    onChange={(e) => setNewWorkspaceName(e.target.value)}
+                    placeholder="e.g., Marketing Team"
                   />
                 </div>
                 <Button 
-                  onClick={() => createCanvasMutation.mutate(newCanvasTitle)}
-                  disabled={!newCanvasTitle || createCanvasMutation.isPending}
+                  variant="secondary"
+                  onClick={() => createWorkspaceMutation.mutate(newWorkspaceName)}
+                  disabled={!newWorkspaceName || createWorkspaceMutation.isPending}
                   className="w-full"
                 >
-                  {createCanvasMutation.isPending ? "생성 중..." : "캔버스 만들기"}
+                  {createWorkspaceMutation.isPending ? "Creating..." : "Create Workspace"}
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
         </div>
 
-        {canvasesLoading || workspacesLoading ? (
+        {workspacesLoading ? (
           <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           </div>
-        ) : allCanvases.length === 0 ? (
+        ) : workspaces && workspaces.length === 0 ? (
           <Card className="p-12 text-center">
             <div className="text-gray-400 mb-4">
-              <i className="fas fa-folder-open text-6xl"></i>
+              <FolderOpen className="w-16 h-16 mx-auto" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              아직 캔버스가 없습니다
+              No workspaces yet
             </h3>
             <p className="text-gray-600 mb-4">
-              첫 번째 캔버스를 만들어 퍼널 설계를 시작하세요
+              Create your first workspace to start organizing your funnels
             </p>
-            <Button onClick={() => setShowCanvasDialog(true)}>
-              <i className="fas fa-plus mr-2"></i>
-              첫 캔버스 만들기
+            <Button variant="secondary" onClick={() => setShowWorkspaceDialog(true)}>
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create First Workspace
             </Button>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {allCanvases.map((canvas) => (
-              <Card key={canvas.id} className="hover:shadow-lg transition-shadow">
+            {workspaces?.map((workspace) => (
+              <Card 
+                key={workspace.id} 
+                className="hover:shadow-lg transition-shadow cursor-pointer"
+                onClick={() => router.push(`/workspace/${workspace.id}`)}
+              >
                 <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <CardTitle className="text-lg">{canvas.title}</CardTitle>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setShareCanvas(canvas);
-                      }}
-                    >
-                      <Share className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <CardTitle className="text-lg flex items-center justify-between">
+                    <span>{workspace.name}</span>
+                    <FolderOpen className="h-5 w-5 text-gray-400" />
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-sm text-gray-600 mb-4">
-                    <div className="flex items-center mb-1">
-                      <i className="fas fa-calendar-alt mr-2"></i>
-                      {new Date(canvas.createdAt).toLocaleDateString("ko-KR")}
+                  <div className="text-sm text-gray-600 space-y-2">
+                    <div className="flex items-center">
+                      <Calendar className="w-4 h-4 mr-2" />
+                      Created: {new Date(workspace.created_at).toLocaleDateString()}
                     </div>
                     <div className="flex items-center">
-                      <i className="fas fa-edit mr-2"></i>
-                      {new Date(canvas.updatedAt).toLocaleDateString("ko-KR")}
+                      <Users className="w-4 h-4 mr-2" />
+                      Owner: You
                     </div>
                   </div>
-                  <Link href={`/canvas/${canvas.id}`}>
-                    <Button className="w-full">
-                      <i className="fas fa-arrow-right mr-2"></i>
-                      캔버스 열기
-                    </Button>
-                  </Link>
+                  <Button 
+                    variant="secondary"
+                    className="w-full mt-4"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(`/workspace/${workspace.id}`);
+                    }}
+                  >
+                    Open Workspace
+                    <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </Button>
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
       </div>
-
-      {/* Workspace Creation Dialog */}
-      <Dialog open={showWorkspaceDialog} onOpenChange={setShowWorkspaceDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>워크스페이스 만들기</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="workspace-name">워크스페이스 이름</Label>
-              <Input
-                id="workspace-name"
-                value={newWorkspaceName}
-                onChange={(e) => setNewWorkspaceName(e.target.value)}
-                placeholder="예: 마케팅 팀"
-              />
-            </div>
-            <Button 
-              onClick={() => createWorkspaceMutation.mutate(newWorkspaceName)}
-              disabled={!newWorkspaceName || createWorkspaceMutation.isPending}
-              className="w-full"
-            >
-              {createWorkspaceMutation.isPending ? "생성 중..." : "워크스페이스 만들기"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Share Modal */}
-      {shareCanvas && (
-        <CanvasShareModal
-          canvas={shareCanvas}
-          onClose={() => setShareCanvas(null)}
-        />
-      )}
     </div>
   );
 }

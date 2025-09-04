@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/Ui/buttons";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/Ui/layout";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/Ui/data-display";
 import Link from "next/link";
 
 export default function AdminClient() {

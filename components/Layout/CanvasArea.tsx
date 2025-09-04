@@ -1,12 +1,27 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import Link from "next/link";
 import { apiRequest } from "@/lib/queryClient";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/Ui/buttons";
 import FunnelNode from "@/components/Canvas/FunnelNode";
 import NodeCreationModal from "@/components/Canvas/NodeCreationModal";
 import { TextMemo } from "@/components/Canvas/TextMemo";
 import { useToast } from "@/hooks/use-toast";
+import { 
+  ArrowLeft, 
+  Check, 
+  X, 
+  Edit, 
+  Clock, 
+  Share, 
+  Plus, 
+  Minus, 
+  Mail, 
+  Monitor, 
+  MessageSquare,
+  Save,
+  Loader2
+} from "lucide-react";
 import type { Canvas, CanvasState } from "@shared/schema";
 
 interface CanvasAreaProps {
@@ -15,6 +30,7 @@ interface CanvasAreaProps {
   selectedNodeId: string | null;
   onNodeSelect: (nodeId: string) => void;
   onNodeDoubleClick?: (node: any) => void;
+  onAddNode?: (nodeType: string) => void;
   isReadOnly?: boolean;
   externalMemos?: any[];
 }
@@ -27,6 +43,7 @@ interface Node {
     subtitle?: string;
     icon: string;
     color: string;
+    size?: "small" | "medium" | "large";
   };
   position: {
     x: number;
@@ -54,6 +71,7 @@ export default function CanvasArea({
   selectedNodeId,
   onNodeSelect,
   onNodeDoubleClick,
+  onAddNode,
   isReadOnly = false,
   externalMemos
 }: CanvasAreaProps) {
@@ -280,6 +298,104 @@ export default function CanvasArea({
       }
     };
   }, [autoSave]);
+
+  // 노드 추가 함수
+  const handleAddNodeToCanvas = useCallback((nodeType: string) => {
+    if (isReadOnly) return;
+
+    const getNodeConfig = (type: string) => {
+      const configs = {
+        landing: { 
+          title: 'Landing Page', 
+          icon: '🏠', 
+          color: '#3B82F6',
+          size: 'large' as const,
+          subtitle: '방문자를 맞이하는 첫 페이지'
+        },
+        form: { 
+          title: 'Form', 
+          icon: '📝', 
+          color: '#10B981',
+          size: 'medium' as const,
+          subtitle: '정보 수집 양식'
+        },
+        email: { 
+          title: 'Email', 
+          icon: '📧', 
+          color: '#8B5CF6',
+          size: 'medium' as const,
+          subtitle: '이메일 발송'
+        },
+        checkout: { 
+          title: 'Checkout', 
+          icon: '🛒', 
+          color: '#F59E0B',
+          size: 'large' as const,
+          subtitle: '결제 및 주문 완료'
+        },
+        thankyou: { 
+          title: 'Thank You', 
+          icon: '✅', 
+          color: '#EF4444',
+          size: 'medium' as const,
+          subtitle: '감사 인사 페이지'
+        },
+        data: { 
+          title: 'Data Source', 
+          icon: '💾', 
+          color: '#06B6D4',
+          size: 'small' as const,
+          subtitle: '데이터 연결점'
+        },
+        analysis: { 
+          title: 'Analysis', 
+          icon: '📊', 
+          color: '#6366F1',
+          size: 'medium' as const,
+          subtitle: '데이터 분석 결과'
+        },
+      };
+      return configs[type as keyof typeof configs] || configs.landing;
+    };
+
+    const config = getNodeConfig(nodeType);
+    const newNode: Node = {
+      id: `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type: nodeType,
+      data: {
+        title: config.title,
+        subtitle: config.subtitle,
+        icon: config.icon,
+        color: config.color,
+        size: config.size,
+      },
+      position: {
+        x: Math.random() * 400 + 100, // 랜덤 위치 (100-500px)
+        y: Math.random() * 300 + 100, // 랜덤 위치 (100-400px)
+      },
+    };
+
+    // 로컬 노드 상태 업데이트
+    setLocalNodes(prevNodes => [...prevNodes, newNode]);
+
+    // 자동 저장 트리거
+    setTimeout(() => {
+      autoSave();
+    }, 500);
+
+    toast({
+      title: "노드 추가됨",
+      description: `${config.title} 노드가 캔버스에 추가되었습니다.`,
+    });
+  }, [isReadOnly, autoSave, toast]);
+
+  // onAddNode prop이 있으면 실제 노드 추가 함수로 연결
+  useEffect(() => {
+    if (onAddNode) {
+      // onAddNode를 실제 구현으로 대체
+      (window as any).handleAddNodeToCanvas = handleAddNodeToCanvas;
+    }
+  }, [onAddNode, handleAddNodeToCanvas]);
 
 
 
@@ -1214,11 +1330,11 @@ export default function CanvasArea({
         <div className="flex items-center justify-between group">
           <div className="flex items-center space-x-4">
             <Link
-              to="/"
+              href="/"
               className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-colors"
               title="워크스페이스로 돌아가기"
             >
-              <i className="fas fa-arrow-left"></i>
+              <ArrowLeft className="h-4 w-4" />
             </Link>
             {isEditingTitle ? (
               <div className="flex items-center space-x-2">
@@ -1237,14 +1353,14 @@ export default function CanvasArea({
                     className="p-1 text-green-600 hover:bg-green-100 rounded"
                     title="저장"
                   >
-                    <i className="fas fa-check text-sm"></i>
+                    <Check className="h-4 w-4" />
                   </button>
                   <button
                     onClick={handleTitleCancel}
                     className="p-1 text-red-600 hover:bg-red-100 rounded"
                     title="취소"
                   >
-                    <i className="fas fa-times text-sm"></i>
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
               </div>
@@ -1255,15 +1371,37 @@ export default function CanvasArea({
                 title={!isReadOnly ? "클릭해서 이름 변경" : ""}
               >
                 <span>{canvas.title}</span>
-                {!isReadOnly && <i className="fas fa-edit text-sm opacity-0 group-hover:opacity-100 transition-opacity"></i>}
+                {!isReadOnly && <Edit className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />}
               </h2>
             )}
             <div className="flex items-center space-x-2 text-sm text-gray-500">
-              <i className="fas fa-clock"></i>
+              <Clock className="h-4 w-4" />
               <span>마지막 저장: {canvasState ? new Date(canvasState.createdAt!).toLocaleString() : "저장된 상태 없음"}</span>
             </div>
           </div>
           <div className="flex items-center space-x-3">
+            {!isReadOnly && (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => {
+                  // 캔버스 중앙에 노드 생성 모달 열기
+                  const canvasRect = canvasRef.current?.getBoundingClientRect();
+                  if (canvasRect) {
+                    const centerX = (canvasRect.width / 2 - viewport.x) / viewport.zoom;
+                    const centerY = (canvasRect.height / 2 - viewport.y) / viewport.zoom;
+                    setNodeCreationPosition({ x: centerX, y: centerY });
+                  } else {
+                    setNodeCreationPosition({ x: 400, y: 300 });
+                  }
+                  setShowNodeCreationModal(true);
+                }}
+                title="노드 추가"
+                className="hover:bg-blue-50 hover:text-blue-600"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
             {!isReadOnly && (
               <Button 
                 variant="ghost" 
@@ -1280,7 +1418,11 @@ export default function CanvasArea({
                 title="수동 저장"
                 disabled={saveCanvasStateMutation.isPending}
               >
-                <i className={`fas ${saveCanvasStateMutation.isPending ? 'fa-spinner fa-spin' : 'fa-save'}`}></i>
+                {saveCanvasStateMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
               </Button>
             )}
             {!isReadOnly && (
@@ -1308,7 +1450,7 @@ export default function CanvasArea({
                 }}
                 title="읽기 전용 공유 링크 복사"
               >
-                <i className="fas fa-share-alt"></i>
+                <Share className="h-4 w-4" />
               </Button>
             )}
             <div className="w-px h-6 bg-gray-200"></div>
@@ -1348,14 +1490,14 @@ export default function CanvasArea({
                 size="sm"
                 onClick={() => setViewport(prev => ({ ...prev, zoom: Math.min(3, prev.zoom * 1.2) }))}
               >
-                <i className="fas fa-plus"></i>
+                <Plus className="h-4 w-4" />
               </Button>
               <Button 
                 variant="ghost" 
                 size="sm"
                 onClick={() => setViewport(prev => ({ ...prev, zoom: Math.max(0.1, prev.zoom * 0.8) }))}
               >
-                <i className="fas fa-minus"></i>
+                <Minus className="h-4 w-4" />
               </Button>
             </div>
           </div>
@@ -1735,6 +1877,7 @@ export default function CanvasArea({
                   onConnectionStart={!isReadOnly ? handleConnectionStart : undefined}
                   onDelete={!isReadOnly ? handleNodeDelete : undefined}
                   isReadOnly={isReadOnly}
+                  size={(node.data as any)?.size || "medium"}
                 />
               );
             });
@@ -1777,25 +1920,25 @@ export default function CanvasArea({
           <div className="flex items-center space-x-4">
             <div className="text-center cursor-pointer hover:bg-gray-50 p-2 rounded-lg">
               <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mb-2 mx-auto">
-                <i className="fas fa-envelope text-blue-600"></i>
+                <Mail className="h-4 w-4 text-blue-600" />
               </div>
               <span className="text-xs text-gray-600">이메일</span>
             </div>
             <div className="text-center cursor-pointer hover:bg-gray-50 p-2 rounded-lg">
               <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mb-2 mx-auto">
-                <i className="fas fa-window-maximize text-green-600"></i>
+                <Monitor className="h-4 w-4 text-green-600" />
               </div>
               <span className="text-xs text-gray-600">랜딩</span>
             </div>
             <div className="text-center cursor-pointer hover:bg-gray-50 p-2 rounded-lg">
               <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mb-2 mx-auto">
-                <i className="fas fa-share-alt text-purple-600"></i>
+                <Share className="h-4 w-4 text-purple-600" />
               </div>
               <span className="text-xs text-gray-600">소셜</span>
             </div>
             <div className="text-center cursor-pointer hover:bg-gray-50 p-2 rounded-lg">
               <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center mb-2 mx-auto">
-                <i className="fas fa-sms text-orange-600"></i>
+                <MessageSquare className="h-4 w-4 text-orange-600" />
               </div>
               <span className="text-xs text-gray-600">SMS</span>
             </div>

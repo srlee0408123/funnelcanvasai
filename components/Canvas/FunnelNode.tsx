@@ -1,4 +1,5 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/Ui/buttons";
+import { X, AlertTriangle, Check } from "lucide-react";
 
 interface Node {
   id: string;
@@ -8,6 +9,7 @@ interface Node {
     subtitle?: string;
     icon: string;
     color: string;
+    size?: "small" | "medium" | "large";
   };
   position: {
     x: number;
@@ -28,6 +30,7 @@ interface FunnelNodeProps {
   onConnectionStart?: (nodeId: string, e: React.MouseEvent) => void;
   onDelete?: (nodeId: string) => void;
   isReadOnly?: boolean;
+  size?: "small" | "medium" | "large";
 }
 
 export default function FunnelNode({
@@ -43,14 +46,58 @@ export default function FunnelNode({
   onConnectionStart,
   onDelete,
   isReadOnly = false,
+  size = "medium",
 }: FunnelNodeProps) {
+  // 노드 데이터의 size를 우선적으로 사용, 없으면 prop의 size 사용
+  const actualSize = node.data?.size || size;
+  
   // Debug logging for node rendering
   console.log('🔧 FunnelNode rendering:', {
     nodeId: node.id,
     position: node.position,
     title: node.data?.title,
-    isReadOnly
+    isReadOnly,
+    size: actualSize
   });
+
+  // 노드 크기에 따른 스타일 설정
+  const getSizeStyles = () => {
+    switch (actualSize) {
+      case "small":
+        return {
+          container: "p-2",
+          icon: "w-8 h-8 text-sm",
+          title: "text-xs font-medium",
+          subtitle: "text-xs",
+          content: "min-w-[80px] max-w-[120px]",
+          assignee: "text-xs px-1 py-0.5",
+          assigneeAvatar: "w-2 h-2 text-xs"
+        };
+      case "large":
+        return {
+          container: "p-6",
+          icon: "w-16 h-16 text-3xl",
+          title: "text-xl font-semibold",
+          subtitle: "text-base",
+          content: "min-w-[180px] max-w-[280px]",
+          assignee: "text-sm px-3 py-1",
+          assigneeAvatar: "w-4 h-4 text-sm"
+        };
+      default: // medium
+        return {
+          container: "p-4",
+          icon: "w-12 h-12 text-xl",
+          title: "text-base font-medium",
+          subtitle: "text-sm",
+          content: "min-w-[120px] max-w-[200px]",
+          assignee: "text-xs px-2 py-0.5",
+          assigneeAvatar: "w-3 h-3 text-xs"
+        };
+    }
+  };
+
+  const sizeStyles = getSizeStyles();
+
   const getColorStyles = (color: string) => {
     // For hex colors, create dynamic styles
     if (color.startsWith('#')) {
@@ -83,17 +130,17 @@ export default function FunnelNode({
 
     const badges = {
       high: {
-        icon: "fas fa-times",
+        icon: <X className="h-3 w-3" />,
         color: "bg-red-500",
         tooltip: "중요한 개선사항 있음",
       },
       medium: {
-        icon: "fas fa-exclamation",
+        icon: <AlertTriangle className="h-3 w-3" />,
         color: "bg-yellow-500",
         tooltip: "개선 권장사항 있음",
       },
       low: {
-        icon: "fas fa-check",
+        icon: <Check className="h-3 w-3" />,
         color: "bg-green-500",
         tooltip: "잘 설계됨",
       },
@@ -106,7 +153,7 @@ export default function FunnelNode({
         className={`absolute -top-2 -right-2 w-6 h-6 ${badge.color} rounded-full flex items-center justify-center cursor-help`}
         title={badge.tooltip}
       >
-        <i className={`${badge.icon} text-white text-xs`}></i>
+        <div className="text-primary-foreground">{badge.icon}</div>
       </div>
     );
   };
@@ -132,7 +179,7 @@ export default function FunnelNode({
         {displayAssignees.map((assignee: string, index: number) => (
           <div
             key={index}
-            className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-medium cursor-help border-2 border-white shadow-sm"
+            className="w-6 h-6 bg-blue-500 text-primary-foreground rounded-full flex items-center justify-center text-xs font-medium cursor-help border-2 border-white shadow-sm"
             title={`담당자: ${assignee}`}
             style={{ zIndex: displayAssignees.length - index }}
           >
@@ -141,7 +188,7 @@ export default function FunnelNode({
         ))}
         {hasOverflow && (
           <div
-            className="w-6 h-6 bg-gray-500 text-white rounded-full flex items-center justify-center text-xs font-medium cursor-help border-2 border-white shadow-sm"
+            className="w-6 h-6 bg-gray-500 text-primary-foreground rounded-full flex items-center justify-center text-xs font-medium cursor-help border-2 border-white shadow-sm"
             title={`+${assignees.length - 3}명 더`}
           >
             +{assignees.length - 3}
@@ -155,7 +202,7 @@ export default function FunnelNode({
     <div
       data-node
       data-node-id={node.id}
-      className={`absolute bg-white rounded-xl shadow-lg border-2 p-4 transition-all duration-200 select-none group inline-block ${
+      className={`absolute bg-white rounded-xl shadow-lg border-2 transition-all duration-200 select-none group inline-block ${sizeStyles.container} ${
         isDragging 
           ? "cursor-grabbing shadow-2xl scale-105" 
           : isReadOnly 
@@ -178,28 +225,58 @@ export default function FunnelNode({
         border: isReadOnly ? '2px solid red' : undefined,
         backgroundColor: isReadOnly ? 'rgba(255,0,0,0.1)' : undefined
       }}
-      onClick={!isReadOnly ? onClick : undefined}
+      onClick={!isReadOnly ? (e) => {
+        // 삭제 버튼이나 연결점을 클릭한 경우 노드 클릭 이벤트 방지
+        const target = e.target as HTMLElement;
+        if (target.closest('.delete-button') || target.closest('.connection-point')) {
+          return;
+        }
+        onClick?.();
+      } : undefined}
       onDoubleClick={!isReadOnly ? (e) => {
+        // 삭제 버튼이나 연결점을 더블클릭한 경우 노드 더블클릭 이벤트 방지
+        const target = e.target as HTMLElement;
+        if (target.closest('.delete-button') || target.closest('.connection-point')) {
+          return;
+        }
         e.stopPropagation();
         onDoubleClick?.();
       } : undefined}
       onMouseDown={!isReadOnly ? (e) => {
+        // 삭제 버튼이나 연결점을 마우스다운한 경우 드래그 이벤트 방지
+        const target = e.target as HTMLElement;
+        if (target.closest('.delete-button') || target.closest('.connection-point')) {
+          e.stopPropagation();
+          return;
+        }
         e.stopPropagation();
         onMouseDown?.(e);
       } : undefined}
-      onMouseUp={!isReadOnly ? onMouseUp : undefined}
+      onMouseUp={!isReadOnly ? (e) => {
+        // 삭제 버튼을 마우스업한 경우 노드 마우스업 이벤트 방지
+        const target = e.target as HTMLElement;
+        if (target.closest('.delete-button')) {
+          return;
+        }
+        onMouseUp?.();
+      } : undefined}
     >
       <div className="flex items-center space-x-3">
         <div 
-          className="w-12 h-12 rounded-lg flex items-center justify-center border"
+          className={`${sizeStyles.icon} rounded-lg flex items-center justify-center border`}
           style={getColorStyles(node.data.color)}
         >
-          <span className="text-xl">{node.data.icon}</span>
+          <span className={sizeStyles.icon.includes('text-') ? '' : 'text-xl'}>{node.data.icon}</span>
         </div>
-        <div className="ml-3" style={{ minWidth: '120px', maxWidth: '200px' }}>
-          <h4 className="font-medium text-gray-900 text-base leading-tight break-words">
+        <div className={`ml-3 ${sizeStyles.content}`}>
+          <h4 className={`text-gray-900 leading-tight break-words ${sizeStyles.title}`}>
             {node.data.title}
           </h4>
+          {node.data.subtitle && (
+            <p className={`text-gray-500 mt-1 leading-tight break-words ${sizeStyles.subtitle}`}>
+              {node.data.subtitle}
+            </p>
+          )}
           
           {/* Assignees - inline display */}
           {(node.data as any).assignees && (node.data as any).assignees.length > 0 && (
@@ -207,16 +284,16 @@ export default function FunnelNode({
               {(node.data as any).assignees.slice(0, 2).map((assignee: string, index: number) => (
                 <div
                   key={index}
-                  className="inline-flex items-center space-x-1 bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs"
+                  className={`inline-flex items-center space-x-1 bg-blue-100 text-blue-800 rounded ${sizeStyles.assignee}`}
                 >
-                  <div className="w-3 h-3 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-medium">
+                  <div className={`${sizeStyles.assigneeAvatar} bg-blue-500 text-primary-foreground rounded-full flex items-center justify-center font-medium`}>
                     {assignee.charAt(0).toUpperCase()}
                   </div>
                   <span className="truncate max-w-[60px]">{assignee}</span>
                 </div>
               ))}
               {(node.data as any).assignees.length > 2 && (
-                <div className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
+                <div className={`inline-flex items-center rounded bg-gray-100 text-gray-600 ${sizeStyles.assignee}`}>
                   +{(node.data as any).assignees.length - 2}
                 </div>
               )}
@@ -226,18 +303,55 @@ export default function FunnelNode({
       </div>
 
       {/* Delete button - appears on hover */}
-      <div 
-        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-lg z-30"
-        onClick={(e) => {
-          e.stopPropagation();
-          if (onDelete) {
-            onDelete(node.id);
-          }
-        }}
-        title="노드 삭제"
-      >
-        <i className="fas fa-times text-white text-xs"></i>
-      </div>
+      {!isReadOnly && (
+        <div 
+          className="delete-button absolute -top-2 -right-2 w-8 h-8 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-lg z-50 hover:scale-110"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('🗑️ Delete button clicked for node:', node.id);
+            if (onDelete) {
+              onDelete(node.id);
+            }
+          }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('🗑️ Delete button mouse down for node:', node.id);
+          }}
+          onMouseUp={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onMouseEnter={(e) => {
+            e.stopPropagation();
+            // Force show delete button and change cursor
+            const element = e.currentTarget as HTMLElement;
+            element.style.opacity = '1';
+            element.style.cursor = 'pointer';
+            // Also change the node cursor to default when hovering over delete button
+            const nodeElement = element.closest('[data-node]') as HTMLElement;
+            if (nodeElement) {
+              nodeElement.style.cursor = 'default';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.stopPropagation();
+            // Restore node cursor when leaving delete button
+            const nodeElement = (e.currentTarget as HTMLElement).closest('[data-node]') as HTMLElement;
+            if (nodeElement && !isDragging) {
+              nodeElement.style.cursor = 'grab';
+            }
+          }}
+          title="노드 삭제"
+          style={{ 
+            pointerEvents: 'all',
+            cursor: 'pointer'
+          }}
+        >
+          <X className="h-4 w-4 text-white" />
+        </div>
+      )}
 
 
       
@@ -245,7 +359,7 @@ export default function FunnelNode({
       
       {/* Connection points - Enhanced visibility and animation with larger hit area */}
       <div 
-        className="absolute -right-3 top-1/2 transform -translate-y-1/2 cursor-crosshair z-50"
+        className="connection-point absolute -right-3 top-1/2 transform -translate-y-1/2 cursor-crosshair z-50"
         onMouseDown={(e) => {
           e.stopPropagation();
           if (onConnectionStart) {
@@ -273,7 +387,7 @@ export default function FunnelNode({
 
       {/* Extended right edge connection area for easier access */}
       <div 
-        className="absolute right-0 top-0 w-4 h-full cursor-crosshair z-40 bg-transparent hover:bg-blue-100/20 transition-colors"
+        className="connection-point absolute right-0 top-0 w-4 h-full cursor-crosshair z-40 bg-transparent hover:bg-blue-100/20 transition-colors"
         onMouseDown={(e) => {
           e.stopPropagation();
           if (onConnectionStart) {
@@ -285,7 +399,7 @@ export default function FunnelNode({
       
       {/* Input connection point */}
       <div 
-        className={`
+        className={`connection-point
           absolute -left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 rounded-full border-2 border-white shadow-lg transition-all duration-300
           ${isConnectable 
             ? "bg-green-400 opacity-100 scale-110 ring-2 ring-green-200" 

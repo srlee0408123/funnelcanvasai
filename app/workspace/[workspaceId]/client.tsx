@@ -1,0 +1,296 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useUser, UserButton } from "@clerk/nextjs";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/Ui/layout";
+import { Button } from "@/components/Ui/buttons";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/Ui/data-display";
+import { Input, Label } from "@/components/Ui/form-controls";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient } from "@/lib/queryClient";
+import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
+import { Share, ArrowLeft, FileText } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+
+interface WorkspaceClientProps {
+  workspaceId: string;
+  userId: string;
+}
+
+export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClientProps) {
+  const { user } = useUser();
+  const router = useRouter();
+  const { toast } = useToast();
+  const [newCanvasTitle, setNewCanvasTitle] = useState("");
+  const [showCanvasDialog, setShowCanvasDialog] = useState(false);
+  const [shareCanvas, setShareCanvas] = useState<any>(null);
+
+  // Fetch workspace details
+  const { data: workspace, isLoading: workspaceLoading } = useQuery({
+    queryKey: ["workspace", workspaceId],
+    queryFn: async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('workspaces')
+        .select('*')
+        .eq('id', workspaceId)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!workspaceId,
+  });
+
+  // Fetch canvases for this workspace
+  const { data: canvases = [], isLoading: canvasesLoading } = useQuery({
+    queryKey: ["canvases", workspaceId],
+    queryFn: async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('canvases')
+        .select('*')
+        .eq('workspace_id', workspaceId)
+        .order('updated_at', { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!workspaceId,
+  });
+
+  // Setup realtime subscription for canvases
+  useEffect(() => {
+    if (!workspaceId) return;
+
+    const supabase = createClient();
+    console.log('Setting up canvas realtime subscription for workspace:', workspaceId);
+    
+    const canvasChannel = supabase
+      .channel('workspace-canvases')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'canvases',
+          filter: `workspace_id=eq.${workspaceId}`
+        },
+        (payload) => {
+          console.log('Canvas change received:', payload);
+          queryClient.invalidateQueries({ queryKey: ["canvases", workspaceId] });
+        }
+      )
+      .subscribe((status) => {
+        console.log('Canvas subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to canvas changes');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Failed to subscribe to canvas changes');
+        } else if (status === 'TIMED_OUT') {
+          console.error('Canvas subscription timed out');
+        } else if (status === 'CLOSED') {
+          console.log('Canvas channel closed');
+        }
+      });
+
+    return () => {
+      console.log('Cleaning up canvas subscription');
+      supabase.removeChannel(canvasChannel);
+    };
+  }, [workspaceId]);
+
+  // Create canvas mutation
+  const createCanvasMutation = useMutation({
+    mutationFn: async (title: string) => {
+      const response = await fetch('/api/canvases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, workspace_id: workspaceId }),
+      });
+      if (!response.ok) throw new Error('Failed to create canvas');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["canvases", workspaceId] });
+      setShowCanvasDialog(false);
+      setNewCanvasTitle("");
+      toast({ title: "캔버스가 생성되었습니다." });
+    },
+    onError: () => {
+      toast({ 
+        title: "오류", 
+        description: "캔버스 생성에 실패했습니다.", 
+        variant: "destructive" 
+      });
+    },
+  });
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-6">
+            <div className="flex items-center space-x-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push('/dashboard')}
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </Button>
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">{workspace?.name || 'Loading...'}</h1>
+                <p className="text-sm text-gray-600">Workspace Canvases</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-gray-600">
+                {user.emailAddresses[0]?.emailAddress}
+              </span>
+              <UserButton afterSignOutUrl="/" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-6 flex justify-between items-center">
+          <h2 className="text-2xl font-bold text-gray-900">Canvases</h2>
+          <Dialog open={showCanvasDialog} onOpenChange={setShowCanvasDialog}>
+            <DialogTrigger asChild>
+              <Button>
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New Canvas
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create New Canvas</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="title">Canvas Title</Label>
+                  <Input
+                    id="title"
+                    value={newCanvasTitle}
+                    onChange={(e) => setNewCanvasTitle(e.target.value)}
+                    placeholder="e.g., Q1 Marketing Funnel"
+                  />
+                </div>
+                <Button 
+                  onClick={() => createCanvasMutation.mutate(newCanvasTitle)}
+                  disabled={!newCanvasTitle || createCanvasMutation.isPending}
+                  className="w-full"
+                >
+                  {createCanvasMutation.isPending ? "Creating..." : "Create Canvas"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {canvasesLoading || workspaceLoading ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          </div>
+        ) : canvases.length === 0 ? (
+          <Card className="p-12 text-center">
+            <div className="text-gray-400 mb-4">
+              <FileText className="w-16 h-16 mx-auto" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              No canvases yet
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Create your first canvas to start building funnels
+            </p>
+            <Button variant="secondary" onClick={() => setShowCanvasDialog(true)}>
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Create First Canvas
+            </Button>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {canvases.map((canvas) => (
+              <Card key={canvas.id} className="hover:shadow-lg transition-shadow">
+                <CardHeader>
+                  <div className="flex justify-between items-start">
+                    <CardTitle className="text-lg">{canvas.title}</CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setShareCanvas(canvas);
+                      }}
+                    >
+                      <Share className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-sm text-gray-600 mb-4">
+                    <div className="flex items-center mb-1">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      {new Date(canvas.created_at).toLocaleDateString()}
+                    </div>
+                    <div className="flex items-center">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {new Date(canvas.updated_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <Link href={`/canvas/${canvas.id}`}>
+                    <Button variant="secondary" className="w-full">
+                      Open Canvas
+                      <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Share Modal */}
+      {shareCanvas && (
+        <CanvasShareModal
+          canvasId={shareCanvas.id}
+          canvasTitle={shareCanvas.title}
+          isOpen={!!shareCanvas}
+          onClose={() => setShareCanvas(null)}
+        />
+      )}
+    </div>
+  );
+}

@@ -1,11 +1,13 @@
 import ReadOnlyCanvasClient from "./client";
 
 interface SharePageProps {
-  params: {
+  params: Promise<{
     canvasId: string;
-  };
+  }>;
 }
 
-export default function SharePage({ params }: SharePageProps) {
-  return <ReadOnlyCanvasClient canvasId={params.canvasId} />;
+export default async function SharePage({ params }: SharePageProps) {
+  const { canvasId } = await params;
+  
+  return <ReadOnlyCanvasClient canvasId={canvasId} />;
 }

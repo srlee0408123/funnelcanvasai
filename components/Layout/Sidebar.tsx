@@ -1,9 +1,28 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/Ui/buttons";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import { 
+  FileText, 
+  Link2, 
+  File, 
+  Brain, 
+  X, 
+  Save, 
+  Copy, 
+  Trash2, 
+  ChevronLeft, 
+  Users, 
+  Upload, 
+  Plus,
+  Play,
+  Circle,
+  Square,
+  Triangle,
+  Hexagon
+} from "lucide-react";
 
 import type { Asset } from "@shared/schema";
 
@@ -28,6 +47,7 @@ interface SidebarProps {
   onOpenUploadModal: (type: "pdf" | "youtube" | "url") => void;
   onOpenTemplateModal: () => void;
   onOpenMembersModal?: () => void;
+  onAddNode?: (nodeType: string) => void;
   assets: Asset[];
   workspaceId: string;
   workspaceName?: string;
@@ -42,6 +62,7 @@ export default function Sidebar({
   onOpenUploadModal,
   onOpenTemplateModal,
   onOpenMembersModal,
+  onAddNode,
   assets,
   workspaceId,
   workspaceName,
@@ -89,15 +110,15 @@ export default function Sidebar({
   const getAssetIcon = (type: string) => {
     switch (type) {
       case "pdf":
-        return "fas fa-file-pdf text-red-500";
+        return <FileText className="h-4 w-4 text-red-500" />;
       case "youtube":
-        return "fab fa-youtube text-red-600";
+        return <Play className="h-4 w-4 text-red-600" />;
       case "url":
-        return "fas fa-link text-blue-500";
+        return <Link2 className="h-4 w-4 text-blue-500" />;
       case "text":
-        return "fas fa-file-alt text-green-500";
+        return <FileText className="h-4 w-4 text-green-500" />;
       default:
-        return "fas fa-file text-gray-500";
+        return <File className="h-4 w-4 text-gray-500" />;
     }
   };
 
@@ -137,9 +158,9 @@ export default function Sidebar({
         <div className="p-4">
           <button
             onClick={onToggleCollapse}
-            className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center"
+            className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center"
           >
-            <i className="fas fa-brain text-white text-sm"></i>
+            <Brain className="h-4 w-4 text-primary-foreground" />
           </button>
         </div>
       </div>
@@ -158,15 +179,15 @@ export default function Sidebar({
                 <i className={selectedNode.data.icon + " text-sm"}></i>
               </div>
               <div>
-                <h1 className="font-semibold text-gray-900">{selectedNode.data.title}</h1>
-                <p className="text-xs text-gray-500">노드 세부 설정</p>
+                <h1 className="font-semibold text-foreground">{selectedNode.data.title}</h1>
+                <p className="text-xs text-muted-foreground">노드 세부 설정</p>
               </div>
             </div>
             <button 
               onClick={onCloseNodeDetails}
               className="p-1 rounded-md hover:bg-gray-100 transition-colors"
             >
-              <i className="fas fa-times text-gray-400 text-sm"></i>
+              <X className="h-4 w-4 text-gray-400" />
             </button>
           </div>
         </div>
@@ -176,7 +197,7 @@ export default function Sidebar({
           <div className="space-y-4">
             {/* Basic Info */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">노드 제목</label>
+              <label className="block text-sm font-medium text-foreground mb-2">노드 제목</label>
               <input 
                 type="text" 
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -185,7 +206,7 @@ export default function Sidebar({
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">설명</label>
+              <label className="block text-sm font-medium text-foreground mb-2">설명</label>
               <textarea 
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent h-20"
                 defaultValue={selectedNode.data.subtitle || ""}
@@ -195,8 +216,8 @@ export default function Sidebar({
 
             {/* Position Info */}
             <div className="bg-gray-50 p-3 rounded-lg">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">위치 정보</h4>
-              <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
+              <h4 className="text-sm font-medium text-foreground mb-2">위치 정보</h4>
+              <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
                 <div>X: {Math.round(selectedNode.position.x)}</div>
                 <div>Y: {Math.round(selectedNode.position.y)}</div>
               </div>
@@ -204,22 +225,22 @@ export default function Sidebar({
 
             {/* Node Type Info */}
             <div className="bg-gray-50 p-3 rounded-lg">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">노드 타입</h4>
-              <div className="text-sm text-gray-600">{selectedNode.type}</div>
+              <h4 className="text-sm font-medium text-foreground mb-2">노드 타입</h4>
+              <div className="text-sm text-muted-foreground">{selectedNode.type}</div>
             </div>
 
             {/* Action Buttons */}
             <div className="pt-4 space-y-2">
               <Button className="w-full" variant="outline">
-                <i className="fas fa-save mr-2"></i>
+                <Save className="h-4 w-4 mr-2" />
                 변경사항 저장
               </Button>
               <Button className="w-full" variant="outline">
-                <i className="fas fa-copy mr-2"></i>
+                <Copy className="h-4 w-4 mr-2" />
                 노드 복사
               </Button>
               <Button className="w-full" variant="destructive">
-                <i className="fas fa-trash mr-2"></i>
+                <Trash2 className="h-4 w-4 mr-2" />
                 노드 삭제
               </Button>
             </div>
@@ -235,53 +256,53 @@ export default function Sidebar({
       <div className="p-4 border-b border-gray-100">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-              <i className="fas fa-brain text-white text-sm"></i>
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <Brain className="h-4 w-4 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="font-semibold text-gray-900">두더지 AI</h1>
-              <p className="text-xs text-gray-500">Creator Canvas</p>
+              <h1 className="font-semibold text-foreground">두더지 AI</h1>
+              <p className="text-xs text-muted-foreground">Creator Canvas</p>
             </div>
           </div>
           <button
             onClick={onToggleCollapse}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-muted-foreground hover:text-foreground transition-colors"
           >
-            <i className="fas fa-chevron-left text-sm"></i>
+            <ChevronLeft className="h-4 w-4" />
           </button>
         </div>
       </div>
       {/* Upload Section */}
       <div className="p-4 border-b border-gray-100">
-        <h3 className="font-medium text-gray-900 mb-3">지식 업로드</h3>
+        <h3 className="font-medium text-foreground mb-3">지식 업로드</h3>
         <div className="space-y-2">
           <button
             onClick={() => onOpenUploadModal("pdf")}
-            className="w-full p-3 border-2 border-dashed border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors text-left"
+            className="w-full p-3 border-2 border-dashed border-border rounded-lg hover:border-primary hover:bg-accent transition-colors text-left"
           >
             <div className="flex items-center space-x-3">
-              <i className="fas fa-file-pdf text-red-500"></i>
-              <span className="text-sm text-gray-600">PDF 문서 업로드</span>
+              <FileText className="h-4 w-4 text-red-500" />
+              <span className="text-sm text-muted-foreground">PDF 문서 업로드</span>
             </div>
           </button>
           
           <button
             onClick={() => onOpenUploadModal("youtube")}
-            className="w-full p-3 border-2 border-dashed border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors text-left"
+            className="w-full p-3 border-2 border-dashed border-border rounded-lg hover:border-primary hover:bg-accent transition-colors text-left"
           >
             <div className="flex items-center space-x-3">
-              <i className="fab fa-youtube text-red-600"></i>
-              <span className="text-sm text-gray-600">유튜브 영상 링크</span>
+              <Play className="h-4 w-4 text-red-600" />
+              <span className="text-sm text-muted-foreground">유튜브 영상 링크</span>
             </div>
           </button>
           
           <button
             onClick={() => onOpenUploadModal("url")}
-            className="w-full p-3 border-2 border-dashed border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors text-left"
+            className="w-full p-3 border-2 border-dashed border-border rounded-lg hover:border-primary hover:bg-accent transition-colors text-left"
           >
             <div className="flex items-center space-x-3">
-              <i className="fas fa-link text-blue-500"></i>
-              <span className="text-sm text-gray-600">웹사이트 URL</span>
+              <Link2 className="h-4 w-4 text-blue-500" />
+              <span className="text-sm text-muted-foreground">웹사이트 URL</span>
             </div>
           </button>
         </div>
@@ -289,23 +310,26 @@ export default function Sidebar({
       {/* Workspace Management */}
       {onOpenMembersModal && (
         <div className="p-4 border-b border-gray-100">
-          <h3 className="font-medium text-gray-900 mb-3">워크스페이스 관리</h3>
+          <h3 className="font-medium text-foreground mb-3">워크스페이스 관리</h3>
           <button
             onClick={onOpenMembersModal}
-            className="w-full p-3 border-2 border-dashed border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors text-left"
+            className="w-full p-3 border-2 border-dashed border-border rounded-lg hover:border-primary hover:bg-accent transition-colors text-left"
           >
             <div className="flex items-center space-x-3">
-              <i className="fas fa-users text-orange-500"></i>
-              <span className="text-sm text-gray-600">멤버 관리</span>
+              <Users className="h-4 w-4 text-orange-500" />
+              <span className="text-sm text-muted-foreground">멤버 관리</span>
             </div>
           </button>
         </div>
       )}
+
+
+
       {/* Assets List */}
       <div className="flex-1 p-4 overflow-y-auto">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-medium text-gray-900">업로드된 자료</h3>
-          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+          <h3 className="font-medium text-foreground">업로드된 자료</h3>
+          <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">
             {assets.length}개
           </span>
         </div>
@@ -313,9 +337,9 @@ export default function Sidebar({
         {assets.length === 0 ? (
           <div className="text-center py-8">
             <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-              <i className="fas fa-upload text-gray-400"></i>
+              <Upload className="h-4 w-4 text-gray-400" />
             </div>
-            <p className="text-sm text-gray-500">업로드된 자료가 없습니다</p>
+            <p className="text-sm text-muted-foreground">업로드된 자료가 없습니다</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -325,12 +349,12 @@ export default function Sidebar({
                 className="group p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-gray-100 transition-colors"
               >
                 <div className="flex items-start space-x-3">
-                  <i className={`${getAssetIcon(asset.type)} mt-1`}></i>
+                  <div className="mt-1">{getAssetIcon(asset.type)}</div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
+                    <p className="text-sm font-medium text-foreground truncate">
                       {asset.title}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       {asset.status === "completed" && "처리 완료"}
                       {asset.status === "processing" && "처리 중"}
                       {asset.status === "failed" && "처리 실패"}
@@ -350,7 +374,7 @@ export default function Sidebar({
                       disabled={deleteAssetMutation.isPending}
                       title="자료 삭제"
                     >
-                      <i className="fas fa-trash text-xs"></i>
+                      <Trash2 className="h-3 w-3" />
                     </button>
                   </div>
                 </div>
@@ -365,7 +389,7 @@ export default function Sidebar({
           onClick={onOpenTemplateModal}
           className="w-full"
         >
-          <i className="fas fa-plus mr-2"></i>
+          <Plus className="h-4 w-4 mr-2" />
           템플릿 불러오기
         </Button>
       </div>

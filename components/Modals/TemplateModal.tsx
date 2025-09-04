@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/Ui/data-display";
+import { Button, Badge } from "@/components/Ui/buttons";
+import { Input } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
@@ -231,27 +230,27 @@ export default function TemplateModal({
         <div className="flex-1 overflow-y-auto pr-2">
           {templatesLoading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-4 min-h-0">
               {displayTemplates.map((template) => (
                 <div
                   key={template.id}
-                  className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                                      className={`border rounded-lg p-4 cursor-pointer transition-colors ${
                     selectedTemplate === template.id
-                      ? "border-primary-500 bg-primary-50"
-                      : "border-gray-200 hover:border-primary-300"
+                      ? "border-primary bg-accent"
+                      : "border-border hover:border-primary"
                   }`}
                   onClick={() => setSelectedTemplate(template.id)}
                 >
                   <div className="flex items-start space-x-3">
-                    <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <div className="w-12 h-12 bg-accent rounded-lg flex items-center justify-center flex-shrink-0">
                       <i className={getTemplateIcon(template.preview?.category || "general")}></i>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-medium text-gray-900 mb-1">{template.title}</h4>
-                      <p className="text-sm text-gray-500 mb-3">
+                      <h4 className="font-medium text-foreground mb-1">{template.title}</h4>
+                      <p className="text-sm text-muted-foreground mb-3">
                         {template.preview?.nodeCount}개 노드로 구성된 퍼널 템플릿
                       </p>
                       <div className="flex flex-wrap gap-2">

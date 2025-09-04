@@ -10,7 +10,29 @@ export interface ProcessingJob {
   content?: string;
 }
 
+/**
+ * AssetProcessor - 다양한 형태의 자산 처리 및 텍스트 추출 서비스
+ * 
+ * 주요 역할:
+ * 1. PDF 문서의 고품질 OCR 처리 (GraphicsMagick/ImageMagick + Vision API)
+ * 2. YouTube 비디오 트랜스크립트 추출 및 처리
+ * 3. 웹 URL 콘텐츠 크롤링 및 텍스트 추출
+ * 
+ * 핵심 특징:
+ * - Vision API 기반 고정밀 PDF OCR (한글 지원 강화)
+ * - 청크 단위 텍스트 분할 및 임베딩 생성
+ * - 비동기 처리로 대용량 파일 안정적 처리
+ * 
+ * 주의사항:
+ * - GraphicsMagick 또는 ImageMagick 시스템 설치 필요
+ * - OpenAI Vision API 사용량 제한 고려
+ * - 임시 파일 정리 로직 포함
+ */
 export class AssetProcessor {
+  /**
+   * PDF 파일을 고품질 이미지로 변환 후 Vision API로 OCR 처리
+   * GraphicsMagick/ImageMagick을 사용하여 300DPI 고해상도 변환
+   */
   async processPDFWithVision(pdfBuffer: Buffer, filename: string): Promise<{success: boolean, content?: string, error?: string}> {
     try {
       console.log(`Starting enhanced PDF Vision processing for ${filename}, size: ${pdfBuffer.length} bytes`);

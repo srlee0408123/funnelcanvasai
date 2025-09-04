@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/Ui/buttons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useState, useRef, useEffect } from "react";
@@ -59,7 +59,7 @@ function AssigneeInput({ currentAssignees, onAssigneesChange }: AssigneeInputPro
             key={index}
             className="inline-flex items-center space-x-1 bg-blue-100 text-blue-800 px-2 py-1 rounded-md text-sm"
           >
-            <div className="w-4 h-4 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-medium">
+            <div className="w-4 h-4 bg-blue-500 text-primary-foreground rounded-full flex items-center justify-center text-xs font-medium">
               {getInitials(assignee)}
             </div>
             <span>{assignee}</span>
@@ -194,7 +194,7 @@ export default function RightPanel({ nodeId, canvasId, onClose }: RightPanelProp
           </div>
           <button 
             onClick={() => refetch()}
-            className="mt-3 px-3 py-1 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700"
+            className="mt-3 px-3 py-1 bg-yellow-600 text-primary-foreground text-sm rounded hover:bg-yellow-700"
           >
             다시 로드
           </button>

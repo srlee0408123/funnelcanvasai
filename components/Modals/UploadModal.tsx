@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/Ui/data-display";
+import { Button } from "@/components/Ui/buttons";
+import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
@@ -63,7 +62,10 @@ export default function UploadModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/workspaces", workspaceId, "assets"] });
-      toast({ title: "자료가 업로드되어 처리되었습니다." });
+      toast({ 
+        title: "업로드 완료", 
+        description: "자료가 성공적으로 업로드되어 처리되었습니다." 
+      });
       onOpenChange(false);
       resetForm();
     },
@@ -178,11 +180,11 @@ export default function UploadModal({
         </DialogHeader>
         
         <div className="space-y-4">
-          <p className="text-sm text-gray-500">{getDescription()}</p>
+          <p className="text-sm text-muted-foreground">{getDescription()}</p>
 
           {/* Title Input */}
           <div>
-            <Label htmlFor="title" className="text-sm font-medium text-gray-700">
+            <Label htmlFor="title" className="text-sm font-medium text-foreground">
               제목
             </Label>
             <Input
@@ -197,18 +199,18 @@ export default function UploadModal({
           {/* PDF Upload */}
           {uploadType === "pdf" && (
             <div>
-              <Label className="text-sm font-medium text-gray-700">PDF 파일</Label>
-              <div className="mt-1 border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary-400 transition-colors">
+              <Label className="text-sm font-medium text-foreground">PDF 파일</Label>
+              <div className="mt-1 border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-colors">
                 {selectedFile ? (
                   <div>
                     <i className="fas fa-file-pdf text-red-500 text-2xl mb-2"></i>
-                    <p className="text-sm font-medium text-gray-900">{selectedFile.name}</p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
+                    <p className="text-xs text-muted-foreground">
                       {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
                     </p>
                     <button
                       onClick={() => setSelectedFile(null)}
-                      className="text-xs text-primary-600 hover:text-primary-700 mt-1"
+                      className="text-xs text-primary hover:text-primary/80 mt-1"
                     >
                       다른 파일 선택
                     </button>
@@ -216,8 +218,8 @@ export default function UploadModal({
                 ) : (
                   <div>
                     <i className="fas fa-cloud-upload-alt text-gray-400 text-2xl mb-2"></i>
-                    <p className="text-gray-600 mb-2">PDF 파일을 드래그하거나 클릭하여 업로드</p>
-                    <p className="text-xs text-gray-500 mb-3">최대 10MB</p>
+                    <p className="text-muted-foreground mb-2">PDF 파일을 드래그하거나 클릭하여 업로드</p>
+                    <p className="text-xs text-muted-foreground mb-3">최대 10MB</p>
                     <input
                       type="file"
                       accept=".pdf"
@@ -241,7 +243,7 @@ export default function UploadModal({
           {/* YouTube URL */}
           {uploadType === "youtube" && (
             <div>
-              <Label htmlFor="youtube-url" className="text-sm font-medium text-gray-700">
+              <Label htmlFor="youtube-url" className="text-sm font-medium text-foreground">
                 유튜브 URL
               </Label>
               <Input
@@ -249,7 +251,7 @@ export default function UploadModal({
                 type="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://www.youtube.com/watch?v=..."
+                placeholder="https://www.youtube.com/watch?v=... 또는 https://youtu.be/..."
                 className="mt-1"
               />
               {url && !isValidYouTubeUrl(url) && (
@@ -261,7 +263,7 @@ export default function UploadModal({
           {/* Website URL */}
           {uploadType === "url" && (
             <div>
-              <Label htmlFor="website-url" className="text-sm font-medium text-gray-700">
+              <Label htmlFor="website-url" className="text-sm font-medium text-foreground">
                 웹사이트 URL
               </Label>
               <Input
@@ -283,6 +285,7 @@ export default function UploadModal({
           <Button 
             variant="outline" 
             onClick={() => onOpenChange(false)}
+            disabled={uploadMutation.isPending}
             className="flex-1"
           >
             취소
@@ -292,7 +295,14 @@ export default function UploadModal({
             disabled={!canSubmit() || uploadMutation.isPending}
             className="flex-1"
           >
-            {uploadMutation.isPending ? "업로드 중..." : "업로드"}
+            {uploadMutation.isPending ? (
+              <div className="flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <span>처리 중...</span>
+              </div>
+            ) : (
+              "업로드"
+            )}
           </Button>
         </div>
       </DialogContent>
