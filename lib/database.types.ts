@@ -27,6 +27,153 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      text_memos: {
+        Row: {
+          id: string
+          canvas_id: string
+          content: string
+          position: Json
+          size: Json | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          content: string
+          position: Json
+          size?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          content?: string
+          position?: Json
+          size?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          id: string
+          email: string
+          name: string | null
+          avatar_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          email: string
+          name?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          name?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      workspace_members: {
+        Row: {
+          id: string
+          workspace_id: string
+          user_id: string
+          role: 'owner' | 'admin' | 'member'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          user_id: string
+          role: 'owner' | 'admin' | 'member'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          user_id?: string
+          role?: 'owner' | 'admin' | 'member'
+          created_at?: string
+        }
+        Relationships: []
+      }
+      canvas_states: {
+        Row: {
+          id: string
+          canvas_id: string
+          version: number
+          flow_json: Json
+          flow_hash: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          version: number
+          flow_json: Json
+          flow_hash?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          version?: number
+          flow_json?: Json
+          flow_hash?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      canvas_knowledge: {
+        Row: {
+          id: string
+          canvas_id: string
+          type: 'pdf' | 'youtube' | 'url' | 'text'
+          title: string
+          content: string | null
+          metadata: Json | null
+          embedding: unknown | null
+          extracted_text?: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          type: 'pdf' | 'youtube' | 'url' | 'text'
+          title: string
+          content?: string | null
+          metadata?: Json | null
+          embedding?: unknown | null
+          extracted_text?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          type?: 'pdf' | 'youtube' | 'url' | 'text'
+          title?: string
+          content?: string | null
+          metadata?: Json | null
+          embedding?: unknown | null
+          extracted_text?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       canvases: {
         Row: {
           id: string
@@ -67,6 +214,34 @@ export interface Database {
           nodes?: Json | null
           edges?: Json | null
         }
+        Relationships: []
+      }
+      chat_messages: {
+        Row: {
+          id: string
+          canvas_id: string
+          user_id: string
+          role: 'user' | 'assistant'
+          content: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          user_id: string
+          role: 'user' | 'assistant'
+          content: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          user_id?: string
+          role?: 'user' | 'assistant'
+          content?: string
+          created_at?: string
+        }
+        Relationships: []
       }
       canvas_chat_messages: {
         Row: {
@@ -93,6 +268,7 @@ export interface Database {
           role?: 'user' | 'assistant'
           created_at?: string
         }
+        Relationships: []
       }
       canvas_text_memos: {
         Row: {
@@ -131,6 +307,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       canvas_nodes: {
         Row: {
@@ -140,6 +317,8 @@ export interface Database {
           type: string
           data: Json
           position: Json
+          metadata: Json | null
+          created_by: string
           created_at: string
           updated_at: string
         }
@@ -150,6 +329,8 @@ export interface Database {
           type: string
           data: Json
           position: Json
+          metadata?: Json | null
+          created_by: string
           created_at?: string
           updated_at?: string
         }
@@ -160,19 +341,24 @@ export interface Database {
           type?: string
           data?: Json
           position?: Json
+          metadata?: Json | null
+          created_by?: string
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       canvas_edges: {
         Row: {
           id: string
           canvas_id: string
           edge_id: string
-          source: string
-          target: string
+          source_node_id: string
+          target_node_id: string
           type: string | null
           data: Json | null
+          metadata: Json | null
+          created_by: string
           created_at: string
           updated_at: string
         }
@@ -180,10 +366,12 @@ export interface Database {
           id?: string
           canvas_id: string
           edge_id: string
-          source: string
-          target: string
+          source_node_id: string
+          target_node_id: string
           type?: string | null
           data?: Json | null
+          metadata?: Json | null
+          created_by: string
           created_at?: string
           updated_at?: string
         }
@@ -191,13 +379,16 @@ export interface Database {
           id?: string
           canvas_id?: string
           edge_id?: string
-          source?: string
-          target?: string
+          source_node_id?: string
+          target_node_id?: string
           type?: string | null
           data?: Json | null
+          metadata?: Json | null
+          created_by?: string
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       canvas_todos: {
         Row: {
@@ -239,6 +430,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
       }
       workspaces: {
         Row: {
@@ -265,6 +457,169 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+        Relationships: []
+      }
+      assets: {
+        Row: {
+          id: string
+          workspace_id: string
+          canvas_id: string
+          type: string
+          url: string | null
+          file_ref: string | null
+          content_sha256: string | null
+          title: string
+          meta_json: Json | null
+          status: 'pending' | 'processing' | 'completed' | 'failed'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          canvas_id: string
+          type: string
+          url?: string | null
+          file_ref?: string | null
+          content_sha256?: string | null
+          title: string
+          meta_json?: Json | null
+          status?: 'pending' | 'processing' | 'completed' | 'failed'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          canvas_id?: string
+          type?: string
+          url?: string | null
+          file_ref?: string | null
+          content_sha256?: string | null
+          title?: string
+          meta_json?: Json | null
+          status?: 'pending' | 'processing' | 'completed' | 'failed'
+          created_at?: string
+        }
+        Relationships: []
+      }
+      asset_chunks: {
+        Row: {
+          id: string
+          asset_id: string
+          seq: number
+          text: string
+          embedding: string | null
+          tokens: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          asset_id: string
+          seq: number
+          text: string
+          embedding?: string | null
+          tokens?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          asset_id?: string
+          seq?: number
+          text?: string
+          embedding?: string | null
+          tokens?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      feedback_runs: {
+        Row: {
+          id: string
+          canvas_id: string
+          state_version: number | null
+          flow_hash: string | null
+          kb_hash: string | null
+          prompt_version: string | null
+          bp_version: string | null
+          model: string | null
+          latency_ms: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          state_version?: number | null
+          flow_hash?: string | null
+          kb_hash?: string | null
+          prompt_version?: string | null
+          bp_version?: string | null
+          model?: string | null
+          latency_ms?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          state_version?: number | null
+          flow_hash?: string | null
+          kb_hash?: string | null
+          prompt_version?: string | null
+          bp_version?: string | null
+          model?: string | null
+          latency_ms?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      feedback_items: {
+        Row: {
+          id: string
+          run_id: string
+          node_id: string | null
+          severity: string
+          suggestion: string
+          rationale: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          run_id: string
+          node_id?: string | null
+          severity: string
+          suggestion: string
+          rationale?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          run_id?: string
+          node_id?: string | null
+          severity?: string
+          suggestion?: string
+          rationale?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      global_ai_knowledge: {
+        Row: {
+          id: string
+          title: string
+          content: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          title: string
+          content: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          content?: string
+          created_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {

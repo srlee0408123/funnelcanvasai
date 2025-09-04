@@ -33,7 +33,7 @@ export async function POST() {
     const supabase = createServiceClient();
     
     // First, upsert the user profile
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await (supabase as any)
       .from('profiles')
       .upsert({
         id: userId,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
+import { withAuthorization } from '@/lib/auth/withAuthorization';
 
 /**
  * edges/route.ts - Canvas edges (connections) management
@@ -21,11 +21,7 @@ import { createClient } from '@/lib/supabase/server';
  * - 메타데이터는 유효한 JSON 형태여야 함
  */
 
-interface RouteParams {
-  params: Promise<{
-    canvasId: string;
-  }>;
-}
+// params는 withAuthorization에서 처리됨
 
 interface EdgeData {
   edge_id: string;
@@ -37,42 +33,14 @@ interface EdgeData {
 }
 
 // GET: 캔버스의 모든 엣지 조회
-export async function GET(request: NextRequest, { params }: RouteParams) {
+const getEdges = async (
+  request: NextRequest,
+  { params }: { params: any }
+) => {
   try {
-    const { userId } = await auth();
     const { canvasId } = await params;
-    const supabase = await createClient();
+    const supabase = createServiceClient();
 
-    // 캔버스 접근 권한 확인
-    const { data: canvas, error: canvasError } = await supabase
-      .from('canvases')
-      .select('*')
-      .eq('id', canvasId)
-      .single();
-
-    if (canvasError || !canvas) {
-      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
-    }
-
-    // 공개 캔버스가 아닌 경우 권한 확인
-    if (!canvas.is_public) {
-      if (!userId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-
-      const { data: member } = await supabase
-        .from('workspace_members')
-        .select('*')
-        .eq('workspace_id', canvas.workspace_id)
-        .eq('user_id', userId)
-        .single();
-
-      if (!member && canvas.created_by !== userId) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-      }
-    }
-
-    // 엣지 목록 조회
     const { data: edges, error: edgesError } = await supabase
       .from('canvas_edges')
       .select('*')
@@ -89,48 +57,21 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     console.error('Edges GET error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-}
+};
 
 // POST: 새 엣지 생성 또는 기존 엣지 업데이트
-export async function POST(request: NextRequest, { params }: RouteParams) {
+const postEdges = async (
+  request: NextRequest,
+  { params, auth }: { params: any; auth: { userId: string } }
+) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { canvasId } = await params;
     const body = await request.json();
-    const supabase = await createClient();
+    const supabase = createServiceClient();
 
-    // 캔버스 접근 권한 확인
-    const { data: canvas, error: canvasError } = await supabase
-      .from('canvases')
-      .select('*')
-      .eq('id', canvasId)
-      .single();
-
-    if (canvasError || !canvas) {
-      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
-    }
-
-    const { data: member } = await supabase
-      .from('workspace_members')
-      .select('*')
-      .eq('workspace_id', canvas.workspace_id)
-      .eq('user_id', userId)
-      .single();
-
-    if (!member && canvas.created_by !== userId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    // 단일 엣지 저장 또는 일괄 저장 처리
     if (Array.isArray(body.edges)) {
-      // 일괄 엣지 저장 (전체 캔버스 저장 시)
       const edges: EdgeData[] = body.edges;
-      
-      // 기존 엣지 삭제 후 새로 저장
+
       await supabase
         .from('canvas_edges')
         .delete()
@@ -145,10 +86,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           type: edge.type || 'default',
           data: edge.data || {},
           metadata: edge.metadata || {},
-          created_by: userId,
+          created_by: auth.userId,
         }));
 
-        const { data: insertedEdges, error: insertError } = await supabase
+        const { data: insertedEdges, error: insertError } = await (supabase as any)
           .from('canvas_edges')
           .insert(edgesToInsert)
           .select('*');
@@ -163,14 +104,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       return NextResponse.json({ edges: [] }, { status: 201 });
     } else {
-      // 단일 엣지 저장
       const edge: EdgeData = body;
       
       if (!edge.edge_id || !edge.source_node_id || !edge.target_node_id) {
         return NextResponse.json({ error: 'Missing required edge fields' }, { status: 400 });
       }
 
-      const { data: savedEdge, error: saveError } = await supabase
+      const { data: savedEdge, error: saveError } = await (supabase as any)
         .from('canvas_edges')
         .upsert({
           canvas_id: canvasId,
@@ -180,7 +120,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           type: edge.type || 'default',
           data: edge.data || {},
           metadata: edge.metadata || {},
-          created_by: userId,
+          created_by: auth.userId,
         })
         .select('*')
         .single();
@@ -196,45 +136,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.error('Edges POST error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-}
+};
 
 // DELETE: 특정 엣지 삭제 또는 모든 엣지 삭제
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+const deleteEdges = async (
+  request: NextRequest,
+  { params }: { params: any }
+) => {
   try {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { canvasId } = await params;
     const { searchParams } = new URL(request.url);
     const edgeId = searchParams.get('edgeId');
-    const supabase = await createClient();
-
-    // 캔버스 접근 권한 확인
-    const { data: canvas, error: canvasError } = await supabase
-      .from('canvases')
-      .select('*')
-      .eq('id', canvasId)
-      .single();
-
-    if (canvasError || !canvas) {
-      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
-    }
-
-    const { data: member } = await supabase
-      .from('workspace_members')
-      .select('*')
-      .eq('workspace_id', canvas.workspace_id)
-      .eq('user_id', userId)
-      .single();
-
-    if (!member && canvas.created_by !== userId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const supabase = createServiceClient();
 
     if (edgeId) {
-      // 특정 엣지 삭제
       const { error: deleteError } = await supabase
         .from('canvas_edges')
         .delete()
@@ -248,7 +163,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
       return NextResponse.json({ message: 'Edge deleted successfully' });
     } else {
-      // 모든 엣지 삭제
       const { error: deleteError } = await supabase
         .from('canvas_edges')
         .delete()
@@ -265,4 +179,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     console.error('Edges DELETE error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-}
+};
+
+export const GET = withAuthorization({ resourceType: 'canvas' }, getEdges);
+export const POST = withAuthorization({ resourceType: 'canvas', minRole: 'member' }, postEdges);
+export const DELETE = withAuthorization({ resourceType: 'canvas', minRole: 'member' }, deleteEdges);

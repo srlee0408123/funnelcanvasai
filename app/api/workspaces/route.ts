@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     const supabase = createServiceClient();
     
     // Create workspace
-    const { data: workspace, error: workspaceError } = await supabase
+    const { data: workspace, error: workspaceError } = await (supabase as any)
       .from('workspaces')
       .insert({
         name,
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
     }
     
     // Add user as member
-    const { error: memberError } = await supabase
+    const { error: memberError } = await (supabase as any)
       .from('workspace_members')
       .insert({
         workspace_id: workspace.id,

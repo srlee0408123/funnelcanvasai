@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { createClient } from '@/lib/supabase/server';
+import type { Database } from '@/lib/database.types';
 
 interface RouteParams {
   params: Promise<{
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .from('canvases')
       .select('*')
       .eq('id', canvasId)
-      .single();
+      .single() as { data: Database['public']['Tables']['canvases']['Row'] | null, error: any };
 
     if (canvasError || !canvas) {
       return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
@@ -28,13 +29,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       if (!userId) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      const { data: member } = await supabase
-        .from('workspace_members')
-        .select('*')
-        .eq('workspace_id', canvas.workspace_id)
-        .eq('user_id', userId)
-        .single();
-      if (!member && canvas.created_by !== userId) {
+      let member = null;
+      if (canvas.workspace_id) {
+        const memberResult = await supabase
+          .from('workspace_members')
+          .select('*')
+          .eq('workspace_id', canvas.workspace_id)
+          .eq('user_id', userId)
+          .single() as { data: Database['public']['Tables']['workspace_members']['Row'] | null, error: any };
+        member = memberResult.data;
+      }
+      if (!member && canvas.user_id !== userId) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
     }
@@ -46,7 +51,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .eq('canvas_id', canvasId)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .single() as { data: Database['public']['Tables']['canvas_states']['Row'] | null, error: any };
 
     return NextResponse.json(stateRow ?? null);
   } catch (error) {

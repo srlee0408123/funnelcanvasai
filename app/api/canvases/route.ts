@@ -12,7 +12,7 @@ export async function GET() {
   const supabase = createServiceClient();
   
   // First get user's workspaces
-  const { data: workspaces, error: wsError } = await supabase
+  const { data: wsListData, error: wsError } = await supabase
     .from('workspaces')
     .select('id')
     .eq('owner_id', userId);
@@ -21,7 +21,9 @@ export async function GET() {
     return NextResponse.json({ error: wsError.message }, { status: 500 });
   }
   
-  if (!workspaces?.length) {
+  const wsList = (wsListData || []) as { id: string }[];
+
+  if (!wsList?.length) {
     return NextResponse.json([]);
   }
   
@@ -29,7 +31,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from('canvases')
     .select('*')
-    .in('workspace_id', workspaces.map(w => w.id))
+    .in('workspace_id', wsList.map(w => w.id))
     .order('updated_at', { ascending: false });
   
   if (error) {
@@ -98,7 +100,7 @@ export async function POST(req: Request) {
     }
     
     // Create canvas
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('canvases')
       .insert({
         title,

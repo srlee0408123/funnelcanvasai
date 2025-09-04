@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { FolderOpen, Users, Calendar } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import type { Database } from "@/lib/database.types";
 
 interface DashboardClientProps {
   userId: string;
@@ -26,7 +27,7 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
   const [showWorkspaceDialog, setShowWorkspaceDialog] = useState(false);
 
   // Fetch workspaces directly from Supabase for real-time updates
-  const { data: workspaces, isLoading: workspacesLoading } = useQuery({
+  const { data: workspaces, isLoading: workspacesLoading } = useQuery<Database['public']['Tables']['workspaces']['Row'][]>({
     queryKey: ["workspaces", userId],
     queryFn: async () => {
       const supabase = createClient();

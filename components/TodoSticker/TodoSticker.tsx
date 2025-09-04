@@ -34,7 +34,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
     return () => {
       console.log('📝 Todo 스티커 언마운트 - Canvas:', canvasId);
     };
-  }, [canvasId, isReadOnly]);
+  }, [canvasId, isReadOnly, isVisible]);
   const [showCompleted, setShowCompleted] = useState(false);
   
   // Editing state
@@ -135,45 +135,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
 
       syncTodoNodes();
     }
-      }, [activeTodos.length, canvasId, isReadOnly, isVisible]);
-
-  // Supabase Realtime 구독 설정 - 스티커가 보일 때만 활성화
-  useEffect(() => {
-    if (isReadOnly || !canvasId || !isVisible) return;
-
-    const supabase = supabaseClient.current;
-    
-    // 실시간 채널 생성
-    const channel = supabase
-      .channel(`canvas-todos-${canvasId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'canvas_todos',
-          filter: `canvas_id=eq.${canvasId}`,
-        },
-        (payload) => {
-          console.log('🔄 Realtime todo event:', payload);
-          handleRealtimeEvent(payload);
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 Realtime subscription status:', status, '- Sticker visible:', isVisible);
-      });
-
-    realtimeChannelRef.current = channel;
-    console.log('🔌 Todo Realtime 구독 시작 - Canvas:', canvasId, 'Visible:', isVisible);
-
-    return () => {
-      if (realtimeChannelRef.current) {
-        console.log('🔌 Todo Realtime 구독 종료 - Canvas:', canvasId, 'Visible:', isVisible);
-        supabase.removeChannel(realtimeChannelRef.current);
-        realtimeChannelRef.current = null;
-      }
-    };
-  }, [canvasId, isReadOnly, isVisible]);
+      }, [activeTodos, canvasId, isReadOnly, isVisible]);
 
   // 실시간 이벤트 처리
   const handleRealtimeEvent = useCallback((payload: any) => {
@@ -243,6 +205,44 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       exact: false 
     });
   }, [canvasId, pendingOperations, queryClient]);
+
+  // Supabase Realtime 구독 설정 - 스티커가 보일 때만 활성화
+  useEffect(() => {
+    if (isReadOnly || !canvasId || !isVisible) return;
+
+    const supabase = supabaseClient.current;
+    
+    // 실시간 채널 생성
+    const channel = supabase
+      .channel(`canvas-todos-${canvasId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'canvas_todos',
+          filter: `canvas_id=eq.${canvasId}`,
+        },
+        (payload) => {
+          console.log('🔄 Realtime todo event:', payload);
+          handleRealtimeEvent(payload);
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Realtime subscription status:', status, '- Sticker visible:', isVisible);
+      });
+
+    realtimeChannelRef.current = channel;
+    console.log('🔌 Todo Realtime 구독 시작 - Canvas:', canvasId, 'Visible:', isVisible);
+
+    return () => {
+      if (realtimeChannelRef.current) {
+        console.log('🔌 Todo Realtime 구독 종료 - Canvas:', canvasId, 'Visible:', isVisible);
+        supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
+      }
+    };
+  }, [canvasId, isReadOnly, isVisible, handleRealtimeEvent]);
 
   // Create todo mutation with optimistic updates
   const createTodoMutation = useMutation({
@@ -439,7 +439,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
   }, [size, canvasId]);
 
   // 할일을 캔버스 노드로 생성하는 함수 (중복 체크 포함)
-  const createTodoNode = async (todo: TodoItem) => {
+  const createTodoNode = useCallback(async (todo: TodoItem) => {
     try {
       const nodeId = `todo-${todo.id}`;
       
@@ -490,7 +490,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       }
       console.error('❌ Failed to create todo node:', error);
     }
-  };
+  }, [canvasId]);
 
   // 할일 노드 업데이트 함수 (기존 위치를 유지하면서 데이터만 업데이트)
   const updateTodoNode = async (todo: TodoItem) => {
@@ -615,7 +615,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
     });
   };
 
-  const handleMouseMove = (e: MouseEvent) => {
+  const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isDragging) {
       const newX = e.clientX - dragOffset.x;
       const newY = e.clientY - dragOffset.y;
@@ -639,13 +639,13 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
         height: newHeight
       });
     }
-  };
+  }, [isDragging, dragOffset.x, dragOffset.y, size.width, position.x, position.y, isResizing, resizeOffset.x, resizeOffset.y]);
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     console.log('Mouse up - ending drag/resize');
     setIsDragging(false);
     setIsResizing(false);
-  };
+  }, []);
 
   // Resize handler
   const handleResizeMouseDown = (e: React.MouseEvent) => {
@@ -661,25 +661,20 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
 
   // Global mouse event listeners for dragging and resizing
   useEffect(() => {
-    if (isDragging || isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.userSelect = 'none';
-      
-      if (isDragging) {
-        document.body.style.cursor = 'grabbing';
-      } else if (isResizing) {
-        document.body.style.cursor = 'nw-resize';
-      }
-      
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-      };
-    }
-  }, [isDragging, isResizing, dragOffset, resizeOffset, position, size]);
+    if (!isResizing) return;
+    const mm = (e: MouseEvent) => handleMouseMove(e);
+    const mu = () => handleMouseUp();
+    document.addEventListener('mousemove', mm);
+    document.addEventListener('mouseup', mu);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'nw-resize';
+    return () => {
+      document.removeEventListener('mousemove', mm);
+      document.removeEventListener('mouseup', mu);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, handleMouseMove, handleMouseUp]);
 
   if (!isVisible) return null;
 
@@ -1035,20 +1030,20 @@ export function TodoStickerToggle({ canvasId, onShow }: { canvasId: string; onSh
 
   // Global mouse event listeners for dragging
   useEffect(() => {
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.userSelect = 'none';
-      document.body.style.cursor = 'grabbing';
-      
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-      };
-    }
-  }, [isDragging, dragOffset, position]);
+    if (!isDragging) return;
+    const mm = (e: MouseEvent) => handleMouseMove(e);
+    const mu = () => handleMouseUp();
+    document.addEventListener('mousemove', mm);
+    document.addEventListener('mouseup', mu);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+    return () => {
+      document.removeEventListener('mousemove', mm);
+      document.removeEventListener('mouseup', mu);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isDragging, handleMouseMove, handleMouseUp]);
 
   return (
     <Button

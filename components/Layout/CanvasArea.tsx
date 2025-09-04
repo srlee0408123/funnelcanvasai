@@ -1,12 +1,13 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/Ui/buttons";
 import FunnelNode from "@/components/Canvas/FunnelNode";
 import NodeCreationModal from "@/components/Canvas/NodeCreationModal";
 import { TextMemo } from "@/components/Canvas/TextMemo";
 import { useToast } from "@/hooks/use-toast";
+import { useCanvasStore } from "@/hooks/useCanvasStore";
+import { useCanvasSync } from "@/hooks/useCanvasSync";
 import { 
   ArrowLeft, 
   Check, 
@@ -23,40 +24,22 @@ import {
   Loader2
 } from "lucide-react";
 import type { Canvas, CanvasState } from "@shared/schema";
+import type { FlowNode, FlowEdge, TextMemoData } from "@/types/canvas";
 
 interface CanvasAreaProps {
   canvas: Canvas;
   canvasState?: CanvasState;
   selectedNodeId: string | null;
   onNodeSelect: (nodeId: string) => void;
-  onNodeDoubleClick?: (node: any) => void;
+  onNodeDoubleClick?: (node: FlowNode) => void;
   onAddNode?: (nodeType: string) => void;
   isReadOnly?: boolean;
-  externalMemos?: any[];
+  externalMemos?: TextMemoData[];
 }
 
-interface Node {
-  id: string;
-  type: string;
-  data: {
-    title: string;
-    subtitle?: string;
-    icon: string;
-    color: string;
-    size?: "small" | "medium" | "large";
-  };
-  position: {
-    x: number;
-    y: number;
-  };
-}
+// Node 타입은 types/canvas.ts의 FlowNode를 사용
 
-interface Edge {
-  id: string;
-  source: string;
-  target: string;
-  label?: string;
-}
+// Edge 타입은 types/canvas.ts의 FlowEdge를 사용
 
 interface Memo {
   id: string;
@@ -79,27 +62,33 @@ export default function CanvasArea({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   
-  // Canvas viewport state for zoom and pan
-  const [viewport, setViewport] = useState({
-    x: 0,
-    y: 0,
-    zoom: 1
-  });
+  // Canvas viewport state for zoom and pan (Zustand)
+  const viewport = useCanvasStore(s => s.viewport);
+  const setViewport = useCanvasStore(s => s.setViewport);
   
-  // Dragging state for canvas pan
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-  const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
+  // Dragging state for canvas pan (Zustand)
+  const isPanning = useCanvasStore(s => s.isPanning);
+  const setIsPanning = useCanvasStore(s => s.setIsPanning);
+  const panStart = useCanvasStore(s => s.panStart);
+  const setPanStart = useCanvasStore(s => s.setPanStart);
+  const lastPanPoint = useCanvasStore(s => s.lastPanPoint);
+  const setLastPanPoint = useCanvasStore(s => s.setLastPanPoint);
   
-  // Node dragging state
-  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
-  const [nodeDragStart, setNodeDragStart] = useState({ x: 0, y: 0 });
-  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+  // Node dragging state (Zustand)
+  const draggedNodeId = useCanvasStore(s => s.draggedNodeId);
+  const setDraggedNodeId = useCanvasStore(s => s.setDraggedNodeId);
+  const nodeDragStart = useCanvasStore(s => s.nodeDragStart);
+  const setNodeDragStart = useCanvasStore(s => s.setNodeDragStart);
+  const nodePositions = useCanvasStore(s => s.nodePositions);
+  const setNodePositions = useCanvasStore(s => s.setNodePositions);
   
-  // Connection state
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [connectionStart, setConnectionStart] = useState<string | null>(null);
-  const [temporaryConnection, setTemporaryConnection] = useState<{ x: number; y: number } | null>(null);
+  // Connection state (Zustand)
+  const isConnecting = useCanvasStore(s => s.isConnecting);
+  const setIsConnecting = useCanvasStore(s => s.setIsConnecting);
+  const connectionStart = useCanvasStore(s => s.connectionStart);
+  const setConnectionStart = useCanvasStore(s => s.setConnectionStart);
+  const temporaryConnection = useCanvasStore(s => s.temporaryConnection);
+  const setTemporaryConnection = useCanvasStore(s => s.setTemporaryConnection);
   
   // Node creation modal state
   const [showNodeCreationModal, setShowNodeCreationModal] = useState(false);
@@ -136,7 +125,9 @@ export default function CanvasArea({
   
 
 
-  const [localNodes, setLocalNodes] = useState<Node[]>([]);
+  const localNodes = useCanvasStore(s => s.nodes);
+  const setLocalNodes = useCanvasStore(s => s.setNodes);
+  const addNode = useCanvasStore(s => s.addNode);
   
   // Update local nodes when canvas state changes
   useEffect(() => {
@@ -146,12 +137,13 @@ export default function CanvasArea({
     } else if (flowData?.nodes) {
       setLocalNodes(flowData.nodes);
     }
-  }, [canvasState, flowData]);
+  }, [canvasState, flowData, setLocalNodes]);
   
-  const baseNodes: Node[] = localNodes;
+  const baseNodes: FlowNode[] = localNodes;
   
   // State for managing edges with multi-connection support
-  const [edges, setEdges] = useState<Edge[]>(flowData.edges || []);
+  const edges = useCanvasStore(s => s.edges);
+  const setEdges = useCanvasStore(s => s.setEdges);
   
   // Update edges when canvas state changes
   useEffect(() => {
@@ -161,7 +153,7 @@ export default function CanvasArea({
     } else if (flowData?.edges) {
       setEdges(flowData.edges);
     }
-  }, [canvasState]);
+  }, [canvasState, flowData, setEdges]);
   
   // Update memos when canvas state changes
   useEffect(() => {
@@ -170,15 +162,19 @@ export default function CanvasArea({
     }
   }, [flowData]);
   
-  // Merge base positions with dynamic positions
-  const nodes: Node[] = baseNodes.map(node => ({
-    ...node,
-    position: nodePositions[node.id] || node.position
-  }));
+  // Merge base positions with dynamic positions (memoized)
+  const nodes: FlowNode[] = useMemo(() => (
+    baseNodes.map(node => ({
+      ...node,
+      position: nodePositions[node.id] || node.position
+    }))
+  ), [baseNodes, nodePositions]);
   
   // Additional fallback: if localNodes is empty but flowData has nodes, use flowData directly
   // For read-only mode, always prioritize flowData if localNodes is empty
-  const finalNodes = nodes.length > 0 ? nodes : (flowData?.nodes || []);
+  const finalNodes = useMemo(() => (
+    nodes.length > 0 ? nodes : (flowData?.nodes || [])
+  ), [nodes, flowData]);
   
   // CRITICAL FIX: Deterministic node rendering for read-only mode
   const renderNodes = useMemo(() => {
@@ -193,7 +189,7 @@ export default function CanvasArea({
       });
       
       const srcNodes = flowData?.nodes ?? [];
-      const processedNodes = (srcNodes || []).map((node: any) => ({
+      const processedNodes = (srcNodes || []).map((node: FlowNode) => ({
         ...node,
         position: {
           x: Number.isFinite(node?.position?.x) ? node.position.x : 50,
@@ -207,7 +203,7 @@ export default function CanvasArea({
       return processedNodes;
     }
     
-    return (finalNodes || []).map((node: any) => ({
+    return (finalNodes || []).map((node: FlowNode) => ({
       ...node,
       position: {
         x: Number.isFinite(node?.position?.x) ? node.position.x : 50,
@@ -230,74 +226,16 @@ export default function CanvasArea({
       
       setViewport(simpleViewport);
     }
-  }, [isReadOnly, flowData]);
+  }, [isReadOnly, flowData, setViewport]);
 
-  // Auto-save function with debouncing and change detection
-  const lastSavedDataRef = useRef<string>('');
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  const autoSave = useCallback(() => {
-    const currentNodes = localNodes.length > 0 ? localNodes : nodes;
-    const currentEdges = edges;
-    
-    if (currentNodes.length > 0 || currentEdges.length > 0) {
-      const flowData = {
-        nodes: currentNodes.map(node => ({
-          ...node,
-          position: nodePositions[node.id] || node.position
-        })),
-        edges: currentEdges
-      };
-      
-      // Only save if data has actually changed
-      const currentDataHash = JSON.stringify(flowData);
-      if (currentDataHash === lastSavedDataRef.current) {
-        return; // No changes, skip saving
-      }
-      
-      // Clear any pending save timeout
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-      
-      // Debounce save by 3 seconds for better performance
-      autoSaveTimeoutRef.current = setTimeout(() => {
-        fetch(`/api/canvases/${canvas.id}/state`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify({ flowJson: flowData })
-        }).then(response => {
-          if (response.ok) {
-            lastSavedDataRef.current = currentDataHash;
-            console.log('⚡ Auto-save completed');
-          }
-        }).catch(error => {
-          console.error('Auto-save failed:', error);
-        });
-      }, 3000);
+  // Zustand 기반 디바운스 저장 훅
+  const { triggerSave } = useCanvasSync(canvas.id, {
+    debounceMs: 1000,
+    onSuccess: () => {
+      // 최신 상태 쿼리 무효화
+      queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id, "state", "latest"] });
     }
-  }, [localNodes, nodes, edges, nodePositions, canvas.id]);
-
-  // Skip auto-save in read-only mode
-  // Periodic auto-save every 10 seconds (reduced frequency)
-  useEffect(() => {
-    if (isReadOnly) return; // Skip auto-save in read-only mode
-    
-    const interval = setInterval(() => {
-      autoSave();
-    }, 15000); // 15초마다 자동 저장 (더 효율적인 성능을 위해 증가)
-
-    return () => {
-      clearInterval(interval);
-      // Clear any pending auto-save timeout on cleanup
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-    };
-  }, [autoSave]);
+  });
 
   // 노드 추가 함수
   const handleAddNodeToCanvas = useCallback((nodeType: string) => {
@@ -359,7 +297,7 @@ export default function CanvasArea({
     };
 
     const config = getNodeConfig(nodeType);
-    const newNode: Node = {
+    const newNode: FlowNode = {
       id: `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type: nodeType,
       data: {
@@ -375,19 +313,16 @@ export default function CanvasArea({
       },
     };
 
-    // 로컬 노드 상태 업데이트
-    setLocalNodes(prevNodes => [...prevNodes, newNode]);
-
-    // 자동 저장 트리거
-    setTimeout(() => {
-      autoSave();
-    }, 500);
+    // 전역 스토어 노드 추가
+    addNode(newNode);
+    // 디바운스 저장
+    triggerSave("add-node");
 
     toast({
       title: "노드 추가됨",
       description: `${config.title} 노드가 캔버스에 추가되었습니다.`,
     });
-  }, [isReadOnly, autoSave, toast]);
+  }, [isReadOnly, addNode, triggerSave, toast]);
 
   // onAddNode prop이 있으면 실제 노드 추가 함수로 연결
   useEffect(() => {
@@ -418,7 +353,7 @@ export default function CanvasArea({
         [nodeId]: node.position
       }));
     }
-  }, [nodes]);
+  }, [nodes, setDraggedNodeId, setNodeDragStart, setNodePositions]);
 
   // Connection start from connection point
   const handleConnectionStart = useCallback((nodeId: string, e: React.MouseEvent) => {
@@ -440,7 +375,7 @@ export default function CanvasArea({
         });
       }
     }
-  }, [nodes, viewport.x, viewport.y, viewport.zoom]);
+  }, [nodes, viewport.x, viewport.y, viewport.zoom, setIsConnecting, setConnectionStart, setTemporaryConnection]);
 
   const handleNodeMouseUp = useCallback((nodeId: string) => {
     console.log('🎯 Node mouse up:', nodeId, 'IsConnecting:', isConnecting, 'ConnectionStart:', connectionStart);
@@ -453,7 +388,7 @@ export default function CanvasArea({
       
       if (!connectionExists) {
         // Create new connection (multi-connection support)
-        const newEdge: Edge = {
+        const newEdge: FlowEdge = {
           id: `edge-${connectionStart}-${nodeId}-${Date.now()}`,
           source: connectionStart,
           target: nodeId,
@@ -464,37 +399,8 @@ export default function CanvasArea({
         setEdges(newEdges);
         console.log(`Created connection from ${connectionStart} to ${nodeId}`);
         
-        // 🚀 SAVE TO SERVER - This is where the actual saving should happen
-        const currentNodes = localNodes.length > 0 ? localNodes : (flowData?.nodes || []);
-        const updatedFlowData = {
-          nodes: currentNodes,
-          edges: newEdges
-        };
-        
-        console.log(`🚀 SAVING connection ${newEdge.id} to server from handleNodeMouseUp:`, updatedFlowData);
-        
-        fetch(`/api/canvases/${canvas.id}/state`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify({ flowJson: updatedFlowData })
-        }).then(response => {
-          console.log(`🎯 Save response status: ${response.status}`);
-          if (response.ok) {
-            return response.json().then(data => {
-              console.log(`✅ Connection ${newEdge.id} saved successfully:`, data);
-              queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id, "state", "latest"] });
-            });
-          } else {
-            return response.text().then(errorText => {
-              console.error('❌ Failed to save connection:', response.status, errorText);
-            });
-          }
-        }).catch(error => {
-          console.error('🔥 Error saving connection:', error);
-        });
+        // 저장 트리거 (즉시 저장)
+        triggerSave("connect", true);
         
       } else {
         console.log(`Connection already exists from ${connectionStart} to ${nodeId}`);
@@ -505,45 +411,9 @@ export default function CanvasArea({
     setConnectionStart(null);
     setTemporaryConnection(null);
     setDraggedNodeId(null);
-  }, [isConnecting, connectionStart, edges]);
+  }, [isConnecting, connectionStart, edges, setIsConnecting, setConnectionStart, setTemporaryConnection, setDraggedNodeId, setEdges, triggerSave]);
 
-  // Save canvas state mutation
-  const saveCanvasStateMutation = useMutation({
-    mutationFn: async (flowData: { nodes: Node[]; edges: Edge[] }) => {
-      const response = await fetch(`/api/canvases/${canvas.id}/state`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ flowJson: flowData })
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-      }
-      
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/canvases/${canvas.id}/state/latest`] });
-      toast({
-        title: "저장 완료!",
-        description: "캔버스가 성공적으로 저장되었습니다.",
-        duration: 2000,
-      });
-    },
-    onError: (error) => {
-      console.error('Failed to save canvas state:', error);
-      toast({
-        title: "저장 실패",
-        description: "캔버스 저장 중 오류가 발생했습니다. 다시 시도해주세요.",
-        variant: "destructive",
-        duration: 5000,
-      });
-    }
-  });
+  // React Query mutation 제거: useCanvasSync로 통일
 
   // Node deletion handler
   const handleNodeDelete = useCallback((nodeId: string) => {
@@ -569,14 +439,11 @@ export default function CanvasArea({
       onNodeSelect('');
     }
     
-    // Save to server
-    saveCanvasStateMutation.mutate({
-      nodes: newNodes,
-      edges: newEdges
-    });
+    // 저장 트리거 (즉시 저장)
+    triggerSave("delete-node", true);
     
     console.log(`Deleted node: ${nodeId} and its connections`);
-  }, [localNodes, edges, selectedNodeId, onNodeSelect, saveCanvasStateMutation]);
+  }, [localNodes, edges, selectedNodeId, onNodeSelect, triggerSave, setLocalNodes, setEdges, setNodePositions]);
 
   // Canvas pan handlers
   // Drag and drop handlers for adding new nodes
@@ -599,21 +466,23 @@ export default function CanvasArea({
           const y = (e.clientY - rect.top - viewport.y) / viewport.zoom - 40;
           
           // Create new node with unique ID
-          const newNode: Node = {
+          const newNode: FlowNode = {
             id: `${data.nodeType}-${Date.now()}`,
             type: data.nodeType,
             data: data.data,
             position: { x, y }
           };
           
-          setLocalNodes(prevNodes => [...prevNodes, newNode]);
+          const currentNodes = (useCanvasStore.getState().nodes || []) as FlowNode[];
+          setLocalNodes([...currentNodes, newNode]);
           console.log(`Added new ${data.nodeType} node at (${x}, ${y})`);
+          triggerSave("drop-node");
         }
       }
     } catch (error) {
       console.error('Error parsing drag data:', error);
     }
-  }, [viewport.x, viewport.y, viewport.zoom]);
+  }, [viewport.x, viewport.y, viewport.zoom, setLocalNodes, triggerSave]);
 
   // Helper function to get canvas-relative coordinates
   const getCanvasCoordinates = useCallback((clientX: number, clientY: number) => {
@@ -643,7 +512,7 @@ export default function CanvasArea({
     setPanStart({ x: e.clientX, y: e.clientY });
     setLastPanPoint({ x: viewport.x, y: viewport.y });
     e.preventDefault();
-  }, [viewport.x, viewport.y, onNodeSelect]);
+  }, [viewport.x, viewport.y, onNodeSelect, setIsPanning, setPanStart, setLastPanPoint]);
 
   // Memo management functions
   const createNewMemo = useCallback(async (x: number, y: number) => {
@@ -865,8 +734,8 @@ export default function CanvasArea({
   }, [getCanvasCoordinates, createNewMemo]);
 
   // Handle node creation from modal  
-  const handleNodeCreation = useCallback(async (nodeData: any) => {
-    const newNode: Node = {
+  const handleNodeCreation = useCallback(async (nodeData: { title: string; description?: string; icon: string; color: string }) => {
+    const newNode: FlowNode = {
       id: `${nodeData.title.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
       type: "custom", // All nodes are now custom type
       data: {
@@ -888,46 +757,13 @@ export default function CanvasArea({
       fullNodeData: newNode 
     });
     
-    // Update local state first for immediate UI feedback
-    setLocalNodes(prevNodes => {
-      const newNodes = [...prevNodes, newNode];
-      
-      // Also save to server immediately
-      const currentEdges = flowData?.edges || [];
-      const updatedFlowData = {
-        nodes: newNodes,
-        edges: currentEdges
-      };
-      
-      // Save to server asynchronously
-      fetch(`/api/canvases/${canvas.id}/state`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ flowJson: updatedFlowData })
-      }).then(response => {
-        if (response.ok) {
-          console.log(`Node ${newNode.id} saved to server successfully`);
-          // Invalidate queries to refresh data immediately
-          queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id, "state", "latest"] });
-          // Also force refetch for any components that might be stale
-          setTimeout(() => {
-            queryClient.refetchQueries({ queryKey: ["/api/canvases", canvas.id, "state", "latest"] });
-          }, 100);
-        } else {
-          console.error('Failed to save node to server');
-        }
-      }).catch(error => {
-        console.error('Error saving node to server:', error);
-      });
-      
-      return newNodes;
-    });
+    // 전역 상태 업데이트 후 저장 트리거
+    const currentNodes = (useCanvasStore.getState().nodes || []) as FlowNode[];
+    setLocalNodes([...currentNodes, newNode]);
+    triggerSave("create-node", true);
     
     console.log(`Created new ${nodeData.title} node at (${nodeCreationPosition.x}, ${nodeCreationPosition.y})`);
-  }, [nodeCreationPosition, canvas.id, flowData?.edges, queryClient]);
+  }, [nodeCreationPosition, setLocalNodes, triggerSave]);
 
   // Handle node double click for details
   const handleNodeDoubleClick = useCallback((nodeId: string) => {
@@ -950,7 +786,7 @@ export default function CanvasArea({
     setIsConnecting(false);
     setConnectionStart(null);
     setTemporaryConnection(null);
-  }, []);
+  }, [setIsPanning, setDraggedNodeId, setIsConnecting, setConnectionStart, setTemporaryConnection]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -975,7 +811,7 @@ export default function CanvasArea({
         zoom: newZoom
       });
     }
-  }, [viewport]);
+  }, [viewport, setViewport]);
 
   // Global mouse event listeners for dragging
   useEffect(() => {
@@ -984,11 +820,11 @@ export default function CanvasArea({
         const deltaX = e.clientX - panStart.x;
         const deltaY = e.clientY - panStart.y;
         
-        setViewport(prev => ({
-          ...prev,
+        setViewport({
           x: lastPanPoint.x + deltaX,
-          y: lastPanPoint.y + deltaY
-        }));
+          y: lastPanPoint.y + deltaY,
+          zoom: viewport.zoom
+        });
       } else if (draggedNodeId) {
         // Calculate movement delta in screen coordinates first
         const deltaX = e.clientX - nodeDragStart.x;
@@ -1043,7 +879,7 @@ export default function CanvasArea({
             
             if (!connectionExists) {
               // Create new connection with enhanced feedback
-              const newEdge: Edge = {
+              const newEdge: FlowEdge = {
                 id: `edge-${connectionStart}-${targetNodeId}-${Date.now()}`,
                 source: connectionStart,
                 target: targetNodeId,
@@ -1057,40 +893,8 @@ export default function CanvasArea({
               console.log('Current edges after adding connection:', newEdges);
               console.log(`Created connection from ${connectionStart} to ${targetNodeId}`);
               
-              // Save to server immediately
-              const currentNodes = localNodes.length > 0 ? localNodes : (flowData?.nodes || []);
-              const updatedFlowData = {
-                nodes: currentNodes,
-                edges: newEdges
-              };
-              
-              console.log(`🚀 ATTEMPTING TO SAVE connection ${newEdge.id} to server with data:`, updatedFlowData);
-              console.log(`🚀 Canvas ID: ${canvas.id}`);
-              console.log(`🚀 Request URL: /api/canvases/${canvas.id}/state`);
-              
-              fetch(`/api/canvases/${canvas.id}/state`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                credentials: 'include',
-                body: JSON.stringify({ flowJson: updatedFlowData })
-              }).then(response => {
-                console.log(`🎯 Connection save response status: ${response.status}`);
-                if (response.ok) {
-                  return response.json().then(data => {
-                    console.log(`✅ Connection ${newEdge.id} saved to server successfully:`, data);
-                    // Invalidate queries to refresh data
-                    queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id, "state", "latest"] });
-                  });
-                } else {
-                  return response.text().then(errorText => {
-                    console.error('❌ Failed to save connection to server:', response.status, errorText);
-                  });
-                }
-              }).catch(error => {
-                console.error('🔥 Error saving connection to server:', error);
-              });
+              // 저장 트리거 (즉시 저장)
+              triggerSave("connect", true);
               
               // Optional: Add success visual feedback here
             } else {
@@ -1112,35 +916,8 @@ export default function CanvasArea({
       if (draggedNodeId) {
         const newPosition = nodePositions[draggedNodeId];
         if (newPosition) {
-          // Update the node position in the nodes array and save to server
-          const updatedNodes = localNodes.map(node => 
-            node.id === draggedNodeId 
-              ? { ...node, position: newPosition }
-              : node
-          );
-          
-          const updatedFlowData = {
-            nodes: updatedNodes,
-            edges: edges
-          };
-          
-          fetch(`/api/canvases/${canvas.id}/state`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-            body: JSON.stringify({ flowJson: updatedFlowData })
-          }).then(response => {
-            if (response.ok) {
-              console.log(`Node ${draggedNodeId} position saved to server`);
-              queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id, "state", "latest"] });
-            } else {
-              console.error('Failed to save node position to server');
-            }
-          }).catch(error => {
-            console.error('Error saving node position to server:', error);
-          });
+          // 즉시 저장으로 포지션 반영
+          triggerSave("drag-end", true);
         }
       }
 
@@ -1162,10 +939,10 @@ export default function CanvasArea({
         document.removeEventListener('mouseup', handleGlobalMouseUp);
       };
     }
-  }, [isPanning, panStart.x, panStart.y, lastPanPoint.x, lastPanPoint.y, draggedNodeId, viewport.x, viewport.y, viewport.zoom, isConnecting, connectionStart, temporaryConnection]);
+  }, [isPanning, panStart.x, panStart.y, lastPanPoint.x, lastPanPoint.y, draggedNodeId, viewport.x, viewport.y, viewport.zoom, isConnecting, connectionStart, temporaryConnection, edges, nodeDragStart.x, nodeDragStart.y, nodePositions, setConnectionStart, setDraggedNodeId, setEdges, setIsConnecting, setIsPanning, setNodePositions, setTemporaryConnection, setViewport, triggerSave]);
 
   // Generate SVG path for edges with smooth bezier curves and proper connection points
-  const generatePath = useCallback((edge: Edge): string => {
+  const generatePath = useCallback((edge: FlowEdge): string => {
     const sourceNode = nodes.find(n => n.id === edge.source);
     const targetNode = nodes.find(n => n.id === edge.target);
     
@@ -1199,7 +976,7 @@ export default function CanvasArea({
     
     // Create smooth cubic bezier curve
     return `M ${sourceX} ${sourceY + offsetY} C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${targetX} ${targetY}`;
-  }, [nodes, edges, viewport]);
+  }, [nodes, edges]);
 
   // Handle edge deletion
   const handleEdgeDelete = useCallback((edgeId: string, e: React.MouseEvent) => {
@@ -1226,36 +1003,9 @@ export default function CanvasArea({
       deletedEdge: edgeToDelete 
     });
     
-    // Save the updated state to server
-    const currentState = {
-      nodes: localNodes,
-      edges: updatedEdges
-    };
-    
-    // Save to server with credentials
-    fetch(`/api/canvases/${canvas.id}/state`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify({ flowJson: currentState })
-    }).then(response => {
-      if (response.ok) {
-        console.log(`✅ Successfully deleted connection: ${edgeId}`);
-        // Invalidate queries to refresh data
-        queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id, "state", "latest"] });
-      } else {
-        console.error(`❌ Failed to delete connection: ${edgeId}`, response.status);
-        // Revert the edge deletion on failure
-        setEdges(edges);
-      }
-    }).catch(error => {
-      console.error(`❌ Network error deleting connection ${edgeId}:`, error);
-      // Revert the edge deletion on failure
-      setEdges(edges);
-    });
-  }, [edges, localNodes, canvas.id, queryClient]);
+    // 삭제 저장 즉시 트리거
+    triggerSave("delete-edge", true);
+  }, [edges, setEdges, triggerSave]);
 
   // Get feedback severity for node
   const getNodeFeedbackSeverity = (nodeId: string): "none" | "low" | "medium" | "high" => {
@@ -1407,22 +1157,13 @@ export default function CanvasArea({
                 variant="ghost" 
                 size="sm"
                 onClick={() => {
-                  const currentState = {
-                    nodes: localNodes,
-                    edges,
-                    memos
-                  };
-                  saveCanvasStateMutation.mutate(currentState);
+                  // 즉시 저장
+                  triggerSave("manual", true);
                   console.log('캔버스를 수동으로 저장했습니다.');
                 }}
                 title="수동 저장"
-                disabled={saveCanvasStateMutation.isPending}
               >
-                {saveCanvasStateMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
+                <Save className="h-4 w-4" />
               </Button>
             )}
             {!isReadOnly && (
@@ -1460,10 +1201,10 @@ export default function CanvasArea({
               onClick={() => {
                 if (finalNodes.length > 0) {
                   // Calculate bounding box of all nodes
-                  const minX = Math.min(...finalNodes.map((node: any) => node.position.x));
-                  const maxX = Math.max(...finalNodes.map((node: any) => node.position.x));
-                  const minY = Math.min(...finalNodes.map((node: any) => node.position.y));
-                  const maxY = Math.max(...finalNodes.map((node: any) => node.position.y));
+                  const minX = Math.min(...finalNodes.map((node: FlowNode) => node.position.x));
+                  const maxX = Math.max(...finalNodes.map((node: FlowNode) => node.position.x));
+                  const minY = Math.min(...finalNodes.map((node: FlowNode) => node.position.y));
+                  const maxY = Math.max(...finalNodes.map((node: FlowNode) => node.position.y));
                   
                   const centerX = (minX + maxX) / 2;
                   const centerY = (minY + maxY) / 2;
@@ -1488,14 +1229,14 @@ export default function CanvasArea({
               <Button 
                 variant="ghost" 
                 size="sm"
-                onClick={() => setViewport(prev => ({ ...prev, zoom: Math.min(3, prev.zoom * 1.2) }))}
+                onClick={() => setViewport({ ...viewport, zoom: Math.min(3, viewport.zoom * 1.2) })}
               >
                 <Plus className="h-4 w-4" />
               </Button>
               <Button 
                 variant="ghost" 
                 size="sm"
-                onClick={() => setViewport(prev => ({ ...prev, zoom: Math.max(0.1, prev.zoom * 0.8) }))}
+                onClick={() => setViewport({ ...viewport, zoom: Math.max(0.1, viewport.zoom * 0.8) })}
               >
                 <Minus className="h-4 w-4" />
               </Button>
@@ -1601,10 +1342,10 @@ export default function CanvasArea({
               <stop offset="100%" style={{stopColor:"#3B82F6", stopOpacity:0.9}} />
             </linearGradient>
           </defs>
-          {(isReadOnly ? (flowData?.edges || []) : edges).map((edge: any) => {
+          {(isReadOnly ? (flowData?.edges || []) : edges).map((edge: FlowEdge) => {
             const path = generatePath(edge);
-            const sourceNode = (isReadOnly ? renderNodes : nodes).find((n: any) => n.id === edge.source);
-            const targetNode = (isReadOnly ? renderNodes : nodes).find((n: any) => n.id === edge.target);
+            const sourceNode = (isReadOnly ? renderNodes : nodes).find((n: FlowNode) => n.id === edge.source);
+            const targetNode = (isReadOnly ? renderNodes : nodes).find((n: FlowNode) => n.id === edge.target);
             
             if (!sourceNode || !targetNode || !path) {
               return null;
@@ -1620,8 +1361,8 @@ export default function CanvasArea({
             
             // IMPORTANT: Use exact same offsetY calculation as generatePath
             const currentEdges = isReadOnly ? (flowData?.edges || []) : edges;
-            const connectionsFromSource = currentEdges.filter((e: any) => e.source === edge.source);
-            const connectionIndex = connectionsFromSource.findIndex((e: any) => e.id === edge.id);
+            const connectionsFromSource = currentEdges.filter((e: FlowEdge) => e.source === edge.source);
+            const connectionIndex = connectionsFromSource.findIndex((e: FlowEdge) => e.id === edge.id);
             const offsetY = (connectionIndex - (connectionsFromSource.length - 1) / 2) * 15;
             
             // IMPORTANT: Use exact same control point calculation as generatePath
@@ -1769,7 +1510,7 @@ export default function CanvasArea({
           
           {/* Temporary connection line while connecting */}
           {!isReadOnly && isConnecting && connectionStart && temporaryConnection && (() => {
-            const sourceNode = (isReadOnly ? renderNodes : nodes).find((n: any) => n.id === connectionStart);
+            const sourceNode = (isReadOnly ? renderNodes : nodes).find((n: FlowNode) => n.id === connectionStart);
             if (!sourceNode) return null;
             
             // Standard node dimensions
@@ -1856,7 +1597,7 @@ export default function CanvasArea({
               transform: isReadOnly ? 'translate(0px, 0px) scale(1)' : `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`
             });
             
-            return renderNodes.map((node: any, index: number) => {
+            return renderNodes.map((node: FlowNode, index: number) => {
               console.log(`🎯 Rendering node ${index}:`, {
                 id: node.id,
                 position: node.position,

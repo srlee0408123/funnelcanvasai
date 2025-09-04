@@ -150,7 +150,7 @@ export const TextMemo: React.FC<TextMemoProps> = ({
         document.removeEventListener('mouseup', handleGlobalMouseUp);
       };
     }
-  }, [isDragging, isResizing, dragStart, resizeStart, id, onPositionChange, onSizeChange]);
+  }, [isDragging, isResizing, dragStart, resizeStart, id, onPositionChange, onSizeChange, viewport.x, viewport.y, viewport.zoom]);
 
   return (
     <div

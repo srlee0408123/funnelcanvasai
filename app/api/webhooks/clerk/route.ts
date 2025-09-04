@@ -70,7 +70,7 @@ export async function POST(req: Request) {
     // Save user to Supabase using service role client (bypasses RLS)
     const supabase = createServiceClient();
     
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('profiles')
       .upsert({
         id: id,
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
     // Delete user from Supabase using service role client (bypasses RLS)
     const supabase = createServiceClient();
     
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('profiles')
       .delete()
       .eq('id', id);

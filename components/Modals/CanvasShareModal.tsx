@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Image from "next/image";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Ui/data-display";
 import { Button, Badge } from "@/components/Ui/buttons";
@@ -103,7 +104,7 @@ export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: Can
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Share className="h-5 w-5" />
-            "{canvasTitle}" 캔버스 공유
+            &ldquo;{canvasTitle}&rdquo; 캔버스 공유
           </DialogTitle>
           <DialogDescription>
             특정 사용자와 개별 캔버스를 공유할 수 있습니다.
@@ -182,10 +183,12 @@ export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: Can
                       <div className="flex items-center space-x-3">
                         <div className="h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center">
                           {share.user.profileImageUrl ? (
-                            <img 
-                              src={share.user.profileImageUrl} 
-                              alt="Profile" 
-                              className="h-10 w-10 rounded-full"
+                            <Image 
+                              src={share.user.profileImageUrl}
+                              alt="Profile"
+                              width={40}
+                              height={40}
+                              className="h-10 w-10 rounded-full object-cover"
                             />
                           ) : (
                             <span className="text-sm font-medium text-gray-600">

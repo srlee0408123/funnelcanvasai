@@ -460,35 +460,3 @@ export const insertCanvasSchema = createInsertSchema(canvases).omit({ id: true, 
 export const insertAssetSchema = createInsertSchema(assets).omit({ id: true, createdAt: true });
 export const insertFeedbackRunSchema = createInsertSchema(feedbackRuns).omit({ id: true, createdAt: true });
 export const insertFunnelTemplateSchema = createInsertSchema(funnelTemplates).omit({ id: true, createdAt: true, updatedAt: true });
-
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type InsertWorkspace = z.infer<typeof insertWorkspaceSchema>;
-export type InsertCanvas = z.infer<typeof insertCanvasSchema>;
-
-// Workspace member types
-export type WorkspaceMember = typeof workspaceMembers.$inferSelect;
-export type InsertWorkspaceMember = typeof workspaceMembers.$inferInsert;
-export const insertWorkspaceMemberSchema = createInsertSchema(workspaceMembers);
-export type InsertWorkspaceMemberType = z.infer<typeof insertWorkspaceMemberSchema>;
-export type InsertAsset = z.infer<typeof insertAssetSchema>;
-export type InsertFeedbackRun = z.infer<typeof insertFeedbackRunSchema>;
-// InsertTemplate removed - using InsertFunnelTemplate instead
-// Removed insertNodeTypeSchema - using free-form node creation now
-export const insertNodeContentSchema = createInsertSchema(nodeContents).omit({ id: true, createdAt: true });
-export type InsertNodeContent = z.infer<typeof insertNodeContentSchema>;
-export const insertNodeMetricSchema = createInsertSchema(nodeMetrics).omit({ id: true, createdAt: true });
-export type InsertNodeMetric = z.infer<typeof insertNodeMetricSchema>;
-export const insertCanvasKnowledgeSchema = createInsertSchema(canvasKnowledge).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertCanvasKnowledge = z.infer<typeof insertCanvasKnowledgeSchema>;
-export const insertTextMemoSchema = createInsertSchema(textMemos).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertTextMemoType = z.infer<typeof insertTextMemoSchema>;
-export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({ id: true, createdAt: true });
-export type InsertChatMessageType = z.infer<typeof insertChatMessageSchema>;
-export const insertCanvasTodoSchema = createInsertSchema(canvasTodos).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertCanvasTodoType = z.infer<typeof insertCanvasTodoSchema>;
-export const insertCanvasShareSchema = createInsertSchema(canvasShares).omit({ id: true, createdAt: true });
-export type InsertCanvasShareType = z.infer<typeof insertCanvasShareSchema>;
-export const insertCanvasNodeSchema = createInsertSchema(canvasNodes).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertCanvasNodeType = z.infer<typeof insertCanvasNodeSchema>;
-export const insertCanvasEdgeSchema = createInsertSchema(canvasEdges).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertCanvasEdgeType = z.infer<typeof insertCanvasEdgeSchema>;

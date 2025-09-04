@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { requireCanvasAccess } from '@/lib/canvasPermissions';
+import { withAuthorization } from '@/lib/auth/withAuthorization';
 
 /**
  * 캔버스 할일 목록 관리 API
@@ -11,28 +10,14 @@ import { requireCanvasAccess } from '@/lib/canvasPermissions';
  * - AI 채팅에서 컨텍스트로 활용
  */
 
-interface RouteParams {
-  params: {
-    canvasId: string;
-  };
-}
-
-export async function GET(request: NextRequest, { params }: RouteParams) {
+const getTodos = async (
+  request: NextRequest,
+  { params }: { params: any }
+) => {
   try {
-    const { userId } = await auth();
     const { canvasId } = await params;
-
-    console.log(`📋 Fetching todos for canvas ${canvasId}, user ${userId}`);
-
-    // 권한 검사 (인증 + 캔버스 접근 권한)
-    const permissionCheck = await requireCanvasAccess(canvasId, userId);
-    if (!permissionCheck.success) {
-      return permissionCheck.response;
-    }
-
     const supabase = createServiceClient();
 
-    // 할일 목록 조회
     const { data: todos, error: todosError } = await supabase
       .from('canvas_todos')
       .select(`
@@ -55,41 +40,27 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    console.log(`✅ Retrieved ${todos?.length || 0} todos for canvas ${canvasId}`);
-
     return NextResponse.json(todos || []);
 
   } catch (error) {
-    console.error('Canvas todos API error:', error);
-    
+    console.error('Canvas todos GET API error:', error);
     return NextResponse.json(
-      { 
-        error: '할일 목록 조회 중 오류가 발생했습니다.',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: '할일 목록 조회 중 오류가 발생했습니다.', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
-}
+};
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+const postTodo = async (
+  request: NextRequest,
+  { params }: { params: any }
+) => {
   try {
-    const { userId } = await auth();
     const { canvasId } = await params;
     const body = await request.json();
-
-    console.log(`📋 Creating todo for canvas ${canvasId}, user ${userId}`);
-
-    // 권한 검사 (인증 + 캔버스 접근 권한)
-    const permissionCheck = await requireCanvasAccess(canvasId, userId);
-    if (!permissionCheck.success) {
-      return permissionCheck.response;
-    }
-
     const supabase = createServiceClient();
 
-    // 다음 position 값 계산
-    const { data: lastTodo } = await supabase
+    const { data: lastTodoData } = await supabase
       .from('canvas_todos')
       .select('position')
       .eq('canvas_id', canvasId)
@@ -97,10 +68,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .limit(1)
       .single();
 
-    const nextPosition = (lastTodo?.position || 0) + 1;
+    type TodoPos = { position: number };
+    const lastTodo = lastTodoData as TodoPos | null;
+    const nextPosition = ((lastTodo?.position as number) || 0) + 1;
 
-    // 할일 생성
-    const { data: newTodo, error: createError } = await supabase
+    const { data: newTodo, error: createError } = await (supabase as any)
       .from('canvas_todos')
       .insert({
         canvas_id: canvasId,
@@ -127,19 +99,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    console.log(`✅ Created todo ${newTodo.id} for canvas ${canvasId}`);
-
     return NextResponse.json(newTodo);
 
   } catch (error) {
-    console.error('Canvas todo creation API error:', error);
-    
+    console.error('Canvas todo POST API error:', error);
     return NextResponse.json(
-      { 
-        error: '할일 생성 중 오류가 발생했습니다.',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: '할일 생성 중 오류가 발생했습니다.', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
-}
+};
+
+export const GET = withAuthorization({ resourceType: 'canvas' }, getTodos);
+export const POST = withAuthorization({ resourceType: 'canvas', minRole: 'member' }, postTodo);

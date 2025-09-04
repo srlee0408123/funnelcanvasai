@@ -9,10 +9,15 @@ interface ReadOnlyCanvasClientProps {
   canvasId: string;
 }
 
+type CanvasForView = Canvas & { workspace_id?: string; created_by?: string; is_public?: boolean };
+
 export default function ReadOnlyCanvasClient({ canvasId }: ReadOnlyCanvasClientProps) {
-  const { data: canvas, isLoading, error } = useQuery<Canvas>({
+  const { data: canvas, isLoading, error } = useQuery<CanvasForView>({
     queryKey: ["/api/canvases", canvasId, "public"],
-    queryFn: () => apiRequest("GET", `/api/canvases/${canvasId}`),
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/canvases/${canvasId}`);
+      return (await res.json()) as CanvasForView;
+    },
     retry: false,
   });
 
@@ -24,7 +29,7 @@ export default function ReadOnlyCanvasClient({ canvasId }: ReadOnlyCanvasClientP
     );
   }
 
-  if (error || !canvas || !canvas.isPublic) {
+  if (error || !canvas) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -46,7 +51,7 @@ export default function ReadOnlyCanvasClient({ canvasId }: ReadOnlyCanvasClientP
           읽기 전용 모드입니다. 수정할 수 없습니다.
         </span>
       </div>
-      <CanvasView canvas={canvas} readOnly />
+      <CanvasView canvas={canvas as any} readOnly />
     </div>
   );
 }

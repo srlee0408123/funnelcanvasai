@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import { createServiceClient } from '@/lib/supabase/service';
-import { requireCanvasAccess } from '@/lib/canvasPermissions';
+import { withAuthorization } from '@/lib/auth/withAuthorization';
 
 /**
  * 개별 할일 관리 API
@@ -10,36 +9,21 @@ import { requireCanvasAccess } from '@/lib/canvasPermissions';
  * DELETE /api/canvases/[canvasId]/todos/[todoId] - 할일 삭제
  */
 
-interface RouteParams {
-  params: {
-    canvasId: string;
-    todoId: string;
-  };
-}
-
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+const patchTodo = async (
+  request: NextRequest,
+  { params }: { params: any }
+) => {
   try {
-    const { userId } = await auth();
     const { canvasId, todoId } = await params;
     const body = await request.json();
-
-    console.log(`📋 Updating todo ${todoId} for canvas ${canvasId}, user ${userId}`);
-
-    // 권한 검사 (인증 + 캔버스 접근 권한)
-    const permissionCheck = await requireCanvasAccess(canvasId, userId);
-    if (!permissionCheck.success) {
-      return permissionCheck.response;
-    }
-
     const supabase = createServiceClient();
 
-    // 할일 업데이트
     const updateData: any = {};
     if (body.text !== undefined) updateData.text = body.text;
     if (body.completed !== undefined) updateData.completed = body.completed;
     if (body.position !== undefined) updateData.position = body.position;
 
-    const { data: updatedTodo, error: updateError } = await supabase
+    const { data: updatedTodo, error: updateError } = await (supabase as any)
       .from('canvas_todos')
       .update(updateData)
       .eq('id', todoId)
@@ -70,39 +54,25 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    console.log(`✅ Updated todo ${todoId} for canvas ${canvasId}`);
-
     return NextResponse.json(updatedTodo);
 
   } catch (error) {
     console.error('Canvas todo update API error:', error);
-    
     return NextResponse.json(
-      { 
-        error: '할일 수정 중 오류가 발생했습니다.',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: '할일 수정 중 오류가 발생했습니다.', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
-}
+};
 
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+const deleteTodo = async (
+  request: NextRequest,
+  { params }: { params: any }
+) => {
   try {
-    const { userId } = await auth();
     const { canvasId, todoId } = await params;
-
-    console.log(`📋 Deleting todo ${todoId} for canvas ${canvasId}, user ${userId}`);
-
-    // 권한 검사 (인증 + 캔버스 접근 권한)
-    const permissionCheck = await requireCanvasAccess(canvasId, userId);
-    if (!permissionCheck.success) {
-      return permissionCheck.response;
-    }
-
     const supabase = createServiceClient();
 
-    // 할일 삭제
     const { error: deleteError } = await supabase
       .from('canvas_todos')
       .delete()
@@ -117,19 +87,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    console.log(`✅ Deleted todo ${todoId} for canvas ${canvasId}`);
-
     return NextResponse.json({ success: true });
 
   } catch (error) {
     console.error('Canvas todo delete API error:', error);
-    
     return NextResponse.json(
-      { 
-        error: '할일 삭제 중 오류가 발생했습니다.',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: '할일 삭제 중 오류가 발생했습니다.', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
-}
+};
+
+export const PATCH = withAuthorization({ resourceType: 'canvas', minRole: 'member' }, patchTodo);
+export const DELETE = withAuthorization({ resourceType: 'canvas', minRole: 'member' }, deleteTodo);
