@@ -1,3 +1,20 @@
+/**
+ * openai.ts - OpenAI 연동 서비스 (챗/비전/임베딩)
+ * 
+ * 주요 역할:
+ * 1. 퍼널 피드백 생성, 요약/키워드 추출 등 챗 기반 기능 제공
+ * 2. 비전 모델을 통한 이미지/페이지 OCR 텍스트 추출
+ * 3. 텍스트 임베딩 생성
+ * 
+ * 핵심 특징:
+ * - 모델명을 환경 변수로 분리하여 유연한 교체 지원
+ * - JSON 응답 강제(response_format)로 파싱 안정성 향상
+ * - 오류 로깅 일관화 및 상위 레이어로 예외 전파
+ * 
+ * 주의사항:
+ * - OPENAI_DEFAULT_MODEL/OPENAI_VISION_MODEL/OPENAI_EMBEDDINGS_MODEL 환경 변수 사용
+ * - 서버 환경에서만 사용
+ */
 import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -17,15 +34,29 @@ export interface FeedbackItem {
 }
 
 export class OpenAIService {
-  // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-  private readonly model = "gpt-4o";
+  // 기본/비전/임베딩 모델은 환경 변수로 제어
+  private readonly chatModel = process.env.OPENAI_DEFAULT_MODEL || "gpt-4o";
+  private readonly visionModel = process.env.OPENAI_VISION_MODEL || "gpt-4o";
+  private readonly embeddingsModel = process.env.OPENAI_EMBEDDINGS_MODEL || "text-embedding-ada-002";
+
+  public getChatModelName(): string {
+    return this.chatModel;
+  }
+
+  public getVisionModelName(): string {
+    return this.visionModel;
+  }
+
+  public getEmbeddingsModelName(): string {
+    return this.embeddingsModel;
+  }
 
   async generateFunnelFeedback(request: FunnelAnalysisRequest): Promise<FeedbackItem[]> {
     try {
       const prompt = this.buildFeedbackPrompt(request);
 
       const response = await openai.chat.completions.create({
-        model: this.model,
+        model: this.chatModel,
         messages: [
           {
             role: "system",
@@ -57,7 +88,7 @@ export class OpenAIService {
 응답은 요약된 제목만 제공하세요.`;
 
       const response = await openai.chat.completions.create({
-        model: this.model,
+        model: this.chatModel,
         messages: [
           {
             role: "system",
@@ -89,7 +120,7 @@ export class OpenAIService {
 {"topics": ["키워드1", "키워드2", "키워드3"]}`;
 
       const response = await openai.chat.completions.create({
-        model: this.model,
+        model: this.chatModel,
         messages: [
           {
             role: "system",
@@ -116,7 +147,7 @@ export class OpenAIService {
   async processImageWithVision(base64Image: string, prompt: string): Promise<string> {
     try {
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: this.visionModel,
         messages: [
           {
             role: "user",
@@ -152,7 +183,7 @@ ${content}
 깨진 텍스트나 불완전한 정보가 있다면 맥락을 파악해서 의미있는 내용으로 해석해주세요.`;
 
       const response = await openai.chat.completions.create({
-        model: this.model,
+        model: this.chatModel,
         messages: [
           {
             role: "system",
@@ -177,7 +208,7 @@ ${content}
   async generateEmbedding(text: string): Promise<number[]> {
     try {
       const response = await openai.embeddings.create({
-        model: "text-embedding-ada-002",
+        model: this.embeddingsModel,
         input: text,
       });
 
@@ -191,7 +222,7 @@ ${content}
   async extractTextFromImage(base64Image: string): Promise<string> {
     try {
       const response = await openai.chat.completions.create({
-        model: this.model,
+        model: this.visionModel,
         messages: [
           {
             role: "user",
@@ -245,7 +276,7 @@ ${content}
 이 PDF는 마케팅 퍼널과 비즈니스 성장에 관련된 전문 지식이므로, 그 관점에서 분석해주세요.`;
 
       const response = await openai.chat.completions.create({
-        model: this.model,
+        model: this.chatModel,
         messages: [
           {
             role: "system",
@@ -360,7 +391,7 @@ ${allExtractedText}
 마케팅 퍼널과 비즈니스 성장 관점에서 실무에 바로 활용할 수 있는 가치 있는 정보로 재구성해주세요.`;
 
       const enhancementResponse = await openai.chat.completions.create({
-        model: this.model,
+        model: this.chatModel,
         messages: [
           {
             role: "system",
@@ -417,7 +448,7 @@ ${extractedText}
 마케팅 퍼널과 비즈니스 성장 관점에서 실무에 바로 활용할 수 있는 가치 있는 정보로 재구성해주세요.`;
 
       const enhancementResponse = await openai.chat.completions.create({
-        model: this.model,
+        model: this.chatModel,
         messages: [
           {
             role: "system",

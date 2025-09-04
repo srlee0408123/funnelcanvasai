@@ -14,6 +14,7 @@ import { queryClient } from "@/lib/queryClient";
 import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
 import { Share, ArrowLeft, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import type { Database } from "@/lib/database.types";
 
 interface WorkspaceClientProps {
   workspaceId: string;
@@ -26,10 +27,10 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
   const { toast } = useToast();
   const [newCanvasTitle, setNewCanvasTitle] = useState("");
   const [showCanvasDialog, setShowCanvasDialog] = useState(false);
-  const [shareCanvas, setShareCanvas] = useState<any>(null);
+  const [shareCanvas, setShareCanvas] = useState<Database['public']['Tables']['canvases']['Row'] | null>(null);
 
   // Fetch workspace details
-  const { data: workspace, isLoading: workspaceLoading } = useQuery({
+  const { data: workspace, isLoading: workspaceLoading } = useQuery<Database['public']['Tables']['workspaces']['Row']>({
     queryKey: ["workspace", workspaceId],
     queryFn: async () => {
       const supabase = createClient();
@@ -46,7 +47,7 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
   });
 
   // Fetch canvases for this workspace
-  const { data: canvases = [], isLoading: canvasesLoading } = useQuery({
+  const { data: canvases = [], isLoading: canvasesLoading } = useQuery<Database['public']['Tables']['canvases']['Row'][]>({
     queryKey: ["canvases", workspaceId],
     queryFn: async () => {
       const supabase = createClient();

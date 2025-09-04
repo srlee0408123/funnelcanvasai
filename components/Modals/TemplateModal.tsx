@@ -17,8 +17,8 @@ interface TemplateModalProps {
 interface TemplateWithDetails extends FunnelTemplate {
   id: string;
   title: string;
-  description?: string | null;
-  category?: string;
+  description: string | null;
+  category: string;
   preview?: {
     nodeCount: number;
     category: string;

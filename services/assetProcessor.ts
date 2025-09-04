@@ -1,4 +1,4 @@
-import { storage } from "../storage";
+import { storage } from "./storageService";
 import { OpenAIService } from "./openai";
 const openaiService = new OpenAIService();
 import type { Asset } from "@shared/schema";
@@ -230,7 +230,31 @@ IMPORTANT: This is a text extraction task - please provide the actual text conte
       return metaJson.extractedText;
     }
 
-    // Fallback: return basic information about the PDF
+    // 마지막 단계: Supabase Storage에서 PDF를 다운로드하여 Vision OCR 수행
+    if (asset.fileRef) {
+      try {
+        const { createServiceClient } = await import("@/lib/supabase/service");
+        const supabase = createServiceClient();
+        const { data: fileData, error } = await supabase.storage
+          .from("user-uploads")
+          .download(asset.fileRef as unknown as string);
+        if (error || !fileData) {
+          throw new Error("Failed to download PDF from storage");
+        }
+
+        const arrayBuffer = await fileData.arrayBuffer();
+        const pdfBuffer = Buffer.from(arrayBuffer);
+        const visionResult = await this.processPDFWithVision(pdfBuffer, metaJson?.fileName || asset.title);
+        if (visionResult.success && visionResult.content) {
+          return visionResult.content;
+        }
+        throw new Error(visionResult.error || "Vision OCR returned no content");
+      } catch (err) {
+        console.error("PDF Vision processing failed, falling back to basic info:", err);
+      }
+    }
+
+    // 최종 Fallback: 메타 정보만 반환
     return `PDF 문서: ${asset.title}\n파일명: ${metaJson?.fileName || 'unknown'}\n크기: ${metaJson?.fileSize ? (metaJson.fileSize / 1024 / 1024).toFixed(2) + ' MB' : 'unknown'}`;
   }
 

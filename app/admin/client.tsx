@@ -22,7 +22,7 @@ export default function AdminClient() {
     queryKey: ["/api/admin/stats"],
     queryFn: async () => {
       const response = await apiRequest("GET", "/api/admin/stats");
-      return response as AdminStats;
+      return response as unknown as AdminStats;
     },
   });
 

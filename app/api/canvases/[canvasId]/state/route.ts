@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { createClient } from '@/lib/supabase/server';
+import type { Database } from '@/lib/database.types';
 
 /**
  * state/route.ts - Save/read canvas state (collection endpoint)
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .from('canvases')
       .select('*')
       .eq('id', canvasId)
-      .single();
+      .single() as { data: Database['public']['Tables']['canvases']['Row'] | null, error: any };
 
     if (canvasError || !canvas) {
       return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
@@ -36,14 +37,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
 
-      const { data: member } = await supabase
-        .from('workspace_members')
-        .select('*')
-        .eq('workspace_id', canvas.workspace_id)
-        .eq('user_id', userId)
-        .single();
+      let member = null;
+      if (canvas.workspace_id) {
+        const memberResult = await supabase
+          .from('workspace_members')
+          .select('*')
+          .eq('workspace_id', canvas.workspace_id)
+          .eq('user_id', userId)
+          .single() as { data: Database['public']['Tables']['workspace_members']['Row'] | null, error: any };
+        member = memberResult.data;
+      }
 
-      if (!member && canvas.created_by !== userId) {
+      if (!member && canvas.user_id !== userId) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
     }
@@ -55,7 +60,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .eq('canvas_id', canvasId)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .single() as { data: Database['public']['Tables']['canvas_states']['Row'] | null, error: any };
 
     return NextResponse.json(stateRow ?? null);
   } catch (error) {
@@ -80,20 +85,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .from('canvases')
       .select('*')
       .eq('id', canvasId)
-      .single();
+      .single() as { data: Database['public']['Tables']['canvases']['Row'] | null, error: any };
 
     if (canvasError || !canvas) {
       return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
     }
 
-    const { data: member } = await supabase
-      .from('workspace_members')
-      .select('*')
-      .eq('workspace_id', canvas.workspace_id)
-      .eq('user_id', userId)
-      .single();
+    let member = null;
+    if (canvas.workspace_id) {
+      const memberResult = await supabase
+        .from('workspace_members')
+        .select('*')
+        .eq('workspace_id', canvas.workspace_id)
+        .eq('user_id', userId)
+        .single() as { data: Database['public']['Tables']['workspace_members']['Row'] | null, error: any };
+      member = memberResult.data;
+    }
 
-    if (!member && canvas.created_by !== userId) {
+    if (!member && canvas.user_id !== userId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -103,13 +112,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Missing flowJson in body' }, { status: 400 });
     }
 
+    const insertPayload: Database['public']['Tables']['canvas_states']['Insert'] = {
+      canvas_id: canvasId,
+      version: 1, // 임시로 버전 1로 설정
+      flow_json: statePayload,
+      flow_hash: null,
+    };
+
     const { data: inserted, error: insertError } = await supabase
       .from('canvas_states')
-      .insert({
-        canvas_id: canvasId,
-        state: statePayload,
-        user_id: userId,
-      })
+      .insert(insertPayload as any)
       .select('*')
       .single();
 

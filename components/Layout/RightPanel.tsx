@@ -117,14 +117,43 @@ export default function RightPanel({ nodeId, canvasId, onClose }: RightPanelProp
     }
   }, [nodeId, canvasId, refetch]);
 
+  // Find the selected node from canvas state
+  const flowJson = (canvasState as any)?.flowJson;
+  const node = flowJson?.nodes?.find((n: any) => n.id === nodeId);
+
+  // 노드 업데이트 뮤테이션
+  const updateNodeMutation = useMutation({
+    mutationFn: async (updatedNode: any) => {
+      const currentFlow = (canvasState as any)?.flowJson || { nodes: [], edges: [] };
+      const updatedNodes = currentFlow.nodes.map((n: any) => 
+        n.id === nodeId ? { ...n, ...updatedNode } : n
+      );
+      const updatedFlow = { ...currentFlow, nodes: updatedNodes };
+      
+      return apiRequest(`/api/canvases/${canvasId}/state`, "POST", { flowJson: updatedFlow });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvasId, "state", "latest"] });
+    }
+  });
+
+  // Initialize form values when node data changes
+  useEffect(() => {
+    if (node) {
+      setNodeTitle(node.data.title || "");
+      setNodeDescription(node.data.subtitle || "");
+      setNodeIcon(node.data.icon || "📄");
+      setNodeColor(node.data.color || "#3B82F6");
+      setAssignees(node.data.assignees || []);
+    }
+  }, [node]);
+
   // Get workspace ID from canvas data
   const { data: canvasInfo } = useQuery({
     queryKey: ["/api/canvases", canvasId],
     enabled: !!canvasId,
   });
 
-  // Find the selected node from canvas state with comprehensive debugging
-  const flowJson = (canvasState as any)?.flowJson;
   console.log("FlowJson detailed structure:", {
     flowJson,
     hasFlowJson: !!flowJson,
@@ -133,12 +162,10 @@ export default function RightPanel({ nodeId, canvasId, onClose }: RightPanelProp
     fullFlowJson: JSON.stringify(flowJson, null, 2)
   });
   
-  let node = null;
   let availableNodeIds: string[] = [];
   
-  // Try different possible node structures
+  // Get available node IDs for debugging
   if (flowJson?.nodes && Array.isArray(flowJson.nodes)) {
-    node = flowJson.nodes.find((n: any) => n.id === nodeId);
     availableNodeIds = flowJson.nodes.map((n: any) => n.id);
     console.log("Found nodes in flowJson.nodes:", availableNodeIds);
   } else if (flowJson && typeof flowJson === 'object') {
@@ -151,11 +178,9 @@ export default function RightPanel({ nodeId, canvasId, onClose }: RightPanelProp
         const items = flowJson[key];
         console.log(`Checking array in flowJson.${key}:`, items.map((item: any) => ({ id: item?.id, type: typeof item })));
         
-        const foundNode = items.find((n: any) => n?.id === nodeId);
-        if (foundNode) {
-          node = foundNode;
+        if (items.some((n: any) => n?.id === nodeId)) {
           availableNodeIds = items.map((n: any) => n?.id).filter(Boolean);
-          console.log(`Found node in flowJson.${key}`);
+          console.log(`Found nodes in flowJson.${key}`);
           break;
         }
       }
@@ -202,22 +227,6 @@ export default function RightPanel({ nodeId, canvasId, onClose }: RightPanelProp
       </div>
     );
   }
-
-  // 노드 업데이트 뮤테이션
-  const updateNodeMutation = useMutation({
-    mutationFn: async (updatedNode: any) => {
-      const currentFlow = (canvasState as any)?.flowJson || { nodes: [], edges: [] };
-      const updatedNodes = currentFlow.nodes.map((n: any) => 
-        n.id === nodeId ? { ...n, ...updatedNode } : n
-      );
-      const updatedFlow = { ...currentFlow, nodes: updatedNodes };
-      
-      return apiRequest(`/api/canvases/${canvasId}/state`, "POST", { flowJson: updatedFlow });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvasId, "state", "latest"] });
-    }
-  });
 
   // 담당자들 변경 핸들러
   const handleAssigneesChange = (newAssignees: string[]) => {
@@ -364,17 +373,6 @@ export default function RightPanel({ nodeId, canvasId, onClose }: RightPanelProp
   // 노드 존재 여부를 더 정확히 확인
   const nodeExists = node && typeof node === 'object' && node.id;
   console.log("Node validation:", { node, nodeExists, nodeId, hasId: !!node?.id, hasData: !!node?.data });
-  
-  // Initialize form values when node data changes
-  useEffect(() => {
-    if (node) {
-      setNodeTitle(node.data.title || "");
-      setNodeDescription(node.data.subtitle || "");
-      setNodeIcon(node.data.icon || "📄");
-      setNodeColor(node.data.color || "#3B82F6");
-      setAssignees(node.data.assignees || []);
-    }
-  }, [node]);
   
   if (!nodeExists) {
     return (

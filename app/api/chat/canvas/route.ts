@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     const supabase = createServiceClient();
 
     // 사용자 메시지 저장
-    const { data: userMessage, error: userMessageError } = await supabase
+    const { data: userMessage, error: userMessageError } = await (supabase as any)
       .from('chat_messages')
       .insert({
         canvas_id: canvasId,
@@ -67,25 +67,28 @@ export async function POST(request: NextRequest) {
     }
 
     // 캔버스 지식 베이스 조회
-    const { data: canvasKnowledge } = await supabase
+    const { data: canvasKnowledgeData } = await supabase
       .from('canvas_knowledge')
       .select('*')
       .eq('canvas_id', canvasId)
       .limit(10);
+    const canvasKnowledge = (canvasKnowledgeData || []) as any[];
 
     // 글로벌 AI 지식 조회
-    const { data: globalKnowledge } = await supabase
+    const { data: globalKnowledgeData } = await supabase
       .from('global_ai_knowledge')
       .select('*')
       .limit(5);
+    const globalKnowledge = (globalKnowledgeData || []) as any[];
 
     // 최근 채팅 히스토리 조회 (컨텍스트용)
-    const { data: chatHistory } = await supabase
+    const { data: chatHistoryData } = await supabase
       .from('chat_messages')
       .select('role, content, created_at')
       .eq('canvas_id', canvasId)
       .order('created_at', { ascending: false })
       .limit(10);
+    const chatHistory = (chatHistoryData || []) as any[];
 
     // 웹 검색이 필요한지 판단
     const shouldSearch = webSearchService.shouldSearchWeb(message);
@@ -179,7 +182,7 @@ ${historyText}
     const aiMessage = openaiResponse.choices[0].message.content || "죄송합니다. 응답을 생성할 수 없습니다.";
 
     // AI 응답 저장
-    const { data: assistantMessage, error: assistantMessageError } = await supabase
+    const { data: assistantMessage, error: assistantMessageError } = await (supabase as any)
       .from('chat_messages')
       .insert({
         canvas_id: canvasId,

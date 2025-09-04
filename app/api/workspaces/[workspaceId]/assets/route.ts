@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { withAuthorization } from '@/lib/auth/withAuthorization';
 import { extractYouTubeTranscript } from "@/services/apify/youtubeTranscript";
 import { crawlWebsite } from "@/services/apify/websiteCrawler";
 
@@ -25,17 +25,11 @@ import { crawlWebsite } from "@/services/apify/websiteCrawler";
 
 // Using functional services (no instantiation needed)
 
-export async function POST(
+const postAsset = async (
   request: NextRequest,
-  { params }: { params: Promise<{ workspaceId: string }> }
-) {
+  { params }: { params: any }
+) => {
   try {
-    const { userId } = await auth();
-    
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { workspaceId } = await params;
     const body = await request.json();
     const { type, title, url, canvasId, metaJson, testMode = false } = body;
@@ -61,20 +55,6 @@ export async function POST(
     }
 
     const supabase = createServiceClient();
-
-    // 워크스페이스 멤버십 확인
-    const { data: membership } = await supabase
-      .from('workspace_members')
-      .select('role')
-      .eq('workspace_id', workspaceId)
-      .eq('user_id', userId)
-      .single();
-
-    if (!membership) {
-      return NextResponse.json({ 
-        error: "Access denied to workspace" 
-      }, { status: 403 });
-    }
 
     console.log(`🚀 Creating ${type} asset: ${title} for canvas ${canvasId}`);
     console.log(`📋 Request body:`, { type, title, url, canvasId, metaJson });
@@ -139,7 +119,7 @@ export async function POST(
     // Canvas Knowledge에 저장
     // 스키마: id (auto), canvas_id, type, title, content, metadata, embedding (null), created_at (auto), updated_at (auto)
     console.log(`💾 Saving to DB with type: "${type}"`);
-    const { data: knowledgeEntry, error: knowledgeError } = await supabase
+    const { data: knowledgeEntry, error: knowledgeError } = await (supabase as any)
       .from('canvas_knowledge')
       .insert({
         canvas_id: canvasId,        // UUID - canvases 테이블 참조
@@ -179,38 +159,18 @@ export async function POST(
       details: error instanceof Error ? error.message : "Unknown error" 
     }, { status: 500 });
   }
-}
+};
 
-export async function GET(
+const getAssets = async (
   request: NextRequest,
-  { params }: { params: Promise<{ workspaceId: string }> }
-) {
+  { params }: { params: any }
+) => {
   try {
-    const { userId } = await auth();
-    
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { workspaceId } = await params;
     const { searchParams } = new URL(request.url);
     const canvasId = searchParams.get('canvasId');
 
     const supabase = createServiceClient();
-
-    // 워크스페이스 멤버십 확인
-    const { data: membership } = await supabase
-      .from('workspace_members')
-      .select('role')
-      .eq('workspace_id', workspaceId)
-      .eq('user_id', userId)
-      .single();
-
-    if (!membership) {
-      return NextResponse.json({ 
-        error: "Access denied to workspace" 
-      }, { status: 403 });
-    }
 
     let query = supabase
       .from('canvas_knowledge')
@@ -228,7 +188,6 @@ export async function GET(
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Normalize to frontend Asset shape for compatibility
     const normalized = (assets || []).map((item: any) => ({
       id: item.id,
       workspaceId: workspaceId,
@@ -252,4 +211,7 @@ export async function GET(
       details: error instanceof Error ? error.message : "Unknown error" 
     }, { status: 500 });
   }
-}
+};
+
+export const POST = withAuthorization({ resourceType: 'workspace', minRole: 'member' }, postAsset);
+export const GET = withAuthorization({ resourceType: 'workspace' }, getAssets);

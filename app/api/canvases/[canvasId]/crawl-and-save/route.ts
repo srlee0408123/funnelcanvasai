@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { withAuthorization } from '@/lib/auth/withAuthorization';
 import { crawlWebsite } from "@/services/apify/websiteCrawler";
 import { extractYouTubeTranscript, isValidYouTubeUrl } from "@/services/apify/youtubeTranscript";
 
@@ -25,17 +25,11 @@ import { extractYouTubeTranscript, isValidYouTubeUrl } from "@/services/apify/yo
 
 // Functional services - no instantiation required
 
-export async function POST(
+const postCrawlAndSave = async (
   request: NextRequest,
-  { params }: { params: Promise<{ canvasId: string }> }
-) {
+  { params }: { params: any }
+) => {
   try {
-    const { userId } = await auth();
-    
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { canvasId } = await params;
     const body = await request.json();
     const { url, title } = body;
@@ -45,33 +39,6 @@ export async function POST(
     }
 
     const supabase = createServiceClient();
-
-    // Canvas 접근 권한 확인
-    const { data: canvas } = await supabase
-      .from('canvases')
-      .select('workspace_id')
-      .eq('id', canvasId)
-      .single();
-
-    if (!canvas) {
-      return NextResponse.json({ 
-        error: "Canvas not found" 
-      }, { status: 404 });
-    }
-
-    // 워크스페이스 멤버십 확인
-    const { data: membership } = await supabase
-      .from('workspace_members')
-      .select('role')
-      .eq('workspace_id', canvas.workspace_id)
-      .eq('user_id', userId)
-      .single();
-
-    if (!membership) {
-      return NextResponse.json({ 
-        error: "Access denied to canvas" 
-      }, { status: 403 });
-    }
 
     console.log(`🌐 Crawling ${url} and saving to canvas ${canvasId}`);
     const startTime = Date.now();
@@ -157,7 +124,7 @@ export async function POST(
 
     // Canvas Knowledge에 저장
     console.log(`💾 Saving to DB with type: "${sourceType}"`);
-    const { data: knowledgeEntry, error: knowledgeError } = await supabase
+    const { data: knowledgeEntry, error: knowledgeError } = await (supabase as any)
       .from('canvas_knowledge')
       .insert({
         canvas_id: canvasId,
@@ -197,4 +164,6 @@ export async function POST(
       error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
-}
+};
+
+export const POST = withAuthorization({ resourceType: 'canvas', minRole: 'member' }, postCrawlAndSave);

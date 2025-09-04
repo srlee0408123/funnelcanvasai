@@ -14,6 +14,9 @@ import UploadModal from "@/components/Modals/UploadModal";
 import TemplateModal from "@/components/Modals/TemplateModal";
 import AIFeedbackModal from "@/components/Modals/AIFeedbackModal";
 import { WorkspaceMembersModal } from "@/components/Modals/WorkspaceMembersModal";
+import type { CanvasViewProps, CanvasAreaCanvas, FlowNode, UploadType } from "@/types/canvas";
+import type { Asset } from "@shared/schema";
+import { toCanvasAreaCanvas } from "@/types/canvas";
 
 /**
  * CanvasView - Canvas.tsx와 동일한 구조의 캔버스 뷰 컴포넌트
@@ -34,22 +37,7 @@ import { WorkspaceMembersModal } from "@/components/Modals/WorkspaceMembersModal
  * - 컴포넌트 props는 기존 Layout 컴포넌트들과 호환되어야 함
  */
 
-// Canvas.tsx와 동일한 타입 정의
-type Asset = any; // 실제 Asset 타입은 shared/schema.ts에서 가져와야 함
-
-interface CanvasViewProps {
-  canvas: {
-    id: string;
-    title: string;
-    workspace_id: string;
-    workspaceId: string;
-    created_by: string;
-    is_public?: boolean;
-  };
-  canvasState?: any;
-  isPublic?: boolean;
-  readOnly?: boolean;
-}
+// 타입 정의는 types/canvas.ts에서 가져옴
 
 export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = false }: CanvasViewProps) {
   const { toast } = useToast();
@@ -63,11 +51,11 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showAIModal, setShowAIModal] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
-  const [uploadType, setUploadType] = useState<"pdf" | "youtube" | "url">("pdf");
+  const [uploadType, setUploadType] = useState<UploadType>("pdf");
   
   // Node details state for right panel
   const [showNodeDetails, setShowNodeDetails] = useState(false);
-  const [selectedNodeDetails, setSelectedNodeDetails] = useState<any>(null);
+  const [selectedNodeDetails, setSelectedNodeDetails] = useState<FlowNode | null>(null);
   
   // Todo sticker state
   const [showTodoSticker, setShowTodoSticker] = useState(true);
@@ -83,7 +71,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
     setShowRightPanel(false);
   };
 
-  const handleNodeDoubleClick = (node: any) => {
+  const handleNodeDoubleClick = (node: FlowNode) => {
     // Show in right panel instead of sidebar
     setSelectedNodeId(node.id);
     setShowRightPanel(true);
@@ -94,7 +82,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
     setSelectedNodeDetails(null);
   };
 
-  const handleOpenUploadModal = (type: "pdf" | "youtube" | "url") => {
+  const handleOpenUploadModal = (type: UploadType) => {
     setUploadType(type);
     setShowUploadModal(true);
   };
@@ -169,7 +157,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         onOpenTemplateModal={() => setShowTemplateModal(true)}
         onOpenMembersModal={handleOpenMembersModal}
         assets={assets}
-        workspaceId={canvas.workspaceId || canvas.workspace_id}
+        workspaceId={canvas.workspaceId || canvas.workspace_id || ''}
         workspaceName={canvas.title}
         selectedNode={selectedNodeDetails}
         showNodeDetails={showNodeDetails}
@@ -178,7 +166,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
 
       {/* Main Canvas Area */}
       <CanvasArea
-        canvas={canvas}
+        canvas={toCanvasAreaCanvas(canvas)}
         canvasState={canvasState}
         selectedNodeId={selectedNodeId}
         onNodeSelect={handleNodeSelect}
@@ -219,7 +207,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         open={showUploadModal}
         onOpenChange={setShowUploadModal}
         uploadType={uploadType}
-        workspaceId={canvas.workspaceId || canvas.workspace_id}
+        workspaceId={canvas.workspaceId || canvas.workspace_id || ''}
         canvasId={canvas.id}
       />
 
@@ -238,7 +226,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
       <WorkspaceMembersModal
         isOpen={showMembersModal}
         onClose={() => setShowMembersModal(false)}
-        workspaceId={canvas.workspaceId || canvas.workspace_id}
+        workspaceId={canvas.workspaceId || canvas.workspace_id || ''}
         workspaceName={canvas.title}
       />
     </div>

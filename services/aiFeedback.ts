@@ -1,7 +1,26 @@
-import { storage } from "../storage";
+/**
+ * aiFeedback.ts - 캔버스 퍼널 AI 피드백 서비스
+ * 
+ * 주요 역할:
+ * 1. 캔버스 상태와 지식 베이스를 결합해 피드백 생성
+ * 2. 동일 입력(flow/kb) 중복 호출 방지를 위한 해시 캐싱
+ * 3. 피드백 실행 이력/아이템을 DB에 저장 및 재활용
+ * 
+ * 핵심 특징:
+ * - Supabase 서비스 클라이언트를 사용해 서버 측 안전 접근
+ * - 해시/정규화 로직을 유틸로 분리해 재사용성 향상
+ * - 일관된 에러 처리(throw)로 상위에서 통합 핸들링
+ * 
+ * 주의사항:
+ * - 프론트 스토리지 의존 금지(브라우저 localStorage 미사용)
+ * - 모델/버전 등 하드코딩 지양(환경 변수/상수화)
+ */
+import { storage } from "./storageService";
 import { OpenAIService, type FeedbackItem } from "./openai";
 const openaiService = new OpenAIService();
-import { createHash } from "crypto";
+import { generateFlowHash, generateKnowledgeHash } from "@/lib/hashUtils";
+const FEEDBACK_PROMPT_VERSION = process.env.FEEDBACK_PROMPT_VERSION || "1.0";
+const FEEDBACK_BP_VERSION = process.env.FEEDBACK_BP_VERSION || "1.0";
 
 export interface FeedbackRequest {
   canvasId: string;
@@ -37,9 +56,9 @@ export class AIFeedbackService {
     }
 
     // Generate flow and knowledge base hashes
-    const flowHash = this.generateFlowHash(state.flowJson);
+    const flowHash = generateFlowHash(state.flowJson);
     const kbData = await this.getKnowledgeBase(canvas.workspaceId, userId);
-    const kbHash = this.generateKnowledgeHash(kbData);
+    const kbHash = generateKnowledgeHash(kbData);
 
     // Check for cached feedback
     const existingRun = await storage.getFeedbackRun(canvasId, flowHash, kbHash);
@@ -78,9 +97,9 @@ export class AIFeedbackService {
       stateVersion: state.version,
       flowHash,
       kbHash,
-      promptVersion: "1.0",
-      bpVersion: "1.0",
-      model: "gpt-4o",
+      promptVersion: FEEDBACK_PROMPT_VERSION,
+      bpVersion: FEEDBACK_BP_VERSION,
+      model: (openaiService as any).chatModel ?? "gpt-4o",
       latencyMs,
     });
 
@@ -140,52 +159,7 @@ export class AIFeedbackService {
     return knowledgeBase;
   }
 
-  private generateFlowHash(flowJson: any): string {
-    const normalized = this.normalizeFlowJson(flowJson);
-    return createHash('sha256')
-      .update(JSON.stringify(normalized))
-      .digest('hex')
-      .substring(0, 32);
-  }
-
-  private generateKnowledgeHash(knowledgeBase: Array<{ title: string; content: string; source: string }>): string {
-    const concatenated = knowledgeBase
-      .map(kb => `${kb.source}:${kb.title}:${kb.content.substring(0, 100)}`)
-      .sort()
-      .join('|');
-    
-    return createHash('sha256')
-      .update(concatenated)
-      .digest('hex')
-      .substring(0, 32);
-  }
-
-  private normalizeFlowJson(flowJson: any): any {
-    // Sort nodes and edges to ensure consistent hashing
-    const normalized = { ...flowJson };
-    
-    if (normalized.nodes) {
-      normalized.nodes = [...normalized.nodes].sort((a, b) => a.id.localeCompare(b.id));
-    }
-    
-    if (normalized.edges) {
-      normalized.edges = [...normalized.edges].sort((a, b) => a.id.localeCompare(b.id));
-    }
-    
-    return normalized;
-  }
-
-  applyTemplateParameters(flowJson: any, parameters: Record<string, any>): any {
-    let jsonString = JSON.stringify(flowJson);
-    
-    // Replace template variables like {{brand_name}}
-    for (const [key, value] of Object.entries(parameters)) {
-      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-      jsonString = jsonString.replace(regex, String(value));
-    }
-    
-    return JSON.parse(jsonString);
-  }
+  // 하위 호환: 기존 퍼블릭 메서드는 필요 시 hashUtils를 re-export하거나 별도 유틸에서 사용하세요.
 }
 
 export const aiFeedbackService = new AIFeedbackService();

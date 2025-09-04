@@ -34,11 +34,14 @@ async function checkPublicCanvas(canvasId: string) {
   const supabase = createServiceClient();
   
   // 캔버스 정보 조회
-  const { data: canvas, error: canvasError } = await supabase
+  const { data: canvasData, error: canvasError } = await supabase
     .from('canvases')
     .select('id, is_public, title')
     .eq('id', canvasId)
     .single();
+
+  type CanvasPub = { id: string; is_public: boolean; title: string };
+  const canvas = canvasData as CanvasPub | null;
 
   if (canvasError || !canvas) {
     return { isPublic: false, error: '캔버스를 찾을 수 없습니다.' };
@@ -74,7 +77,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // 서비스 클라이언트로 채팅 메시지 조회 (RLS 우회)
     const supabase = createServiceClient();
-    const { data: messages, error: messagesError } = await supabase
+    const { data: messagesData, error: messagesError } = await supabase
       .from('chat_messages')
       .select(`
         id,
@@ -85,6 +88,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .eq('canvas_id', canvasId)
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);
+    const messages = (messagesData || []) as any[];
 
     if (messagesError) {
       console.error('Error fetching public chat messages:', messagesError);

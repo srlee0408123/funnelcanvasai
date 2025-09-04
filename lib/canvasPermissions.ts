@@ -14,7 +14,7 @@ export interface CanvasPermissionResult {
   hasAccess: boolean;
   canvas?: {
     id: string;
-    workspace_id: string;
+    workspaceId: string;
   };
   error?: string;
 }
@@ -30,11 +30,14 @@ export async function checkCanvasAccess(
     const supabase = createServiceClient();
 
     // 캔버스 정보 조회
-    const { data: canvas, error: canvasError } = await supabase
+    type CanvasRow = { id: string; workspace_id: string };
+    const canvasResult = await supabase
       .from('canvases')
       .select('id, workspace_id')
       .eq('id', canvasId)
       .single();
+    const canvas = canvasResult.data as CanvasRow | null;
+    const canvasError = canvasResult.error;
 
     if (canvasError || !canvas) {
       return {
@@ -67,7 +70,7 @@ export async function checkCanvasAccess(
 
     return {
       hasAccess,
-      canvas,
+      canvas: { id: canvas.id, workspaceId: canvas.workspace_id },
       error: hasAccess ? undefined : '이 캔버스에 접근할 권한이 없습니다.'
     };
 
@@ -86,7 +89,7 @@ export async function checkCanvasAccess(
 export async function requireCanvasAccess(
   canvasId: string,
   userId: string | null
-): Promise<{ success: true; canvas: { id: string; workspace_id: string } } | { success: false; response: Response }> {
+): Promise<{ success: true; canvas: { id: string; workspaceId: string } } | { success: false; response: Response }> {
   
   // 사용자 인증 확인
   if (!userId) {
