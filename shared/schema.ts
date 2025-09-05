@@ -417,14 +417,7 @@ export const knowledgeChunks = pgTable("knowledge_chunks", {
   knowledgeId: uuid("knowledge_id").references(() => canvasKnowledge.id, { onDelete: 'cascade' }).notNull(),
   seq: integer("seq").notNull(),
   text: text("text").notNull(),
-  tokens: integer("tokens"),
-  startChar: integer("start_char"),
-  endChar: integer("end_char"),
-  startTs: doublePrecision("start_ts"),
-  endTs: doublePrecision("end_ts"),
   embedding: text("embedding"), // store as JSON string for portability; DB has vector index too
-  chunkHash: varchar("chunk_hash"),
-  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table: any) => [
   index("knowledge_chunks_canvas_id_idx").on(table.canvasId),

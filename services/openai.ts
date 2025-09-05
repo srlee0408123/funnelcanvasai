@@ -37,7 +37,8 @@ export class OpenAIService {
   // 기본/비전/임베딩 모델은 환경 변수로 제어
   private readonly chatModel = process.env.OPENAI_DEFAULT_MODEL || "gpt-4o";
   private readonly visionModel = process.env.OPENAI_VISION_MODEL || "gpt-4o";
-  private readonly embeddingsModel = process.env.OPENAI_EMBEDDINGS_MODEL || "text-embedding-ada-002";
+  // Unify on GPT embeddings v3 (small): 1536 dims, cost-effective
+  private readonly embeddingsModel = process.env.OPENAI_EMBEDDINGS_MODEL || "text-embedding-3-small";
 
   public getChatModelName(): string {
     return this.chatModel;
@@ -216,6 +217,20 @@ ${content}
     } catch (error) {
       console.error("Error generating embedding:", error);
       throw new Error("Failed to generate embedding");
+    }
+  }
+
+  async generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+    try {
+      const response = await openai.embeddings.create({
+        model: this.embeddingsModel,
+        input: texts,
+      });
+      return response.data.map(d => d.embedding);
+    } catch (error) {
+      console.error("Error generating batch embeddings:", error);
+      throw new Error("Failed to generate batch embeddings");
     }
   }
 

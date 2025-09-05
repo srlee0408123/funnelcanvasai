@@ -215,12 +215,7 @@ serve(async (req: Request) => {
               knowledge_id: inserted.id,
               seq,
               text: c.text,
-              tokens: c.tokens,
-              start_char: c.start,
-              end_char: c.end,
               embedding: embedding ?? null,
-              chunk_hash: chunkHash,
-              metadata: { source: "youtube-transcript", title: resolvedTitle },
             });
           } catch (e) {
             console.error("Embedding insert failed:", e);
