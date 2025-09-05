@@ -65,11 +65,11 @@ export async function canAccessCanvas(
 ): Promise<{
   hasAccess: boolean;
   role?: AccessRole;
-  canvas?: Pick<Database['public']['Tables']['canvases']['Row'], 'id' | 'workspace_id' | 'is_public' | 'user_id'>;
+  canvas?: Pick<Database['public']['Tables']['canvases']['Row'], 'id' | 'workspace_id' | 'is_public' | 'created_by'>;
 }> {
   const { data: canvas, error: canvasError } = await supabase
     .from('canvases')
-    .select('id, workspace_id, is_public, user_id')
+    .select('id, workspace_id, is_public, created_by')
     .eq('id', canvasId)
     .single();
 
@@ -81,7 +81,7 @@ export async function canAccessCanvas(
   }
 
   // 캔버스 작성자
-  if (canvas.user_id === userId) {
+  if ((canvas as any).created_by === userId) {
     return { hasAccess: true, role: 'owner', canvas };
   }
 

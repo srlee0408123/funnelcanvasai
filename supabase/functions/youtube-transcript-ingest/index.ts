@@ -122,7 +122,7 @@ serve(async (req: Request) => {
     // 2) Call Apify with extended timeout and fallback actor
     let items: ApifyItem[] = [];
     try {
-      const items1 = await callApifyStreamers(apifyToken, youtubeUrl, 55000);
+      const items1 = await callApifyStreamers(apifyToken, youtubeUrl, 90000);
       if (items1 && items1.length > 0) items = items1;
     } catch (e) {
       console.warn("Primary Apify streamers actor failed or timed out:", e);
@@ -130,7 +130,7 @@ serve(async (req: Request) => {
 
     if (!items || items.length === 0) {
       try {
-        const items2 = await callApifyPintostudio(apifyToken, youtubeUrl, 45000);
+        const items2 = await callApifyPintostudio(apifyToken, youtubeUrl, 90000);
         if (items2 && items2.length > 0) items = items2 as ApifyItem[];
       } catch (e2) {
         console.error("Fallback Apify pintostudio actor failed:", e2);

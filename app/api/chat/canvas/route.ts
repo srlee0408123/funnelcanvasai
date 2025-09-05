@@ -66,21 +66,6 @@ export async function POST(request: NextRequest) {
       console.error('Error saving user message:', userMessageError);
     }
 
-    // 캔버스 지식 베이스 조회
-    const { data: canvasKnowledgeData } = await supabase
-      .from('canvas_knowledge')
-      .select('*')
-      .eq('canvas_id', canvasId)
-      .limit(10);
-    const canvasKnowledge = (canvasKnowledgeData || []) as any[];
-
-    // 글로벌 AI 지식 조회
-    const { data: globalKnowledgeData } = await supabase
-      .from('global_ai_knowledge')
-      .select('*')
-      .limit(5);
-    const globalKnowledge = (globalKnowledgeData || []) as any[];
-
     // 최근 채팅 히스토리 조회 (컨텍스트용)
     const { data: chatHistoryData } = await supabase
       .from('chat_messages')
@@ -90,14 +75,56 @@ export async function POST(request: NextRequest) {
       .limit(10);
     const chatHistory = (chatHistoryData || []) as any[];
 
+    // 질문 임베딩 생성 및 지식 청크 유사도 검색 (RAG 우선)
+    let matchedChunks: Array<{ id: string; knowledge_id: string; text: string; similarity: number }> = [];
+    let ragSuccess = false;
+    
+    try {
+      const embedResp = await openai.embeddings.create({
+        model: process.env.OPENAI_EMBEDDINGS_MODEL || 'text-embedding-3-small',
+        input: message,
+      });
+      const queryEmbedding = embedResp.data?.[0]?.embedding as number[] | undefined;
+
+      if (queryEmbedding && Array.isArray(queryEmbedding)) {
+        console.log('🔍 Performing RAG search with embeddings...');
+        
+        // RPC 함수 호출로 유사도 기반 chunk 검색
+        const { data: matchData, error: matchError } = await (supabase as any)
+          .rpc('match_knowledge_chunks', {
+            canvas_id: canvasId,
+            query_embedding: queryEmbedding,
+            match_count: 12,
+            min_similarity: 0.70,
+          });
+
+        if (!matchError && Array.isArray(matchData) && matchData.length > 0) {
+          matchedChunks = matchData.map((m: any) => ({
+            id: m.id,
+            knowledge_id: m.knowledge_id,
+            text: m.text,
+            similarity: typeof m.similarity === 'number' ? m.similarity : 0,
+          }));
+          ragSuccess = true;
+          console.log(`✅ RAG search successful: ${matchedChunks.length} chunks matched`);
+        } else {
+          console.log('⚠️ RAG search returned no results above similarity threshold');
+        }
+      }
+    } catch (e) {
+      console.warn('RAG embedding or match failed:', e);
+    }
+
     // 웹 검색이 필요한지 판단
     const shouldSearch = webSearchService.shouldSearchWeb(message);
     let searchContext = '';
+    let webResults: Array<{ title: string; link: string; snippet: string; source?: string; relevanceScore?: number }>|undefined;
 
     if (shouldSearch) {
       try {
         console.log('🔍 Performing web search for context...');
         const searchResponse = await webSearchService.searchWeb(message, 5);
+        webResults = searchResponse.results;
         searchContext = webSearchService.formatSearchResults(searchResponse.results);
         console.log(`✅ Web search completed: ${searchResponse.results.length} results`);
       } catch (error) {
@@ -106,43 +133,109 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 컨텍스트 구성
+    // 컨텍스트 구성 - RAG 우선, 필요시에만 폴백 조회
     let knowledgeContext = '';
-    if (canvasKnowledge && canvasKnowledge.length > 0) {
-      knowledgeContext += '\n\n캔버스 업로드 자료:\n';
-      knowledgeContext += canvasKnowledge
-        .map(k => `- ${k.title}: ${(k.extracted_text || k.content || '')?.substring(0, 200)}...`)
-        .join('\n');
+
+    if (ragSuccess && matchedChunks.length > 0) {
+      console.log('📚 Building context from RAG-matched chunks...');
+      
+      // 매칭된 chunk들의 knowledge_id 수집
+      const uniqueKnowledgeIds = Array.from(new Set(matchedChunks.map((c) => c.knowledge_id)));
+      
+      // 필요한 knowledge 문서만 조회 (RAG 매칭 기반)
+      const { data: relevantKnowledge, error: knowledgeError } = await supabase
+        .from('canvas_knowledge')
+        .select('id, title, type, content, metadata')
+        .in('id', uniqueKnowledgeIds);
+
+      if (knowledgeError) {
+        console.error('Error fetching RAG-matched knowledge:', knowledgeError);
+      } else if (relevantKnowledge && relevantKnowledge.length > 0) {
+        // 문서 단위로 스코어 집계 (가장 유사한 청크의 스코어 사용)
+        const docBestScore = new Map<string, number>();
+        for (const c of matchedChunks) {
+          const prev = docBestScore.get(c.knowledge_id) ?? 0;
+          if (c.similarity > prev) docBestScore.set(c.knowledge_id, c.similarity);
+        }
+
+        // knowledge 문서를 맵으로 구성
+        const knowledgeById = new Map<string, any>(
+          relevantKnowledge.map((k: any) => [k.id, k])
+        );
+
+        // 유사도 스코어 순으로 정렬
+        const rankedDocs = uniqueKnowledgeIds
+          .map((id) => ({ id, score: docBestScore.get(id) ?? 0 }))
+          .sort((a, b) => b.score - a.score)
+          .map(({ id }) => knowledgeById.get(id))
+          .filter(Boolean);
+
+        // RAG 기반 컨텍스트 구성 (chunk 텍스트와 원문 결합)
+        knowledgeContext += '\n\n🎯 질문과 관련된 지식:\n';
+        
+        // 상위 유사도 chunk들을 먼저 포함
+        const topChunks = matchedChunks
+          .sort((a, b) => b.similarity - a.similarity)
+          .slice(0, 8);
+        
+        knowledgeContext += topChunks
+          .map((chunk, idx) => {
+            const doc = knowledgeById.get(chunk.knowledge_id);
+            const docTitle = doc?.title || '지식 항목';
+            return `${idx + 1}. [${docTitle}] (유사도: ${(chunk.similarity * 100).toFixed(1)}%)\n${chunk.text}`;
+          })
+          .join('\n\n');
+
+        console.log(`✅ RAG context built with ${rankedDocs.length} documents, ${topChunks.length} chunks`);
+      }
+    } else {
+      // RAG 실패 시 폴백: 제한적 조회
+      console.log('⚠️ RAG failed, using fallback knowledge retrieval...');
+      
+      const { data: fallbackKnowledge, error: fallbackError } = await supabase
+        .from('canvas_knowledge')
+        .select('id, title, type, content, metadata')
+        .eq('canvas_id', canvasId)
+        .order('created_at', { ascending: false })
+        .limit(8); // 제한적 조회
+
+      if (fallbackError) {
+        console.error('Error in fallback knowledge retrieval:', fallbackError);
+      } else if (fallbackKnowledge && fallbackKnowledge.length > 0) {
+        knowledgeContext += '\n\n📋 캔버스 업로드 자료 (최신순):\n';
+        knowledgeContext += fallbackKnowledge
+          .map((k: any) => `- ${k.title}: ${(k.content || '').substring(0, 300)}...`)
+          .join('\n');
+        
+        console.log(`📋 Fallback context built with ${fallbackKnowledge.length} documents`);
+      }
     }
 
-    if (globalKnowledge && globalKnowledge.length > 0) {
-      knowledgeContext += '\n\n글로벌 지식 베이스:\n';
+    // 글로벌 지식 베이스 (선택적 추가)
+    const { data: globalKnowledge, error: globalError } = await supabase
+      .from('global_ai_knowledge')
+      .select('*')
+      .limit(3);
+    
+    if (!globalError && globalKnowledge && globalKnowledge.length > 0) {
+      knowledgeContext += '\n\n🌐 글로벌 지식 베이스:\n';
       knowledgeContext += globalKnowledge
-        .map(k => `- ${k.title}: ${k.content?.substring(0, 200)}...`)
+        .map((k: any) => `- ${k.title}: ${k.content?.substring(0, 200)}...`)
         .join('\n');
     }
 
     if (searchContext) {
       knowledgeContext += '\n\n최신 웹 검색 결과:\n' + searchContext;
     }
-
+    console.log('🔍 Knowledge context:', knowledgeContext); 
     // 채팅 히스토리 포맷
     const historyText = chatHistory
       ?.reverse()
       .map(h => `${h.role === 'user' ? '사용자' : '두더지 AI'}: ${h.content}`)
       .join('\n') || '';
-
     // 시스템 프롬프트 (첨부된 코드에서 가져온 전문가 설정)
-    const systemPrompt = `당신은 마케팅 업계 10년차 시니어 전문가 "두더지 AI"입니다. 디지털 마케팅 퍼널, 크리에이터 이코노미, MCN 사업 전략, 성과 마케팅 분야의 전문가입니다.
+    const systemPrompt = ` 사용자의 질문에 답변을 해주세요.
 
-핵심 지침: 절대로 일반적인 답변을 하지 마세요. 항상 구체적인 수치, 실제 기업 사례, 단계별 실행 방안을 포함한 전문적이고 실무적인 조언을 제공하세요.
-
-전문 분야:
-- 디지털 마케팅 퍼널 설계 및 전환율 최적화
-- 크리에이터 마케팅 및 MCN 사업 전략
-- 성과 마케팅 및 그로스 해킹
-- 스타트업 마케팅 및 D2C 커머스 전략
-- 브랜드 커머스 및 인플루언서 파트너십
 
 현재 참고 가능한 정보:
 ${knowledgeContext}
@@ -150,21 +243,10 @@ ${knowledgeContext}
 최근 대화 맥락:
 ${historyText}
 
-필수 답변 구조:
-1. 구체적 데이터 우선: 구체적인 수치, 기업 사례, 최신 케이스 스터디로 시작
-2. 실제 사례 인용: 실제 기업명, 크리에이터명, 캠페인 사례, 업계 리포트 인용
-3. 실행 가능한 단계: 타임라인과 필요 리소스를 포함한 구체적 실행 단계 제시
-4. 성과 지표: 구체적 KPI, 전환율, 비용 추정치, ROI 예측치 포함
-5. 리스크 분석: 잠재적 도전과제와 완화 전략 제시
-
 답변 형식 요구사항:
 - 한국어로 명확한 제목과 번호 목록 사용
 - 절대 마크다운 형식 사용 금지 (별표, 해시태그, 백틱, 대시 등 일체 사용 불가)
-- 논리적 흐름의 구조화된 문단 사용
-- 구체적 퍼센트, 날짜, 금액 수치 포함
-- 우선순위가 명시된 다음 단계로 마무리
-
-반드시 순수한 한국어 텍스트로만 답변하고, 어떤 마크다운 기호도 절대 사용하지 마세요. 실제 업계 지식을 보여주는 전문가 수준의 깊이 있는 답변을 제공하세요.`;
+`;
 
     // OpenAI API 호출
     const openaiResponse = await openai.chat.completions.create({
@@ -199,11 +281,61 @@ ${historyText}
 
     console.log(`✅ AI response generated and saved for canvas ${canvasId}`);
 
+    // RAG 인용 정보 생성 (NotebookLM 스타일 근거 표시)
+    let knowledgeCitations: Array<{
+      kind: 'knowledge';
+      chunkId: string;
+      knowledgeId: string;
+      title: string;
+      snippet: string;
+      similarity: number;
+    }> = [];
+
+    if (ragSuccess && matchedChunks.length > 0) {
+      // RAG 매칭된 knowledge의 제목 정보 조회
+      const uniqueKnowledgeIds = Array.from(new Set(matchedChunks.map((c) => c.knowledge_id)));
+      const { data: citationKnowledge } = await supabase
+        .from('canvas_knowledge')
+        .select('id, title')
+        .in('id', uniqueKnowledgeIds);
+
+      const knowledgeTitleMap = new Map<string, string>(
+        (citationKnowledge || []).map((k: any) => [k.id, k.title]) as [string, string][]
+      );
+
+      knowledgeCitations = matchedChunks
+        .slice(0, 8)
+        .map((c) => ({
+          kind: 'knowledge' as const,
+          chunkId: c.id,
+          knowledgeId: c.knowledge_id,
+          title: knowledgeTitleMap.get(c.knowledge_id) || '지식 항목',
+          snippet: (c.text || '').substring(0, 300),
+          similarity: typeof c.similarity === 'number' ? c.similarity : 0,
+        }));
+    }
+    const webCitations = (webResults || [])
+      .slice(0, 5)
+      .map((r) => ({
+        kind: 'web' as const,
+        title: r.title,
+        url: r.link,
+        source: r.source,
+        snippet: r.snippet,
+        relevanceScore: r.relevanceScore ?? null,
+      }));
+
     return NextResponse.json({
       message: aiMessage,
-      knowledgeUsed: (canvasKnowledge?.length || 0) + (globalKnowledge?.length || 0),
-      webSearchUsed: shouldSearch && searchContext.length > 0,
-      messageId: assistantMessage?.id
+      messageId: assistantMessage?.id,
+      citations: {
+        knowledge: knowledgeCitations,
+        web: webCitations,
+      },
+      ragUsed: {
+        chunksMatched: matchedChunks?.length || 0,
+        webSearchUsed: !!(shouldSearch && searchContext.length > 0),
+      },
     });
 
   } catch (error) {

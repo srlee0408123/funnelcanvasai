@@ -154,6 +154,11 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
     };
   }, [workspaceId, canvas.id]);
 
+  // Optimistic removal handler passed to Sidebar
+  const handleAssetDeleted = (assetId: string) => {
+    setAssets((prev) => prev.filter((a) => a.id !== assetId));
+  };
+
   return (
     <div className="flex min-h-screen h-screen bg-gray-50 overflow-hidden w-full max-w-full relative">
       {/* Left Sidebar */}
@@ -169,6 +174,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         selectedNode={selectedNodeDetails}
         showNodeDetails={showNodeDetails}
         onCloseNodeDetails={handleCloseNodeDetails}
+        onAssetDeleted={handleAssetDeleted}
       />
 
       {/* Main Canvas Area */}

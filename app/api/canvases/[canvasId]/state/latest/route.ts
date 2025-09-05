@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           .single() as { data: Database['public']['Tables']['workspace_members']['Row'] | null, error: any };
         member = memberResult.data;
       }
-      if (!member && canvas.user_id !== userId) {
+      if (!member && (canvas as any).created_by !== userId) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
     }

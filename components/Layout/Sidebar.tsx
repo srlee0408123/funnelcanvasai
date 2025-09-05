@@ -54,6 +54,7 @@ interface SidebarProps {
   selectedNode?: Node | null;
   showNodeDetails?: boolean;
   onCloseNodeDetails?: () => void;
+  onAssetDeleted?: (assetId: string) => void;
 }
 
 export default function Sidebar({
@@ -69,6 +70,7 @@ export default function Sidebar({
   selectedNode,
   showNodeDetails = false,
   onCloseNodeDetails,
+  onAssetDeleted,
 }: SidebarProps) {
   const { toast } = useToast();
 
@@ -76,8 +78,14 @@ export default function Sidebar({
   const deleteAssetMutation = useMutation({
     mutationFn: async (assetId: string) => {
       await apiRequest("DELETE", `/api/assets/${assetId}`);
+      return assetId;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Optimistic UI update via parent callback
+      if (variables) {
+        onAssetDeleted?.(variables);
+      }
+      // Keep existing invalidation for any consumers using React Query elsewhere
       queryClient.invalidateQueries({ queryKey: ["/api/workspaces", workspaceId, "assets"] });
       toast({ title: "자료가 삭제되었습니다." });
     },
@@ -105,6 +113,16 @@ export default function Sidebar({
   const handleDeleteAsset = (assetId: string, assetTitle: string) => {
     if (confirm(`"${assetTitle}" 자료를 정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
       deleteAssetMutation.mutate(assetId);
+    }
+  };
+
+  /**
+   * 유튜브 자료 카드 클릭 시 해당 영상 URL로 연결
+   * 새 탭에서 열어 사용자 경험 향상
+   */
+  const handleAssetClick = (asset: Asset) => {
+    if (asset.type === "youtube" && asset.url) {
+      window.open(asset.url, "_blank", "noopener,noreferrer");
     }
   };
   const getAssetIcon = (type: string) => {
@@ -346,7 +364,13 @@ export default function Sidebar({
             {assets.map((asset) => (
               <div
                 key={asset.id}
-                className="group p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-gray-100 transition-colors"
+                onClick={() => handleAssetClick(asset)}
+                className={`group p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-gray-100 transition-colors ${
+                  asset.type === "youtube" && asset.url 
+                    ? "cursor-pointer hover:border-blue-300 hover:shadow-sm" 
+                    : ""
+                }`}
+                title={asset.type === "youtube" && asset.url ? "클릭하여 유튜브 영상 보기" : undefined}
               >
                 <div className="flex items-start space-x-3">
                   <div className="mt-1">{getAssetIcon(asset.type)}</div>
