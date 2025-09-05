@@ -48,7 +48,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         member = memberResult.data;
       }
 
-      if (!member && canvas.user_id !== userId) {
+      if (!member && (canvas as any).created_by !== userId) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
     }
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       member = memberResult.data;
     }
 
-    if (!member && canvas.user_id !== userId) {
+    if (!member && (canvas as any).created_by !== userId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

@@ -410,6 +410,21 @@ export const templateReviews = pgTable("template_reviews", {
   comment: text("comment"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+// Knowledge chunks for RAG search
+export const knowledgeChunks = pgTable("knowledge_chunks", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  canvasId: uuid("canvas_id").references(() => canvases.id, { onDelete: 'cascade' }).notNull(),
+  knowledgeId: uuid("knowledge_id").references(() => canvasKnowledge.id, { onDelete: 'cascade' }).notNull(),
+  seq: integer("seq").notNull(),
+  text: text("text").notNull(),
+  embedding: text("embedding"), // store as JSON string for portability; DB has vector index too
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table: any) => [
+  index("knowledge_chunks_canvas_id_idx").on(table.canvasId),
+]);
+
+export type KnowledgeChunk = typeof knowledgeChunks.$inferSelect;
+
 
 // Admin roles for managing the platform
 export const adminRoles = pgTable("admin_roles", {

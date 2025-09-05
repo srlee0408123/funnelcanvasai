@@ -37,7 +37,8 @@ export class OpenAIService {
   // 기본/비전/임베딩 모델은 환경 변수로 제어
   private readonly chatModel = process.env.OPENAI_DEFAULT_MODEL || "gpt-4o";
   private readonly visionModel = process.env.OPENAI_VISION_MODEL || "gpt-4o";
-  private readonly embeddingsModel = process.env.OPENAI_EMBEDDINGS_MODEL || "text-embedding-ada-002";
+  // Unify on GPT embeddings v3 (small): 1536 dims, cost-effective
+  private readonly embeddingsModel = process.env.OPENAI_EMBEDDINGS_MODEL || "text-embedding-3-small";
 
   public getChatModelName(): string {
     return this.chatModel;
@@ -219,6 +220,48 @@ ${content}
     }
   }
 
+  async generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+    try {
+      const response = await openai.embeddings.create({
+        model: this.embeddingsModel,
+        input: texts,
+      });
+      return response.data.map(d => d.embedding);
+    } catch (error) {
+      console.error("Error generating batch embeddings:", error);
+      throw new Error("Failed to generate batch embeddings");
+    }
+  }
+
+  /**
+   * 범용 챗 응답 생성 (시스템/유저 프롬프트 전달)
+   */
+  async chat(systemPrompt: string, userPrompt: string, options?: { maxTokens?: number; temperature?: number; presencePenalty?: number; frequencyPenalty?: number; }): Promise<string> {
+    const max_tokens = options?.maxTokens ?? 2500;
+    const temperature = options?.temperature ?? 0.2;
+    const presence_penalty = options?.presencePenalty ?? 0.1;
+    const frequency_penalty = options?.frequencyPenalty ?? 0.1;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: this.chatModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens,
+        temperature,
+        presence_penalty,
+        frequency_penalty,
+      });
+      return response.choices[0].message.content || '';
+    } catch (error) {
+      console.error('Error generating chat completion:', error);
+      throw new Error('Failed to generate chat completion');
+    }
+  }
+
   async extractTextFromImage(base64Image: string): Promise<string> {
     try {
       const response = await openai.chat.completions.create({
@@ -250,226 +293,8 @@ ${content}
     }
   }
 
-  async analyzePDFContent(base64Pdf: string, filename: string): Promise<string> {
-    try {
-      const prompt = `PDF 파일 "${filename}"를 분석해서 핵심 내용을 추출해주세요.
 
-다음과 같은 형식으로 체계적으로 정리해주세요:
 
-📄 **문서 제목**: [문서의 주제나 제목]
-
-🎯 **주요 목적**: [문서의 목적이나 목표]
-
-📋 **핵심 내용**:
-- [주요 포인트 1]
-- [주요 포인트 2] 
-- [주요 포인트 3]
-
-💡 **핵심 인사이트**:
-- [중요한 통찰이나 결론 1]
-- [중요한 통찰이나 결론 2]
-
-🔧 **실행 가능한 액션**:
-- [구체적인 실행 방안 1]
-- [구체적인 실행 방안 2]
-
-이 PDF는 마케팅 퍼널과 비즈니스 성장에 관련된 전문 지식이므로, 그 관점에서 분석해주세요.`;
-
-      const response = await openai.chat.completions.create({
-        model: this.chatModel,
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert business analyst specializing in marketing funnels and business growth strategies. Analyze documents thoroughly and extract actionable insights."
-          },
-          {
-            role: "user", 
-            content: prompt
-          }
-        ],
-        max_tokens: 1500,
-        temperature: 0.3,
-      });
-
-      return response.choices[0].message.content || `PDF 파일 "${filename}"에 대한 분석을 완료했습니다. 마케팅 퍼널과 비즈니스 전략에 관련된 전문 지식이 포함되어 있습니다.`;
-    } catch (error) {
-      console.error("Error analyzing PDF content:", error);
-      throw new Error("Failed to analyze PDF content");
-    }
-  }
-
-  async extractAndEnhancePDFWithVision(pdfBuffer: Buffer, filename: string): Promise<{ extractedText: string, aiEnhancement: string }> {
-    console.log("=== Starting Vision API PDF Processing ===");
-    console.log(`PDF buffer size: ${pdfBuffer.length} bytes`);
-    console.log(`Filename: ${filename}`);
-    
-    try {
-      console.log("Step 1: Loading pdf2pic library...");
-      const pdf2pic = await import('pdf2pic');
-      console.log("pdf2pic loaded successfully");
-      
-      console.log("Step 2: Setting up PDF conversion...");
-      const convert = pdf2pic.fromBuffer(pdfBuffer, {
-        density: 100, // Lower density for testing
-        saveFilename: "page",
-        savePath: "/tmp/",
-        format: "png",
-        width: 1200,
-        height: 1200
-      });
-      console.log("PDF converter configured");
-
-      console.log("Step 3: Converting PDF to images...");
-      const results = await convert.bulk(-1);
-      console.log(`PDF conversion completed: ${results.length} pages converted`);
-      
-      let allExtractedText = "";
-      
-      // Process each page with OpenAI Vision API
-      for (let i = 0; i < Math.min(results.length, 3); i++) { // Limit to first 3 pages to avoid token limits
-        const result = results[i] as any;
-        console.log(`Checking result ${i + 1}:`, !!result, typeof result, Object.keys(result || {}));
-        
-        if (result && result.path) {
-          console.log(`Processing page ${i + 1} with OpenAI Vision API...`);
-          
-          try {
-            // Read image file and convert to base64
-            const fs = await import('fs');
-            const imageBuffer = fs.readFileSync(result.path);
-            const base64Data = imageBuffer.toString('base64');
-            console.log(`Read image from path: ${result.path}, size: ${base64Data.length}`);
-            
-            const pageText = await this.extractTextFromImage(base64Data);
-            if (pageText && pageText.trim()) {
-              allExtractedText += `\n=== 페이지 ${i + 1} ===\n${pageText}\n`;
-              console.log(`Page ${i + 1} processed successfully, extracted ${pageText.length} characters`);
-            } else {
-              console.log(`Page ${i + 1}: No text extracted`);
-            }
-          } catch (pageError) {
-            console.error(`Error processing page ${i + 1}:`, pageError);
-            // Continue with other pages even if one fails
-          }
-        } else {
-          console.log(`Page ${i + 1}: Invalid result structure - no path`);
-        }
-      }
-      
-      console.log(`Step 5: Checking extracted text quality...`);
-      console.log(`Total extracted text length: ${allExtractedText.length} characters`);
-      
-      if (!allExtractedText || allExtractedText.trim().length < 20) {
-        console.error("Insufficient text extracted from Vision API");
-        console.error(`Extracted text: "${allExtractedText}"`);
-        throw new Error(`OpenAI Vision API로부터 충분한 텍스트를 추출하지 못했습니다. 추출된 텍스트: ${allExtractedText.length}자`);
-      }
-
-      console.log(`Step 6: Vision API 텍스트 추출 성공! 총 ${allExtractedText.length}자 추출됨`);
-      console.log("샘플 텍스트:", allExtractedText.substring(0, 200));
-
-      // Now enhance the extracted content with AI analysis
-      const analysisPrompt = `다음은 PDF "${filename}"에서 OpenAI Vision API로 추출한 고품질 텍스트입니다. 이를 마케팅 퍼널 전문가 관점에서 분석하고 구조화해주세요:
-
-${allExtractedText}
-
-다음 형식으로 체계적으로 정리해주세요:
-
-📄 **문서 제목**: [내용을 바탕으로 한 명확한 제목]
-🎯 **주요 목적**: [문서의 핵심 목적]
-📋 **핵심 내용**: 
-- [주요 포인트 1 - 구체적으로]
-- [주요 포인트 2 - 구체적으로] 
-- [주요 포인트 3 - 구체적으로]
-💡 **핵심 인사이트**: 
-- [실무 활용 가능한 통찰 1]
-- [실무 활용 가능한 통찰 2]
-🔧 **실행 방안**: 
-- [구체적인 액션 플랜 1]
-- [구체적인 액션 플랜 2]
-
-마케팅 퍼널과 비즈니스 성장 관점에서 실무에 바로 활용할 수 있는 가치 있는 정보로 재구성해주세요.`;
-
-      const enhancementResponse = await openai.chat.completions.create({
-        model: this.chatModel,
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert business analyst and marketing funnel strategist. Transform extracted content into actionable business insights with clear structure and practical value."
-          },
-          {
-            role: "user",
-            content: analysisPrompt
-          }
-        ],
-        max_tokens: 2500,
-        temperature: 0.3,
-      });
-
-      const aiEnhancement = enhancementResponse.choices[0].message.content || "";
-
-      return {
-        extractedText: allExtractedText.trim(),
-        aiEnhancement: aiEnhancement.trim()
-      };
-
-    } catch (error) {
-      console.error("=== Vision API PDF Processing Failed ===");
-      console.error("Error details:", error);
-      console.error("Error type:", typeof error);
-      console.error("Error message:", error instanceof Error ? error.message : String(error));
-      console.error("Stack trace:", error instanceof Error ? error.stack : 'No stack trace');
-      throw new Error(`OpenAI Vision을 통한 PDF 처리에 실패했습니다: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  async enhancePDFContent(extractedText: string, filename: string): Promise<string> {
-    try {
-      // Enhance the extracted content with AI analysis
-      const analysisPrompt = `다음은 PDF "${filename}"에서 추출한 텍스트입니다. 이를 마케팅 퍼널 전문가 관점에서 분석하고 구조화해주세요:
-
-${extractedText}
-
-다음 형식으로 체계적으로 정리해주세요:
-
-📄 **문서 제목**: [내용을 바탕으로 한 명확한 제목]
-🎯 **주요 목적**: [문서의 핵심 목적]
-📋 **핵심 내용**: 
-- [주요 포인트 1 - 구체적으로]
-- [주요 포인트 2 - 구체적으로] 
-- [주요 포인트 3 - 구체적으로]
-💡 **핵심 인사이트**: 
-- [실무 활용 가능한 통찰 1]
-- [실무 활용 가능한 통찰 2]
-🔧 **실행 방안**: 
-- [구체적인 액션 플랜 1]
-- [구체적인 액션 플랜 2]
-
-마케팅 퍼널과 비즈니스 성장 관점에서 실무에 바로 활용할 수 있는 가치 있는 정보로 재구성해주세요.`;
-
-      const enhancementResponse = await openai.chat.completions.create({
-        model: this.chatModel,
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert business analyst and marketing funnel strategist. Transform extracted content into actionable business insights with clear structure and practical value."
-          },
-          {
-            role: "user",
-            content: analysisPrompt
-          }
-        ],
-        max_tokens: 2500,
-        temperature: 0.3,
-      });
-
-      return enhancementResponse.choices[0].message.content || "";
-
-    } catch (error) {
-      console.error("Error in OpenAI PDF enhancement:", error);
-      throw new Error(`OpenAI를 통한 PDF 개선에 실패했습니다: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
 
   private buildFeedbackPrompt(request: FunnelAnalysisRequest): string {
     const { flowJson, knowledgeBase, userGoals, industry } = request;

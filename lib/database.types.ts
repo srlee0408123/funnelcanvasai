@@ -177,6 +177,7 @@ export interface Database {
           title: string
           description: string | null
           user_id: string
+          created_by: string
           workspace_id: string | null
           is_public: boolean
           created_at: string
@@ -190,6 +191,7 @@ export interface Database {
           title: string
           description?: string | null
           user_id: string
+          created_by: string
           workspace_id?: string | null
           is_public?: boolean
           created_at?: string
@@ -203,6 +205,7 @@ export interface Database {
           title?: string
           description?: string | null
           user_id?: string
+          created_by?: string
           workspace_id?: string | null
           is_public?: boolean
           created_at?: string

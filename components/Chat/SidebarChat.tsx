@@ -21,13 +21,38 @@ import { useState, useEffect, useRef } from "react";
 import { Bot, Eye, Send, MessageCircle, Minimize2 } from "lucide-react";
 import { Button } from "@/components/Ui/buttons";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
+import { createClient } from "@/lib/supabase/client";
+
+type KnowledgeCitation = {
+  kind: 'knowledge';
+  chunkId: string;
+  knowledgeId: string;
+  title: string;
+  snippet: string;
+  similarity: number;
+};
+
+type WebCitation = {
+  kind: 'web';
+  title: string;
+  url: string;
+  source?: string;
+  snippet: string;
+  relevanceScore: number | null;
+};
+
+type MessageCitations = {
+  knowledge: KnowledgeCitation[];
+  web: WebCitation[];
+};
 
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  citations?: MessageCitations;
 }
 
 interface SidebarChatProps {
@@ -41,12 +66,26 @@ export default function SidebarChat({
   canvasId, 
   isReadOnly = false, 
   onToggle,
-  isCollapsed = false 
+  isCollapsed = true 
 }: SidebarChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentMessage, setCurrentMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastLocalUserMsgRef = useRef<{ content: string; ts: number } | null>(null);
+
+  // 최초 마운트 시 환영 메시지 즉시 표시 (히스토리 로드 전)
+  useEffect(() => {
+    setMessages((prev) => {
+      if (prev.length > 0) return prev;
+      return [{
+        id: 'welcome',
+        role: 'assistant',
+        content: '안녕하세요! 저는 두더지 AI입니다. 퍼널 설계와 마케팅에 대해 궁금한 점이 있으시면 언제든 물어보세요. 업로드하신 자료와 글로벌 지식을 바탕으로 도움드리겠습니다.',
+        timestamp: new Date()
+      }];
+    });
+  }, []);
 
   // 캔버스 지식 정보 가져오기 - 읽기 전용일 때는 공개 API 사용
   const { data: canvasKnowledge } = useQuery({
@@ -64,47 +103,71 @@ export default function SidebarChat({
     enabled: true
   });
 
-  // 채팅 기록 불러오기 - 읽기 전용일 때는 공개 API 사용
-  const { data: chatHistory } = useQuery({
-    queryKey: isReadOnly
-      ? ['/api/public/canvas', canvasId, 'chat-messages']
-      : ['/api/canvases', canvasId, 'chat-messages'],
-    enabled: true
-  });
+  // 채팅 기록은 새로고침 시 초기화 요구로 인해 불러오지 않음
+  // 기존 대화 내역을 로드하지 않아 항상 새 세션으로 시작
 
   // 메시지 하단으로 자동 스크롤
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // 채팅 기록이 로드되면 로컬 메시지 업데이트
-  useEffect(() => {
-    if (chatHistory && Array.isArray(chatHistory)) {
-      const formattedMessages = chatHistory.map((msg: any) => ({
-        id: msg.id,
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content,
-        timestamp: new Date(msg.createdAt)
-      }));
-      
-      // 채팅 기록이 없으면 환영 메시지 추가
-      if (formattedMessages.length === 0) {
-        setMessages([{
-          id: 'welcome',
-          role: 'assistant',
-          content: '안녕하세요! 저는 두더지 AI입니다. 퍼널 설계와 마케팅에 대해 궁금한 점이 있으시면 언제든 물어보세요. 업로드하신 자료와 글로벌 지식을 바탕으로 도움드리겠습니다.',
-          timestamp: new Date()
-        }]);
-      } else {
-        setMessages(formattedMessages);
-      }
-    }
-  }, [chatHistory]);
+  // 대화 기록은 불러오지 않으므로 별도 동기화 없음
 
   // 메시지나 타이핑 상태 변경 시 하단으로 스크롤
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping]);
+
+  // Supabase Realtime 구독: 새 메시지 실시간 반영
+  useEffect(() => {
+    if (!canvasId) return;
+    const supabase = createClient();
+
+    const channel = supabase
+      .channel(`chat-messages-${canvasId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'chat_messages',
+        filter: `canvas_id=eq.${canvasId}`,
+      }, (payload: any) => {
+        // INSERT 이벤트 시 최신 메시지 반영
+        if (payload.eventType === 'INSERT' && payload.new) {
+          const newMsg = payload.new as any;
+          // 로컬에서 방금 보낸 사용자 메시지 중복 방지
+          if (newMsg.role === 'user' && lastLocalUserMsgRef.current) {
+            const sameContent = String(newMsg.content || '').trim() === lastLocalUserMsgRef.current.content;
+            const within = Math.abs(Date.now() - lastLocalUserMsgRef.current.ts) < 8000;
+            if (sameContent && within) {
+              return;
+            }
+          }
+          const appended = {
+            id: newMsg.id,
+            role: newMsg.role as 'user' | 'assistant',
+            content: newMsg.content,
+            timestamp: new Date(newMsg.created_at || Date.now()),
+          } as ChatMessage;
+
+          setMessages((prev) => {
+            // 중복 방지
+            if (prev.some((m) => m.id === appended.id)) return prev;
+            const last = prev[prev.length - 1];
+            if (last && last.role === appended.role && last.content === appended.content) {
+              return prev;
+            }
+            // 타이핑 점  제거
+            setIsTyping(false);
+            return [...prev, appended];
+          });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [canvasId]);
 
   // 채팅 메시지 전송 뮤테이션
   const chatMutation = useMutation({
@@ -119,10 +182,22 @@ export default function SidebarChat({
       // 메시지가 데이터베이스에 저장되므로 쿼리를 새로고침하여 최신 메시지 가져오기
       setIsTyping(false);
       
-      // 채팅 메시지 데이터베이스에서 새로고침
-      queryClient.invalidateQueries({ 
-        queryKey: ['/api/canvases', canvasId, 'chat-messages'] 
-      });
+      // 즉시 응답 메시지와 인용 정보를 로컬에 반영 (Realtime로도 중복 방지됨)
+      if (response?.message) {
+        const assistantMessage: ChatMessage = {
+          id: String(response.messageId || Date.now()),
+          role: 'assistant',
+          content: response.message,
+          timestamp: new Date(),
+          citations: response.citations,
+        };
+        setMessages(prev => {
+          if (prev.some(m => m.id === assistantMessage.id)) return prev;
+          return [...prev, assistantMessage];
+        });
+      }
+
+      // 대화 기록을 불러오지 않으므로 쿼리 무효화 불필요
     },
     onError: () => {
       const errorMessage: ChatMessage = {
@@ -148,6 +223,7 @@ export default function SidebarChat({
     };
     
     setMessages(prev => [...prev, userMessage]);
+    lastLocalUserMsgRef.current = { content: userMessage.content, ts: Date.now() };
     setCurrentMessage('');
     setIsTyping(true);
     
@@ -222,6 +298,40 @@ export default function SidebarChat({
                   minute: '2-digit' 
                 })}
               </p>
+              {message.role === 'assistant' && message.citations && (
+                <div className="mt-2 border-t border-gray-200 pt-2 text-xs">
+                  <p className="font-medium text-gray-700 mb-1">출처 및 근거</p>
+                  {message.citations.knowledge && message.citations.knowledge.length > 0 && (
+                    <div className="space-y-1 mb-2">
+                      {message.citations.knowledge.slice(0, 4).map((c) => (
+                        <div key={`k-${c.chunkId}`} className="text-gray-700">
+                          <span className="font-semibold">{c.title}</span>
+                          <span className="ml-2 text-gray-500">({Math.round(c.similarity * 100)}%)</span>
+                          <div className="text-gray-600 line-clamp-2">{c.snippet}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {message.citations.web && message.citations.web.length > 0 && (
+                    <div className="space-y-1">
+                      {message.citations.web.slice(0, 4).map((w, idx) => (
+                        <div key={`w-${idx}`} className="text-gray-700">
+                          <a
+                            href={w.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline text-blue-700 hover:text-blue-800"
+                          >
+                            {w.title}
+                          </a>
+                          {w.source && <span className="ml-2 text-gray-500">({w.source})</span>}
+                          <div className="text-gray-600 line-clamp-2">{w.snippet}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ))}

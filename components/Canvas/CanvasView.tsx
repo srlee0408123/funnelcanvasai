@@ -7,13 +7,14 @@ import { useToast } from "@/hooks/use-toast";
 import Sidebar from "@/components/Layout/Sidebar";
 import CanvasArea from "@/components/Layout/CanvasArea";
 import RightPanel from "@/components/Layout/RightPanel";
-import { AIFeedbackButton } from "@/components/Ui/buttons";
 import SidebarChat from "@/components/Chat/SidebarChat";
 import TodoSticker, { TodoStickerToggle } from "@/components/TodoSticker/TodoSticker";
 import UploadModal from "@/components/Modals/UploadModal";
 import TemplateModal from "@/components/Modals/TemplateModal";
 import AIFeedbackModal from "@/components/Modals/AIFeedbackModal";
 import { WorkspaceMembersModal } from "@/components/Modals/WorkspaceMembersModal";
+import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
+import { useCanvasRole } from "@/hooks/useCanvasRole";
 import type { CanvasViewProps, CanvasAreaCanvas, FlowNode, UploadType } from "@/types/canvas";
 import type { Asset } from "@shared/schema";
 import { toCanvasAreaCanvas } from "@/types/canvas";
@@ -41,6 +42,7 @@ import { toCanvasAreaCanvas } from "@/types/canvas";
 
 export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = false }: CanvasViewProps) {
   const { toast } = useToast();
+  const { canShare, canEdit } = useCanvasRole(canvas.id);
   
   // UI State - Canvas.tsx와 동일한 구조
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -51,6 +53,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showAIModal, setShowAIModal] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
+  const [showCanvasShareModal, setShowCanvasShareModal] = useState(false);
   const [uploadType, setUploadType] = useState<UploadType>("pdf");
   
   // Node details state for right panel
@@ -60,8 +63,8 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   // Todo sticker state
   const [showTodoSticker, setShowTodoSticker] = useState(true);
   
-  // Chat sidebar state
-  const [chatCollapsed, setChatCollapsed] = useState(false);
+  // Chat sidebar state - 기본은 닫힌 상태로 시작
+  const [chatCollapsed, setChatCollapsed] = useState(true);
 
   // Handlers - Canvas.tsx와 동일한 구조
   const handleNodeSelect = (nodeId: string) => {
@@ -100,6 +103,10 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
 
   const handleToggleChatSidebar = () => {
     setChatCollapsed(!chatCollapsed);
+  };
+
+  const handleOpenCanvasShareModal = () => {
+    setShowCanvasShareModal(true);
   };
 
 
@@ -154,6 +161,11 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
     };
   }, [workspaceId, canvas.id]);
 
+  // Optimistic removal handler passed to Sidebar
+  const handleAssetDeleted = (assetId: string) => {
+    setAssets((prev) => prev.filter((a) => a.id !== assetId));
+  };
+
   return (
     <div className="flex min-h-screen h-screen bg-gray-50 overflow-hidden w-full max-w-full relative">
       {/* Left Sidebar */}
@@ -169,6 +181,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         selectedNode={selectedNodeDetails}
         showNodeDetails={showNodeDetails}
         onCloseNodeDetails={handleCloseNodeDetails}
+        onAssetDeleted={handleAssetDeleted}
       />
 
       {/* Main Canvas Area */}
@@ -178,7 +191,9 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         selectedNodeId={selectedNodeId}
         onNodeSelect={handleNodeSelect}
         onNodeDoubleClick={handleNodeDoubleClick}
-        isReadOnly={isPublic}
+        isReadOnly={isPublic || !canEdit}
+        canShare={canShare}
+        onOpenShareModal={handleOpenCanvasShareModal}
       />
 
       {/* Right Panel - 노드가 선택된 경우 우선 표시 */}
@@ -199,7 +214,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
       )}
 
       {/* AI Feedback Button */}
-      <AIFeedbackButton onRequestFeedback={handleRequestAIFeedback} />
+      {/* <AIFeedbackButton onRequestFeedback={handleRequestAIFeedback} /> */}
 
       {/* Todo Sticker */}
       {showTodoSticker ? (
@@ -240,6 +255,13 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         onClose={() => setShowMembersModal(false)}
         workspaceId={canvas.workspaceId || canvas.workspace_id || ''}
         workspaceName={canvas.title}
+      />
+
+      <CanvasShareModal
+        isOpen={showCanvasShareModal}
+        onClose={() => setShowCanvasShareModal(false)}
+        canvasId={canvas.id}
+        canvasTitle={canvas.title}
       />
     </div>
   );

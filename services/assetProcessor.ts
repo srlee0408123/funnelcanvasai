@@ -5,143 +5,28 @@ import type { Asset } from "@shared/schema";
 
 export interface ProcessingJob {
   assetId: string;
-  type: 'pdf' | 'youtube' | 'url' | 'text';
+  type: 'youtube' | 'url' | 'text';
   url?: string;
   content?: string;
 }
 
 /**
- * AssetProcessor - 다양한 형태의 자산 처리 및 텍스트 추출 서비스
+ * AssetProcessor - YouTube 및 웹 URL 자산 처리 서비스
  * 
  * 주요 역할:
- * 1. PDF 문서의 고품질 OCR 처리 (GraphicsMagick/ImageMagick + Vision API)
- * 2. YouTube 비디오 트랜스크립트 추출 및 처리
- * 3. 웹 URL 콘텐츠 크롤링 및 텍스트 추출
+ * 1. YouTube 비디오 트랜스크립트 추출 및 처리
+ * 2. 웹 URL 콘텐츠 크롤링 및 텍스트 추출
+ * 3. 텍스트 노트 처리
  * 
  * 핵심 특징:
- * - Vision API 기반 고정밀 PDF OCR (한글 지원 강화)
  * - 청크 단위 텍스트 분할 및 임베딩 생성
- * - 비동기 처리로 대용량 파일 안정적 처리
+ * - 비동기 처리로 대용량 콘텐츠 안정적 처리
  * 
  * 주의사항:
- * - GraphicsMagick 또는 ImageMagick 시스템 설치 필요
- * - OpenAI Vision API 사용량 제한 고려
- * - 임시 파일 정리 로직 포함
+ * - PDF 처리는 upload-pdf 엔드포인트에서 별도 처리
+ * - OpenAI 임베딩 API 사용량 제한 고려
  */
 export class AssetProcessor {
-  /**
-   * PDF 파일을 고품질 이미지로 변환 후 Vision API로 OCR 처리
-   * GraphicsMagick/ImageMagick을 사용하여 300DPI 고해상도 변환
-   */
-  async processPDFWithVision(pdfBuffer: Buffer, filename: string): Promise<{success: boolean, content?: string, error?: string}> {
-    try {
-      console.log(`Starting enhanced PDF Vision processing for ${filename}, size: ${pdfBuffer.length} bytes`);
-      
-      // Use GraphicsMagick to convert PDF to high-quality images
-      const fs = await import('fs');
-      const path = await import('path');
-      const { exec } = await import('child_process');
-      const { promisify } = await import('util');
-      const execAsync = promisify(exec);
-      
-      // Create temp directory
-      const tempDir = '/tmp/pdf_processing';
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true });
-      }
-      
-      // Save PDF to temp file
-      const tempPdfPath = path.join(tempDir, 'input.pdf');
-      fs.writeFileSync(tempPdfPath, pdfBuffer);
-      
-      console.log('Converting PDF to images with GraphicsMagick...');
-      
-      // Convert PDF to high-quality PNG images using GraphicsMagick
-      const outputPattern = path.join(tempDir, 'page_%03d.png');
-      const gmCommand = `gm convert -density 300 -quality 100 "${tempPdfPath}" "${outputPattern}"`;
-      
-      try {
-        await execAsync(gmCommand);
-        console.log('PDF conversion completed');
-      } catch (conversionError) {
-        console.error('GraphicsMagick conversion failed:', conversionError);
-        // Fallback to ImageMagick
-        const imCommand = `convert -density 300 -quality 100 "${tempPdfPath}" "${outputPattern}"`;
-        await execAsync(imCommand);
-        console.log('PDF conversion completed with ImageMagick');
-      }
-      
-      // Find generated image files
-      const files = fs.readdirSync(tempDir).filter(f => f.startsWith('page_') && f.endsWith('.png')).sort();
-      console.log(`Found ${files.length} page images:`, files);
-      
-      let fullText = "";
-      
-      // Process up to 5 pages to avoid API limits
-      for (let i = 0; i < Math.min(files.length, 5); i++) {
-        const imagePath = path.join(tempDir, files[i]);
-        
-        if (!fs.existsSync(imagePath)) {
-          console.warn(`Page ${i + 1}: Image file not found at ${imagePath}`);
-          continue;
-        }
-        
-        const imageBuffer = fs.readFileSync(imagePath);
-        const base64Image = imageBuffer.toString('base64');
-        
-        console.log(`Processing page ${i + 1} (${files[i]}) with Vision API... Size: ${imageBuffer.length} bytes`);
-        
-        const pageText = await openaiService.processImageWithVision(
-          base64Image,
-          `Please carefully examine this PDF page image and extract ALL text content you can see. This is an OCR (Optical Character Recognition) task.
-
-Please extract:
-- ALL Korean text (한글) - even if it appears garbled or uses special fonts, interpret the meaning and provide correct Korean
-- ALL English text and numbers
-- Headers, titles, body text, footnotes, watermarks
-- Table data, chart labels, any small text
-- Dates, names, addresses, and all important information
-- Form fields and their values
-
-Please maintain the original document structure and layout as much as possible.
-Even if the fonts look unusual or custom, please do your best to read and transcribe the text accurately.
-
-IMPORTANT: This is a text extraction task - please provide the actual text content you see in the image, not a description of what you cannot do.`
-        );
-        
-        if (pageText && pageText.trim().length > 10) {
-          fullText += `\n\n=== 페이지 ${i + 1} ===\n${pageText}`;
-          console.log(`Page ${i + 1}: Successfully extracted ${pageText.length} characters`);
-          console.log(`Sample: ${pageText.substring(0, 100)}...`);
-        } else {
-          console.log(`Page ${i + 1}: Insufficient text extracted (${pageText?.length || 0} chars)`);
-        }
-      }
-      
-      // Clean up temp files
-      try {
-        if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
-        files.forEach(file => {
-          const filePath = path.join(tempDir, file);
-          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-        });
-        if (fs.existsSync(tempDir)) fs.rmdirSync(tempDir);
-      } catch (cleanupError) {
-        console.warn('Cleanup failed:', cleanupError);
-      }
-      
-      if (fullText.trim().length > 50) {
-        console.log(`✅ Enhanced PDF Vision processing successful: ${fullText.length} characters extracted`);
-        return { success: true, content: fullText };
-      } else {
-        return { success: false, error: "Vision API extracted insufficient content despite high-quality image conversion" };
-      }
-      
-    } catch (error) {
-      console.error("Enhanced PDF Vision processing failed:", error);
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  }
 
   async processAsset(asset: Asset): Promise<void> {
     try {
@@ -151,7 +36,8 @@ IMPORTANT: This is a text extraction task - please provide the actual text conte
       
       switch (asset.type) {
         case "pdf":
-          textContent = await this.processPDF(asset);
+          // PDF processing is now handled by upload-pdf route
+          throw new Error("PDF processing should be handled by upload-pdf endpoint");
           break;
         case "youtube":
           textContent = await this.processYouTube(asset);
@@ -208,55 +94,6 @@ IMPORTANT: This is a text extraction task - please provide the actual text conte
     }
   }
 
-  private async processPDF(asset: Asset): Promise<string> {
-    if (!asset.url && !asset.fileRef) {
-      throw new Error("No PDF source provided");
-    }
-
-    // Check if we have canvas knowledge data first (new system)
-    try {
-      const canvasKnowledge = await storage.getCanvasKnowledgeByAssetId(asset.id);
-      if (canvasKnowledge && canvasKnowledge.extractedText) {
-        console.log("Using extracted text from canvas knowledge for asset:", asset.id);
-        return canvasKnowledge.extractedText;
-      }
-    } catch (error) {
-      console.log("No canvas knowledge found for asset:", asset.id);
-    }
-
-    // Check metadata for extracted text
-    const metaJson = asset.metaJson as any;
-    if (metaJson?.extractedText) {
-      return metaJson.extractedText;
-    }
-
-    // 마지막 단계: Supabase Storage에서 PDF를 다운로드하여 Vision OCR 수행
-    if (asset.fileRef) {
-      try {
-        const { createServiceClient } = await import("@/lib/supabase/service");
-        const supabase = createServiceClient();
-        const { data: fileData, error } = await supabase.storage
-          .from("user-uploads")
-          .download(asset.fileRef as unknown as string);
-        if (error || !fileData) {
-          throw new Error("Failed to download PDF from storage");
-        }
-
-        const arrayBuffer = await fileData.arrayBuffer();
-        const pdfBuffer = Buffer.from(arrayBuffer);
-        const visionResult = await this.processPDFWithVision(pdfBuffer, metaJson?.fileName || asset.title);
-        if (visionResult.success && visionResult.content) {
-          return visionResult.content;
-        }
-        throw new Error(visionResult.error || "Vision OCR returned no content");
-      } catch (err) {
-        console.error("PDF Vision processing failed, falling back to basic info:", err);
-      }
-    }
-
-    // 최종 Fallback: 메타 정보만 반환
-    return `PDF 문서: ${asset.title}\n파일명: ${metaJson?.fileName || 'unknown'}\n크기: ${metaJson?.fileSize ? (metaJson.fileSize / 1024 / 1024).toFixed(2) + ' MB' : 'unknown'}`;
-  }
 
   private async processYouTube(asset: Asset): Promise<string> {
     if (!asset.url) {

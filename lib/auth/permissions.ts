@@ -23,7 +23,7 @@ import type { Database } from '@/lib/database.types';
 const supabase = createServiceClient();
 
 export type WorkspaceRole = Database['public']['Tables']['workspace_members']['Row']['role']; // 'owner' | 'admin' | 'member'
-export type AccessRole = WorkspaceRole | 'viewer';
+export type AccessRole = WorkspaceRole | 'viewer' | 'editor';
 
 /**
  * 사용자가 특정 워크스페이스에 접근 권한이 있는지 확인 (소유자 또는 멤버)
@@ -65,15 +65,31 @@ export async function canAccessCanvas(
 ): Promise<{
   hasAccess: boolean;
   role?: AccessRole;
-  canvas?: Pick<Database['public']['Tables']['canvases']['Row'], 'id' | 'workspace_id' | 'is_public' | 'user_id'>;
+  canvas?: Pick<Database['public']['Tables']['canvases']['Row'], 'id' | 'workspace_id' | 'is_public' | 'created_by'>;
 }> {
   const { data: canvas, error: canvasError } = await supabase
     .from('canvases')
-    .select('id, workspace_id, is_public, user_id')
+    .select('id, workspace_id, is_public, created_by')
     .eq('id', canvasId)
     .single();
 
   if (canvasError || !canvas) return { hasAccess: false };
+
+  // 0) Direct canvas share takes precedence
+  try {
+    const { data: share } = await (supabase as any)
+      .from('canvas_shares')
+      .select('role')
+      .eq('canvas_id', canvasId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (share && (share.role === 'editor' || share.role === 'viewer')) {
+      return { hasAccess: true, role: share.role as AccessRole, canvas };
+    }
+  } catch {
+    // ignore and continue
+  }
 
   // 공개 캔버스 → 읽기(viewer) 허용
   if (canvas.is_public) {
@@ -81,7 +97,7 @@ export async function canAccessCanvas(
   }
 
   // 캔버스 작성자
-  if (canvas.user_id === userId) {
+  if ((canvas as any).created_by === userId) {
     return { hasAccess: true, role: 'owner', canvas };
   }
 

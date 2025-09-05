@@ -1,0 +1,75 @@
+---
+alwaysApply: true
+description: "코드 품질과 모듈화 표준 - 최소한의 코드로 높은 가독성과 모듈화 구현"
+---
+
+# 코드 작성 표준 및 모듈화 규칙
+
+## 1. 기본 원칙
+
+### 최소한의 코드 작성
+- DRY(Don't Repeat Yourself) 원칙 엄격히 준수
+- 중복 코드 발견 시 즉시 공통 함수/컴포넌트로 추출
+- 한 함수는 하나의 책임만 가져야 함 (Single Responsibility Principle)
+- 불필요한 코드나 주석은 제거
+
+### 가독성 우선
+- 변수명과 함수명은 의도를 명확히 표현
+- 복잡한 로직은 작은 함수들로 분해
+- 매직 넘버 대신 상수 사용
+- 조건문과 반복문은 가능한 한 간결하게
+
+## 2. 기존 코드베이스 컨벤션 준수
+
+### 프로젝트 구조 (기존 구조 유지)
+```
+app/                    # Next.js App Router
+├── api/               # API 라우트
+├── auth/              # 인증 관련
+├── dashboard/         # 대시보드
+├── canvas/            # 캔버스 에디터
+└── share/             # 공유 페이지
+
+components/            # React 컴포넌트
+├── Canvas/           # 캔버스 관련
+├── Chat/             # 채팅 관련
+├── Layout/           # 레이아웃 관련
+├── Modals/           # 모달 컴포넌트
+└── Ui/               # 공통 UI 컴포넌트
+
+lib/                   # 유틸리티 함수
+├── supabase/         # Supabase 클라이언트
+└── auth/             # 인증 관련
+
+hooks/                 # React 커스텀 훅
+services/              # 외부 서비스 통합
+types/                 # TypeScript 타입 정의
+shared/                # 공유 스키마
+```
+
+### React 최적화
+- `useCallback`으로 함수 메모이제이션
+- `useMemo`로 계산 결과 캐싱
+- 불필요한 리렌더링 방지
+- 조건부 렌더링 최적화
+
+### 번들 크기 최적화
+- 필요한 것만 import (`import { specific } from 'library'`)
+- 동적 import 활용 (`const Component = lazy(() => import('./Component'))`)
+- 외부 라이브러리 사용 최소화
+
+## 3.금지사항
+
+### 절대 하지 말 것
+- 인라인 스타일 사용 (Tailwind CSS 사용)
+- console.log 프로덕션 코드에 남기기
+- any 타입 사용
+- 하드코딩된 URL이나 설정값
+- 중복된 로직 작성
+- 200줄 이상의 컴포넌트나 함수
+
+### 기존 구조 변경 금지
+- 프로젝트 폴더 구조 임의 변경
+- 기존 컴포넌트의 props 인터페이스 breaking change
+- 기존 API 엔드포인트 경로 변경
+- 데이터베이스 스키마 임의 수정
