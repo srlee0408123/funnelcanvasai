@@ -234,6 +234,34 @@ ${content}
     }
   }
 
+  /**
+   * 범용 챗 응답 생성 (시스템/유저 프롬프트 전달)
+   */
+  async chat(systemPrompt: string, userPrompt: string, options?: { maxTokens?: number; temperature?: number; presencePenalty?: number; frequencyPenalty?: number; }): Promise<string> {
+    const max_tokens = options?.maxTokens ?? 2500;
+    const temperature = options?.temperature ?? 0.2;
+    const presence_penalty = options?.presencePenalty ?? 0.1;
+    const frequency_penalty = options?.frequencyPenalty ?? 0.1;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: this.chatModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens,
+        temperature,
+        presence_penalty,
+        frequency_penalty,
+      });
+      return response.choices[0].message.content || '';
+    } catch (error) {
+      console.error('Error generating chat completion:', error);
+      throw new Error('Failed to generate chat completion');
+    }
+  }
+
   async extractTextFromImage(base64Image: string): Promise<string> {
     try {
       const response = await openai.chat.completions.create({

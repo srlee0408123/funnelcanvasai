@@ -39,6 +39,7 @@ interface AuthOptions {
 
 const ROLE_WEIGHT: Record<AccessRole, number> = {
   viewer: 0,
+  editor: 1,
   member: 1,
   admin: 2,
   owner: 3

@@ -50,7 +50,7 @@ export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: Can
   // Share canvas mutation
   const shareMutation = useMutation({
     mutationFn: (data: { email: string; role: string }) =>
-      apiRequest('POST', `/api/canvases/${canvasId}/share`, data),
+      apiRequest('POST', `/api/canvases/${canvasId}/shares`, data),
     onSuccess: () => {
       toast({ title: "캔버스 공유 성공", description: "캔버스가 성공적으로 공유되었습니다." });
       setShareEmail("");
@@ -92,6 +92,23 @@ export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: Can
   const handleShare = () => {
     if (!shareEmail.trim()) return;
     shareMutation.mutate({ email: shareEmail, role: shareRole });
+  };
+
+  // Role change mutation
+  const changeRoleMutation = useMutation({
+    mutationFn: (payload: { userId: string; role: 'editor' | 'viewer' }) =>
+      apiRequest('PATCH', `/api/canvases/${canvasId}/shares/${payload.userId}`, { role: payload.role }),
+    onSuccess: () => {
+      toast({ title: '역할 변경 완료', description: '공유된 사용자의 역할이 변경되었습니다.' });
+      queryClient.invalidateQueries({ queryKey: ['canvas-shares', canvasId] });
+    },
+    onError: (error: any) => {
+      toast({ title: '역할 변경 실패', description: error.message || '역할 변경에 실패했습니다.', variant: 'destructive' });
+    }
+  });
+
+  const handleChangeRole = (userId: string, role: 'editor' | 'viewer') => {
+    changeRoleMutation.mutate({ userId, role });
   };
 
   const handleRemoveShare = (userId: string) => {
@@ -210,10 +227,15 @@ export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: Can
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant={roleInfo?.color as any} className="flex items-center gap-1">
-                          <RoleIcon className="h-3 w-3" />
-                          {roleInfo?.label || share.role}
-                        </Badge>
+                        <Select value={share.role} onValueChange={(v) => handleChangeRole(share.userId, v as 'editor' | 'viewer')}>
+                          <SelectTrigger className="w-28">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="editor">편집자</SelectItem>
+                            <SelectItem value="viewer">뷰어</SelectItem>
+                          </SelectContent>
+                        </Select>
                         <Button
                           variant="ghost"
                           size="sm"

@@ -23,7 +23,7 @@ import type { Database } from '@/lib/database.types';
 const supabase = createServiceClient();
 
 export type WorkspaceRole = Database['public']['Tables']['workspace_members']['Row']['role']; // 'owner' | 'admin' | 'member'
-export type AccessRole = WorkspaceRole | 'viewer';
+export type AccessRole = WorkspaceRole | 'viewer' | 'editor';
 
 /**
  * 사용자가 특정 워크스페이스에 접근 권한이 있는지 확인 (소유자 또는 멤버)
@@ -74,6 +74,22 @@ export async function canAccessCanvas(
     .single();
 
   if (canvasError || !canvas) return { hasAccess: false };
+
+  // 0) Direct canvas share takes precedence
+  try {
+    const { data: share } = await (supabase as any)
+      .from('canvas_shares')
+      .select('role')
+      .eq('canvas_id', canvasId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (share && (share.role === 'editor' || share.role === 'viewer')) {
+      return { hasAccess: true, role: share.role as AccessRole, canvas };
+    }
+  } catch {
+    // ignore and continue
+  }
 
   // 공개 캔버스 → 읽기(viewer) 허용
   if (canvas.is_public) {

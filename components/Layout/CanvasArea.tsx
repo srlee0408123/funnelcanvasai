@@ -35,6 +35,8 @@ interface CanvasAreaProps {
   onAddNode?: (nodeType: string) => void;
   isReadOnly?: boolean;
   externalMemos?: TextMemoData[];
+  canShare?: boolean;
+  onOpenShareModal?: () => void;
 }
 
 // Node 타입은 types/canvas.ts의 FlowNode를 사용
@@ -56,7 +58,9 @@ export default function CanvasArea({
   onNodeDoubleClick,
   onAddNode,
   isReadOnly = false,
-  externalMemos
+  externalMemos,
+  canShare,
+  onOpenShareModal
 }: CanvasAreaProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -1166,30 +1170,12 @@ export default function CanvasArea({
                 <Save className="h-4 w-4" />
               </Button>
             )}
-            {!isReadOnly && (
+            {(typeof canShare === 'boolean' ? canShare : !isReadOnly) && (
               <Button 
                 variant="ghost" 
                 size="sm"
-                onClick={async () => {
-                  try {
-                    const shareUrl = `${window.location.origin}/share/${canvas.id}`;
-                    await navigator.clipboard.writeText(shareUrl);
-                    toast({
-                      title: "공유 링크 복사 완료!",
-                      description: "캔버스 공유 링크가 클립보드에 복사되었습니다. 이제 다른 사람들과 공유할 수 있어요.",
-                      duration: 3000,
-                    });
-                  } catch (error) {
-                    console.error('클립보드 복사 실패:', error);
-                    toast({
-                      title: "클립보드 복사 실패",
-                      description: "공유 링크를 클립보드에 복사할 수 없습니다. 수동으로 복사해주세요.",
-                      variant: "destructive",
-                      duration: 5000,
-                    });
-                  }
-                }}
-                title="읽기 전용 공유 링크 복사"
+                onClick={() => onOpenShareModal?.()}
+                title="캔버스 사용자 공유"
               >
                 <Share className="h-4 w-4" />
               </Button>
