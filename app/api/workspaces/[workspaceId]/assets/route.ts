@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { withAuthorization } from '@/lib/auth/withAuthorization';
 import { extractYouTubeTranscript } from "@/services/apify/youtubeTranscript";
-import { crawlWebsite } from "@/services/apify/websiteCrawler";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { OpenAIService } from "@/services/openai";
+import { firecrawlService } from "@/services/firecrawl";
 
 /**
  * Assets API - 워크스페이스 자산 관리 엔드포인트
@@ -57,9 +59,12 @@ const postAsset = async (
     const supabase = createServiceClient();
 
 
+    // knowledge.content로 저장할 원문(요구사항: markdown 우선 저장)
     let extractedContent = "";
     let processedTitle = title;
     let additionalMeta = { ...metaJson };
+    let chunkTexts: string[] | null = null;
+    let chunkEmbeddings: number[][] | null = null;
 
     // 타입별 콘텐츠 추출 처리
     if (type === "youtube") {
@@ -86,26 +91,39 @@ const postAsset = async (
       }
     } else if (type === "url") {
       try {
-        const crawlResult = await crawlWebsite(url);
-        
-        if (!crawlResult.success) {
-          throw new Error(crawlResult.error || 'Failed to crawl website');
-        }
+        // Firecrawl로 스크랩 → { markdown, text }
+        const scraped = await firecrawlService.scrapeToText(url);
 
-        extractedContent = `Website Content:\n\nTitle: ${crawlResult.title || processedTitle}\nURL: ${url}\n\n${crawlResult.text}`;
-        processedTitle = crawlResult.title || title;
-        
+        // 요구사항: knowledge.content에는 markdown 저장
+        extractedContent = scraped.markdown || scraped.text;
+        processedTitle = scraped.title || title;
+
+        // 1) 청킹은 순수 텍스트 기준으로 수행
+        const splitter = new RecursiveCharacterTextSplitter({
+          chunkSize: 1000,
+          chunkOverlap: 150,
+        });
+        chunkTexts = await splitter.splitText(scraped.text);
+
+        // 2) 임베딩 일괄 생성
+        const ai = new OpenAIService();
+        chunkEmbeddings = await ai.generateEmbeddingsBatch(chunkTexts);
+
+        // 메타데이터 확장
         additionalMeta = {
           ...additionalMeta,
-          originalTitle: crawlResult.title,
-          contentLength: crawlResult.text?.length || 0,
-          processedAt: new Date().toISOString()
+          source: 'url',
+          provider: 'firecrawl',
+          originalUrl: url,
+          contentFormat: 'markdown',
+          contentLength: extractedContent.length,
+          processedAt: new Date().toISOString(),
         };
 
       } catch (error) {
-        console.error(`❌ Website crawling failed:`, error);
+        console.error(`❌ Website scraping failed:`, error);
         return NextResponse.json({
-          error: `Failed to crawl website: ${error instanceof Error ? error.message : 'Unknown error'}`
+          error: `Failed to scrape website: ${error instanceof Error ? error.message : 'Unknown error'}`
         }, { status: 500 });
       }
     }
@@ -132,7 +150,25 @@ const postAsset = async (
         details: knowledgeError.message || "Unknown database error"
       }, { status: 500 });
     }
+    // URL 타입인 경우 PDF와 동일하게 청크 저장 수행
+    if (type === 'url' && chunkTexts && chunkTexts.length > 0) {
+      const inserts = chunkTexts.map((text, idx) => ({
+        canvas_id: canvasId,
+        knowledge_id: knowledgeEntry.id,
+        seq: idx + 1,
+        text,
+        embedding: (chunkEmbeddings && chunkEmbeddings[idx] as unknown as any) ?? null,
+      }));
 
+      const { error: chunkError } = await (supabase as any)
+        .from('knowledge_chunks')
+        .upsert(inserts, { onConflict: 'knowledge_id,seq' });
+      if (chunkError) {
+        return NextResponse.json({ 
+          error: `Failed to insert chunks: ${chunkError.message}` 
+        }, { status: 500 });
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -141,7 +177,8 @@ const postAsset = async (
       contentLength: extractedContent.length,
       preview: extractedContent.slice(0, 500),
       type: type,
-      url: url
+      url: url,
+      chunkCount: chunkTexts?.length || 0,
     });
 
   } catch (error) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { withAuthorization } from '@/lib/auth/withAuthorization';
+import { upsertCanvasMemosKnowledge } from '@/services/rag/localIngest';
 
 /**
  * memos/[memoId]/route.ts - Canvas text memo item CRUD
@@ -35,6 +36,13 @@ const patchMemo = async (
       return NextResponse.json({ error: '메모 업데이트에 실패했습니다.' }, { status: 500 });
     }
 
+    // RAG 동기화: 메모 업데이트 반영
+    try {
+      await upsertCanvasMemosKnowledge({ supabase, canvasId });
+    } catch (e) {
+      console.error('RAG sync (memo update) failed:', e);
+    }
+
     return NextResponse.json(updated);
   } catch (error) {
     console.error('Text memo PATCH API error:', error);
@@ -62,6 +70,13 @@ const deleteMemo = async (
     if (deleteError) {
       console.error('Error deleting text memo:', deleteError);
       return NextResponse.json({ error: '메모 삭제에 실패했습니다.' }, { status: 500 });
+    }
+
+    // RAG 동기화: 메모 삭제 반영
+    try {
+      await upsertCanvasMemosKnowledge({ supabase, canvasId });
+    } catch (e) {
+      console.error('RAG sync (memo delete) failed:', e);
     }
 
     return NextResponse.json({ success: true });

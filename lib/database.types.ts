@@ -309,45 +309,7 @@ export interface Database {
         }
         Relationships: []
       }
-      canvas_nodes: {
-        Row: {
-          id: string
-          canvas_id: string
-          node_id: string
-          type: string
-          data: Json
-          position: Json
-          metadata: Json | null
-          created_by: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          canvas_id: string
-          node_id: string
-          type: string
-          data: Json
-          position: Json
-          metadata?: Json | null
-          created_by: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          canvas_id?: string
-          node_id?: string
-          type?: string
-          data?: Json
-          position?: Json
-          metadata?: Json | null
-          created_by?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
+      // canvas_nodes removed (legacy). Use canvas_states as source of truth for nodes.
       canvas_edges: {
         Row: {
           id: string

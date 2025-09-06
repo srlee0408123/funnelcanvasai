@@ -1003,15 +1003,6 @@ export default function CanvasArea({
     triggerSave("delete-edge", true);
   }, [edges, setEdges, triggerSave]);
 
-  // Get feedback severity for node
-  const getNodeFeedbackSeverity = (nodeId: string): "none" | "low" | "medium" | "high" => {
-    // This would come from AI feedback data
-    // For demo purposes, return different severities for different nodes
-    if (nodeId === "email-1") return "medium";
-    if (nodeId === "landing-1") return "low";
-    if (nodeId === "crm-1") return "high";
-    return "none";
-  };
 
   // 타이틀 편집 로직은 CanvasHeader로 이전됨
 
@@ -1131,7 +1122,6 @@ export default function CanvasArea({
                   <FunnelNode
                     node={node}
                     selected={selectedNodeId === node.id}
-                    feedbackSeverity={getNodeFeedbackSeverity(node.id)}
                     onDoubleClick={!isReadOnly ? () => handleNodeDoubleClick(node.id) : undefined}
                     onMouseDown={!isReadOnly ? (e) => handleNodeMouseDown(node.id, e) : undefined}
                     onMouseUp={!isReadOnly ? () => handleNodeMouseUp(node.id) : undefined}

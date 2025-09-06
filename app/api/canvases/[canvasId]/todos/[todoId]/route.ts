@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { withAuthorization } from '@/lib/auth/withAuthorization';
+import { upsertCanvasTodosKnowledge } from '@/services/rag/localIngest';
 
 /**
  * 개별 할일 관리 API
@@ -54,6 +55,13 @@ const patchTodo = async (
       );
     }
 
+    // RAG 동기화: 할일 수정 반영
+    try {
+      await upsertCanvasTodosKnowledge({ supabase, canvasId });
+    } catch (e) {
+      console.error('RAG sync (todo update) failed:', e);
+    }
+
     return NextResponse.json(updatedTodo);
 
   } catch (error) {
@@ -85,6 +93,13 @@ const deleteTodo = async (
         { error: '할일을 삭제하는데 실패했습니다.' },
         { status: 500 }
       );
+    }
+
+    // RAG 동기화: 할일 삭제 반영
+    try {
+      await upsertCanvasTodosKnowledge({ supabase, canvasId });
+    } catch (e) {
+      console.error('RAG sync (todo delete) failed:', e);
     }
 
     return NextResponse.json({ success: true });

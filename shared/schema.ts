@@ -178,23 +178,6 @@ export const feedbackItems = pgTable("feedback_items", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Enhanced template system for reusable funnel designs
-export const funnelTemplates = pgTable("funnel_templates", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  title: varchar("title").notNull(),
-  description: text("description"),
-  category: varchar("category").notNull(), // 'marketing', 'sales', 'education', etc.
-  thumbnail: varchar("thumbnail"), // URL to template preview image
-  nodeData: jsonb("node_data").notNull(), // Template nodes and their positions
-  edgeData: jsonb("edge_data").notNull(), // Template connections
-  isPublic: boolean("is_public").default(true),
-  isOfficial: boolean("is_official").default(false), // Official templates by admin
-  createdBy: varchar("created_by").references(() => users.id),
-  usageCount: integer("usage_count").default(0),
-  rating: doublePrecision("rating").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
 
 // Removed funnelNodeTypes - users now create free-form nodes
 
@@ -275,25 +258,7 @@ export const canvasTodos = pgTable("canvas_todos", {
   index("canvas_todos_canvas_id_idx").on(table.canvasId),
 ]);
 
-// Canvas nodes for individual node storage with JSON metadata
-export const canvasNodes = pgTable("canvas_nodes", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  canvasId: uuid("canvas_id").references(() => canvases.id, { onDelete: "cascade" }).notNull(),
-  nodeId: varchar("node_id").notNull(), // Frontend node ID
-  type: varchar("type").notNull(), // Node type (landing, form, email, etc.)
-  position: jsonb("position").notNull(), // { x: number, y: number }
-  data: jsonb("data").notNull(), // Node data (title, subtitle, icon, color, etc.)
-  metadata: jsonb("metadata").default('{}'), // Additional metadata for the node
-  createdBy: varchar("created_by").references(() => users.id).notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table: any) => [
-  index("canvas_nodes_canvas_id_idx").on(table.canvasId),
-  index("canvas_nodes_type_idx").on(table.type),
-  index("canvas_nodes_created_by_idx").on(table.createdBy),
-  // Ensure unique node_id per canvas
-  index("canvas_nodes_canvas_node_unique_idx").on(table.canvasId, table.nodeId),
-]);
+// canvas_nodes was deprecated and fully removed. Use canvas_states as the source of truth.
 
 // Canvas edges for storing connections between nodes
 export const canvasEdges = pgTable("canvas_edges", {
@@ -341,7 +306,6 @@ export const workspacesRelations = relations(workspaces, ({ one, many }: any) =>
   members: many(workspaceMembers),
   canvases: many(canvases),
   assets: many(assets),
-  templates: many(funnelTemplates),
 }));
 
 export const workspaceMembersRelations = relations(workspaceMembers, ({ one }: any) => ({
@@ -356,8 +320,7 @@ export const canvasesRelations = relations(canvases, ({ one, many }: any) => ({
   assets: many(assets),
   knowledge: many(canvasKnowledge),
   feedbackRuns: many(feedbackRuns),
-  shares: many(canvasShares),
-  nodes: many(canvasNodes),
+  shares: many(canvasShares), 
   edges: many(canvasEdges),
   todos: many(canvasTodos),
   textMemos: many(textMemos),
@@ -370,10 +333,6 @@ export const canvasSharesRelations = relations(canvasShares, ({ one }: any) => (
   sharedByUser: one(users, { fields: [canvasShares.sharedBy], references: [users.id] }),
 }));
 
-export const canvasNodesRelations = relations(canvasNodes, ({ one }: any) => ({
-  canvas: one(canvases, { fields: [canvasNodes.canvasId], references: [canvases.id] }),
-  creator: one(users, { fields: [canvasNodes.createdBy], references: [users.id] }),
-}));
 
 export const canvasEdgesRelations = relations(canvasEdges, ({ one }: any) => ({
   canvas: one(canvases, { fields: [canvasEdges.canvasId], references: [canvases.id] }),
@@ -401,15 +360,6 @@ export const assetsRelations = relations(assets, ({ one, many }: any) => ({
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 
-// Template ratings and reviews
-export const templateReviews = pgTable("template_reviews", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  templateId: uuid("template_id").references(() => funnelTemplates.id),
-  userId: varchar("user_id").references(() => users.id),
-  rating: integer("rating").notNull(), // 1-5 stars
-  comment: text("comment"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
 // Knowledge chunks for RAG search
 export const knowledgeChunks = pgTable("knowledge_chunks", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -435,11 +385,7 @@ export const adminRoles = pgTable("admin_roles", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export type FunnelTemplate = typeof funnelTemplates.$inferSelect;
-export type InsertFunnelTemplate = typeof funnelTemplates.$inferInsert;
-// Removed FunnelNodeType types - using free-form nodes now
-export type TemplateReview = typeof templateReviews.$inferSelect;
-export type InsertTemplateReview = typeof templateReviews.$inferInsert;
+// Removed FunnelTemplate and TemplateReview types - template system removed
 export type AdminRole = typeof adminRoles.$inferSelect;
 export type InsertAdminRole = typeof adminRoles.$inferInsert;
 export type Workspace = typeof workspaces.$inferSelect;
@@ -462,8 +408,6 @@ export type CanvasTodo = typeof canvasTodos.$inferSelect;
 export type InsertCanvasTodo = typeof canvasTodos.$inferInsert;
 export type CanvasShare = typeof canvasShares.$inferSelect;
 export type InsertCanvasShare = typeof canvasShares.$inferInsert;
-export type CanvasNode = typeof canvasNodes.$inferSelect;
-export type InsertCanvasNode = typeof canvasNodes.$inferInsert;
 export type CanvasEdge = typeof canvasEdges.$inferSelect;
 export type InsertCanvasEdge = typeof canvasEdges.$inferInsert;
 
@@ -472,4 +416,3 @@ export const insertWorkspaceSchema = createInsertSchema(workspaces).omit({ id: t
 export const insertCanvasSchema = createInsertSchema(canvases).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertAssetSchema = createInsertSchema(assets).omit({ id: true, createdAt: true });
 export const insertFeedbackRunSchema = createInsertSchema(feedbackRuns).omit({ id: true, createdAt: true });
-export const insertFunnelTemplateSchema = createInsertSchema(funnelTemplates).omit({ id: true, createdAt: true, updatedAt: true });

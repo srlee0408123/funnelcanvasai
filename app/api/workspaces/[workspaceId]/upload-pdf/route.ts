@@ -176,7 +176,7 @@ async function handlePost(request: NextRequest, { params }: { params: { workspac
     if (inserts.length > 0) {
       const { error: chunkError } = await (supabase as any)
         .from("knowledge_chunks")
-        .insert(inserts);
+        .upsert(inserts, { onConflict: 'knowledge_id,seq' });
       if (chunkError) {
         return NextResponse.json({ error: `Failed to insert chunks: ${chunkError.message}` }, { status: 500 });
       }

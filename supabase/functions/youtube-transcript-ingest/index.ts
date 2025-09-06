@@ -210,13 +210,13 @@ serve(async (req: Request) => {
             const ej = await eresp.json();
             const embedding = (ej?.data?.[0]?.embedding) as number[] | undefined;
 
-            await supabase.from("knowledge_chunks").insert({
+            await supabase.from("knowledge_chunks").upsert({
               canvas_id: canvasId,
               knowledge_id: inserted.id,
               seq,
               text: c.text,
               embedding: embedding ?? null,
-            });
+            }, { onConflict: 'knowledge_id,seq' });
           } catch (e) {
             console.error("Embedding insert failed:", e);
           }

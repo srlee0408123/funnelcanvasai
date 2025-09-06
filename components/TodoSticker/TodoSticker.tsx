@@ -24,6 +24,9 @@ interface TodoStickerProps {
 }
 
 export default function TodoSticker({ canvasId, onHide, isReadOnly = false, initialTodos }: TodoStickerProps) {
+  // 노드 동기화 기능은 레거시로 제거됨 (항상 비활성)
+  const SYNC_TODO_TO_NODES = false;
+
   const [newTodoText, setNewTodoText] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
@@ -127,51 +130,21 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
     // 삭제 대기 중인 항목들 제외
     result = result.filter(todo => !pendingOperations.has(`delete-${todo.id}`));
     
+    // 중복 제거 (id 기준)
+    const seen = new Set<string>();
+    result = result.filter(item => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+    
     return result.sort((a, b) => a.position - b.position);
   }, [todos, optimisticTodos, pendingOperations, isReadOnly, initialTodos]);
 
   const activeTodos = mergedTodos();
 
-  // 기존 할일들에 대해 노드가 없으면 생성 (스티커가 보일 때만 실행)
-  useEffect(() => {
-    if (!isReadOnly && isVisible && activeTodos.length > 0) {
-      const syncTodoNodes = async () => {
-        try {
-          // 모든 노드를 한 번만 가져오기
-          const response = await apiRequest('GET', `/api/canvases/${canvasId}/nodes`);
-          const { nodes } = await response.json();
-          
-          // 기존 todo 노드들 찾기
-          const existingTodoNodes = nodes.filter((node: any) => 
-            node.node_id.startsWith('todo-')
-          );
-          
-          // 각 할일에 대해 노드가 없으면 생성
-          console.log('🔄 Syncing todos with canvas nodes:', {
-            totalTodos: activeTodos.length,
-            existingTodoNodes: existingTodoNodes.length
-          });
-          
-          for (const todo of activeTodos) {
-            const existingNode = existingTodoNodes.find((node: any) => 
-              node.node_id === `todo-${todo.id}`
-            );
-            
-            if (!existingNode) {
-              console.log('🆕 Creating missing todo node:', `todo-${todo.id}`);
-              await createTodoNode(todo);
-            } else {
-              console.log('✅ Todo node already exists:', `todo-${todo.id}`);
-            }
-          }
-        } catch (error) {
-          console.error('Failed to sync todo nodes:', error);
-        }
-      };
-
-      syncTodoNodes();
-    }
-      }, [activeTodos, canvasId, isReadOnly, isVisible]);
+  // 노드 동기화는 완전히 제거됨
+  useEffect(() => {}, []);
 
   // 실시간 이벤트 처리
   const handleRealtimeEvent = useCallback((payload: any) => {
@@ -179,23 +152,41 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
     
     switch (eventType) {
       case 'INSERT':
-        // 새 할일 추가 - 낙관적 업데이트가 아닌 경우만 추가
-        if (!pendingOperations.has(`create-${newRecord.id}`)) {
-          setOptimisticTodos(prev => {
-            const exists = prev.some(t => t.id === newRecord.id);
-            if (!exists) {
-              return [...prev, newRecord];
-            }
-            return prev;
+        // 새 할일 추가 - 중복 방지: temp 항목을 실제 항목으로 교체 또는 id 중복 제거
+        setOptimisticTodos(prev => {
+          // temp 항목 중 동일 텍스트를 가진 항목이 있으면 교체
+          const tempIndex = prev.findIndex(t => t.id.startsWith('temp-') && t.text === newRecord.text);
+          if (tempIndex >= 0) {
+            const next = [...prev];
+            next[tempIndex] = newRecord;
+            // id 기준 중복 제거
+            const seen = new Set<string>();
+            return next.filter(item => {
+              if (seen.has(item.id)) return false;
+              seen.add(item.id);
+              return true;
+            });
+          }
+          // 이미 같은 id가 있으면 추가하지 않음
+          if (prev.some(t => t.id === newRecord.id)) return prev;
+          const next = [...prev, newRecord];
+          const seen = new Set<string>();
+          return next.filter(item => {
+            if (seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
           });
-        } else {
-          // 낙관적 업데이트 완료 - pending 제거
-          setPendingOperations(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(`create-${newRecord.id}`);
-            return newSet;
-          });
-        }
+        });
+        // temp 기반 pending 플래그 정리 및 create-실ID 플래그 제거
+        setPendingOperations(prev => {
+          const newSet = new Set<string>();
+          for (const key of prev) {
+            if (key.startsWith('create-temp-')) continue; // temp는 제거
+            if (key === `create-${newRecord.id}`) continue; // 실ID도 제거
+            newSet.add(key);
+          }
+          return newSet;
+        });
         break;
         
       case 'UPDATE':
@@ -203,12 +194,14 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
         if (!pendingOperations.has(`update-${newRecord.id}`)) {
           setOptimisticTodos(prev => {
             const index = prev.findIndex(t => t.id === newRecord.id);
-            if (index >= 0) {
-              const updated = [...prev];
-              updated[index] = newRecord;
-              return updated;
-            }
-            return [...prev, newRecord];
+            const next = [...prev];
+            if (index >= 0) next[index] = newRecord; else next.push(newRecord);
+            const seen = new Set<string>();
+            return next.filter(item => {
+              if (seen.has(item.id)) return false;
+              seen.add(item.id);
+              return true;
+            });
           });
         } else {
           // 낙관적 업데이트 완료
@@ -309,23 +302,26 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
     onSuccess: async (response, text, context) => {
       const newTodo = await response.json();
       
-      // 임시 ID를 실제 ID로 교체
-      setOptimisticTodos(prev => 
-        prev.map(todo => 
-          todo.id === context?.tempId ? newTodo : todo
-        )
-      );
+      // 임시 ID를 실제 ID로 교체 + 중복 제거
+      setOptimisticTodos(prev => {
+        const replaced = prev.map(todo => todo.id === context?.tempId ? newTodo : todo);
+        const seen = new Set<string>();
+        return replaced.filter(item => {
+          if (seen.has(item.id)) return false;
+          seen.add(item.id);
+          return true;
+        });
+      });
       
-      // pending 상태 업데이트
+      // pending 상태 업데이트 (temp 제거, 실ID는 즉시 제거해 중복 이벤트에도 안전)
       setPendingOperations(prev => {
         const newSet = new Set(prev);
         newSet.delete(`create-${context?.tempId}`);
-        newSet.add(`create-${newTodo.id}`);
+        newSet.delete(`create-${newTodo.id}`);
         return newSet;
       });
       
-      // 할일을 캔버스에 노드로 추가
-      await createTodoNode(newTodo);
+      // 노드 동기화는 제거됨
     },
     onError: (error, text, context) => {
       // 실패 시 낙관적 업데이트 롤백
@@ -382,18 +378,17 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       // 실제 서버 응답으로 업데이트
       setOptimisticTodos(prev => {
         const index = prev.findIndex(t => t.id === id);
-        if (index >= 0) {
-          const updated = [...prev];
-          updated[index] = updatedTodo;
-          return updated;
-        }
-        return prev;
+        const next = [...prev];
+        if (index >= 0) next[index] = updatedTodo;
+        const seen = new Set<string>();
+        return next.filter(item => {
+          if (seen.has(item.id)) return false;
+          seen.add(item.id);
+          return true;
+        });
       });
       
-      // 할일 상태나 텍스트가 변경되면 캔버스 노드도 업데이트
-      if (updates.completed !== undefined || updates.text !== undefined) {
-        await updateTodoNode(updatedTodo);
-      }
+      // 노드 동기화 제거됨
     },
     onError: (error, { id }, context) => {
       // 실패 시 이전 상태로 롤백
@@ -424,8 +419,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       return { previousTodos, todoToDelete };
     },
     onSuccess: async (response, id, context) => {
-      // 할일 삭제 시 캔버스 노드도 삭제
-      await deleteTodoNode(id);
+      // 노드 동기화 제거됨
       
       // 낙관적 상태에서도 제거
       setOptimisticTodos(prev => prev.filter(t => t.id !== id));
@@ -455,105 +449,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
     localStorage.setItem(`todo-size-${canvasId}`, JSON.stringify(size));
   }, [size, canvasId]);
 
-  // 할일을 캔버스 노드로 생성하는 함수 (중복 체크 포함)
-  const createTodoNode = useCallback(async (todo: TodoItem) => {
-    try {
-      const nodeId = `todo-${todo.id}`;
-      
-      // 먼저 기존 노드가 있는지 확인
-      try {
-        const response = await apiRequest('GET', `/api/canvases/${canvasId}/nodes`);
-        const { nodes } = await response.json();
-        const existingNode = nodes.find((node: any) => node.node_id === nodeId);
-        
-        if (existingNode) {
-          console.log('🔄 Todo node already exists, skipping creation:', nodeId);
-          return; // 이미 존재하면 생성하지 않음
-        }
-      } catch (checkError) {
-        console.warn('⚠️ Failed to check existing nodes, proceeding with creation:', checkError);
-      }
-
-      // 캔버스 중앙 근처에 랜덤한 위치 생성
-      const randomX = Math.random() * 400 + 200; // 200-600px 범위
-      const randomY = Math.random() * 300 + 150; // 150-450px 범위
-
-      const nodeData = {
-        node_id: nodeId,
-        type: 'todo',
-        position: { x: randomX, y: randomY },
-        data: {
-          title: todo.text,
-          subtitle: todo.completed ? '완료됨' : '진행중',
-          icon: todo.completed ? '✅' : '⭕',
-          color: todo.completed ? '#22c55e' : '#eab308',
-          todoId: todo.id,
-          completed: todo.completed,
-        },
-        metadata: {
-          type: 'todo',
-          todoId: todo.id,
-          createdAt: todo.created_at,
-        }
-      };
-
-      await apiRequest('POST', `/api/canvases/${canvasId}/nodes`, nodeData);
-      console.log('✅ Todo node created successfully:', nodeData);
-    } catch (error) {
-      // 중복 키 에러인 경우 무시 (이미 존재하는 노드)
-      if (error instanceof Error && (error.message.includes('duplicate key') || error.message.includes('23505'))) {
-        console.log('🔄 Todo node already exists (duplicate key), ignoring:', `todo-${todo.id}`);
-        return;
-      }
-      console.error('❌ Failed to create todo node:', error);
-    }
-  }, [canvasId]);
-
-  // 할일 노드 업데이트 함수 (기존 위치를 유지하면서 데이터만 업데이트)
-  const updateTodoNode = async (todo: TodoItem) => {
-    try {
-      // 기본 위치 (새 노드인 경우 사용)
-      const defaultPosition = { 
-        x: Math.random() * 400 + 200, 
-        y: Math.random() * 300 + 150 
-      };
-
-      const nodeData = {
-        node_id: `todo-${todo.id}`,
-        type: 'todo',
-        position: defaultPosition, // upsert에서 기존 위치가 있으면 유지됨
-        data: {
-          title: todo.text,
-          subtitle: todo.completed ? '완료됨' : '진행중',
-          icon: todo.completed ? '✅' : '⭕',
-          color: todo.completed ? '#22c55e' : '#eab308',
-          todoId: todo.id,
-          completed: todo.completed,
-        },
-        metadata: {
-          type: 'todo',
-          todoId: todo.id,
-          updatedAt: todo.updated_at,
-        }
-      };
-
-      await apiRequest('POST', `/api/canvases/${canvasId}/nodes`, nodeData);
-      console.log('Todo node updated successfully:', nodeData);
-    } catch (error) {
-      console.error('Failed to update todo node:', error);
-      // 에러가 발생해도 할일 업데이트는 계속 진행되도록 함
-    }
-  };
-
-  // 할일 노드 삭제 함수
-  const deleteTodoNode = async (todoId: string) => {
-    try {
-      await apiRequest('DELETE', `/api/canvases/${canvasId}/nodes?nodeId=todo-${todoId}`);
-      console.log('Todo node deleted successfully:', todoId);
-    } catch (error) {
-      console.error('Failed to delete todo node:', error);
-    }
-  };
+  // 노드 동기화 관련 함수는 레거시로 제거됨
 
   const addTodo = () => {
     if (!newTodoText.trim()) return;

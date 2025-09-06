@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { withAuthorization } from '@/lib/auth/withAuthorization';
+import { upsertCanvasMemosKnowledge } from '@/services/rag/localIngest';
 
 /**
  * memos/route.ts - Canvas text memos CRUD (collection)
@@ -76,6 +77,13 @@ const postMemo = async (
     if (insertError) {
       console.error('Error inserting text memo:', insertError);
       return NextResponse.json({ error: '메모 생성에 실패했습니다.' }, { status: 500 });
+    }
+
+    // RAG 동기화: 메모 생성 반영
+    try {
+      await upsertCanvasMemosKnowledge({ supabase, canvasId });
+    } catch (e) {
+      console.error('RAG sync (memo create) failed:', e);
     }
 
     return NextResponse.json(inserted, { status: 201 });

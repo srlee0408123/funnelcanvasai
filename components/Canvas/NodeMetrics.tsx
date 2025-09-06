@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Badge } from "@/components/Ui/buttons";
 import { Input, Label, Textarea } from "@/components/Ui/form-controls";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/Ui/layout";
+import { Card, CardContent } from "@/components/Ui/layout";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/Ui/data-display";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
