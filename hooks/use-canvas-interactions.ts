@@ -52,6 +52,10 @@ export function useCanvasInteractions({
   const rafIdRef = useRef<number | null>(null)
   const latestMouseRef = useRef<Point>({ x: 0, y: 0 })
 
+  // 드래그 임계값 관련 상태
+  const isDragStartedRef = useRef(false)
+  const DRAG_THRESHOLD = 5 // 5픽셀 이상 움직여야 드래그 시작
+
   // 헬퍼: 노드 DOM 엘리먼트 조회
   const getNodeElement = (nodeId: string): HTMLElement | null => {
     return canvasRef.current?.querySelector(`[data-node-id="${nodeId}"]`) as HTMLElement | null
@@ -59,7 +63,7 @@ export function useCanvasInteractions({
 
   // 드래그 중 RAF 루프
   const runDragLoop = useCallback(() => {
-    if (!isDraggingRef.current || !draggedNodeIdRef.current) return
+    if (!isDraggingRef.current || !draggedNodeIdRef.current || !isDragStartedRef.current) return
     const nodeEl = getNodeElement(draggedNodeIdRef.current)
     if (!nodeEl) return
 
@@ -87,9 +91,27 @@ export function useCanvasInteractions({
         setViewport({ x: lastPanPointRef.current.x + deltaX, y: lastPanPointRef.current.y + deltaY, zoom: viewport.zoom })
         return
       }
-      if (isDraggingRef.current) {
+      if (isDraggingRef.current && draggedNodeIdRef.current) {
         latestMouseRef.current = { x: e.clientX, y: e.clientY }
-        if (rafIdRef.current === null) {
+        
+        // 드래그 임계값 체크
+        if (!isDragStartedRef.current) {
+          const deltaX = Math.abs(e.clientX - dragStartMouseRef.current.x)
+          const deltaY = Math.abs(e.clientY - dragStartMouseRef.current.y)
+          
+          if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
+            isDragStartedRef.current = true
+            // 실제 드래그 시작 - 노드에 드래그 스타일 적용
+            const nodeEl = getNodeElement(draggedNodeIdRef.current)
+            if (nodeEl) {
+              nodeEl.classList.add('cursor-grabbing')
+              nodeEl.style.zIndex = '20'
+            }
+          }
+        }
+        
+        // 드래그가 시작된 경우에만 RAF 루프 실행
+        if (isDragStartedRef.current && rafIdRef.current === null) {
           rafIdRef.current = window.requestAnimationFrame(runDragLoop)
         }
       }
@@ -98,18 +120,29 @@ export function useCanvasInteractions({
     const onMouseUp = () => {
       if (isReadOnly) return
       if (isDraggingRef.current && draggedNodeIdRef.current) {
-        // 최종 좌표 계산 후 Zustand에 1회 반영
-        const deltaX = latestMouseRef.current.x - dragStartMouseRef.current.x
-        const deltaY = latestMouseRef.current.y - dragStartMouseRef.current.y
-        const finalX = originalNodePosRef.current.x + deltaX / viewport.zoom
-        const finalY = originalNodePosRef.current.y + deltaY / viewport.zoom
+        // 실제로 드래그가 시작된 경우에만 위치 업데이트
+        if (isDragStartedRef.current) {
+          const deltaX = latestMouseRef.current.x - dragStartMouseRef.current.x
+          const deltaY = latestMouseRef.current.y - dragStartMouseRef.current.y
+          const finalX = originalNodePosRef.current.x + deltaX / viewport.zoom
+          const finalY = originalNodePosRef.current.y + deltaY / viewport.zoom
 
-        const nodeId = draggedNodeIdRef.current
-        setNodePositions(prev => ({ ...prev, [nodeId!]: { x: finalX, y: finalY } }))
-        triggerSave('drag-end', true)
+          const nodeId = draggedNodeIdRef.current
+          setNodePositions(prev => ({ ...prev, [nodeId!]: { x: finalX, y: finalY } }))
+          triggerSave('drag-end', true)
+        }
+
+        // 드래그 스타일 정리
+        const nodeEl = getNodeElement(draggedNodeIdRef.current)
+        if (nodeEl) {
+          nodeEl.classList.remove('cursor-grabbing')
+          nodeEl.style.zIndex = ''
+        }
       }
 
+      // 모든 드래그 관련 상태 초기화
       isDraggingRef.current = false
+      isDragStartedRef.current = false
       draggedNodeIdRef.current = null
       if (rafIdRef.current !== null) {
         window.cancelAnimationFrame(rafIdRef.current)
@@ -142,9 +175,13 @@ export function useCanvasInteractions({
   const handleNodeMouseDown = useCallback((nodeId: string, e: React.MouseEvent) => {
     if (isReadOnly) return
     e.stopPropagation()
+    
+    // 드래그 관련 상태 초기화
     draggedNodeIdRef.current = nodeId
     isDraggingRef.current = true
+    isDragStartedRef.current = false // 아직 실제 드래그는 시작되지 않음
     dragStartMouseRef.current = { x: e.clientX, y: e.clientY }
+    latestMouseRef.current = { x: e.clientX, y: e.clientY }
 
     const node = nodes.find(n => n.id === nodeId)
     const base = node?.position ?? { x: 0, y: 0 }
