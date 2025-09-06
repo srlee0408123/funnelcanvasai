@@ -5,6 +5,22 @@ import { useRouter } from "next/navigation";
 import { CanvasView } from "@/components/Canvas/CanvasView";
 import { createClient } from "@/lib/supabase/client";
 
+/**
+ * CanvasClient - 캔버스와 최신 상태를 로드해 CanvasView에 전달
+ * 
+ * 주요 역할:
+ * 1. 캔버스 메타데이터 로드
+ * 2. 최신 캔버스 상태(/api/canvases/:id/state/latest) 로드 및 camelCase로 정규화
+ * 3. CanvasView로 전달하여 초기 렌더 시 저장된 노드/엣지 표시
+ * 
+ * 핵심 특징:
+ * - Supabase 클라이언트로 캔버스 로드, Next API로 상태 로드
+ * - 최소 변경으로 기존 저장 로직(useCanvasSync)과 호환
+ * 
+ * 주의사항:
+ * - 최신 상태는 최초 마운트 시 한 번만 로드(실시간 반영은 별도)
+ */
+
 interface CanvasClientProps {
   canvasId: string;
 }
@@ -12,6 +28,7 @@ interface CanvasClientProps {
 export default function CanvasClient({ canvasId }: CanvasClientProps) {
   const router = useRouter();
   const [canvas, setCanvas] = useState<any>(null);
+  const [canvasState, setCanvasState] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +46,36 @@ export default function CanvasClient({ canvasId }: CanvasClientProps) {
         if (!data) throw new Error('Canvas not found');
 
         setCanvas(data);
+
+        // 최신 캔버스 상태 로드 (서버 API 경유)
+        try {
+          const res = await fetch(`/api/canvases/${canvasId}/state/latest`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          if (res.ok) {
+            const stateRow = await res.json();
+            if (stateRow && stateRow.id) {
+              // snake_case -> camelCase 매핑 (shared CanvasState 형태에 맞춤)
+              const mapped = {
+                id: stateRow.id,
+                canvasId: stateRow.canvas_id,
+                state: stateRow.state,
+                userId: stateRow.user_id,
+                createdAt: stateRow.created_at ? new Date(stateRow.created_at) : null,
+              } as any;
+              setCanvasState(mapped);
+            } else {
+              setCanvasState(null);
+            }
+          } else {
+            setCanvasState(null);
+          }
+        } catch (e) {
+          // 상태가 없거나 에러 시 무시하고 빈 상태 유지
+          setCanvasState(null);
+        }
       } catch (err) {
         console.error('Error fetching canvas:', err);
         setError(err instanceof Error ? err.message : 'Failed to fetch canvas');
@@ -38,6 +85,30 @@ export default function CanvasClient({ canvasId }: CanvasClientProps) {
     };
 
     fetchCanvas();
+  }, [canvasId]);
+
+  // canvases 테이블 실시간 구독: 제목 등 메타 변경을 UI에 반영
+  useEffect(() => {
+    if (!canvasId) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`canvases-meta-${canvasId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'canvases', filter: `id=eq.${canvasId}` },
+        (payload) => {
+          // payload.new가 있으면 최신 레코드를 사용
+          const next = (payload as any)?.new || (payload as any)?.record;
+          if (next) {
+            setCanvas((prev: any) => ({ ...(prev || {}), ...next }));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [canvasId]);
 
   if (isLoading) {
@@ -69,5 +140,5 @@ export default function CanvasClient({ canvasId }: CanvasClientProps) {
     );
   }
 
-  return <CanvasView canvas={canvas} />;
+  return <CanvasView canvas={canvas} canvasState={canvasState || undefined} />;
 }

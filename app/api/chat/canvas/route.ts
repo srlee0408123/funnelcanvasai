@@ -43,7 +43,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`🤖 AI Chat request from user ${userId} for canvas ${canvasId}`);
 
     // 서비스 클라이언트 생성 (RLS 우회)
     const supabase = createServiceClient();
@@ -108,7 +107,6 @@ export async function POST(request: NextRequest) {
       console.error('Error saving assistant message:', assistantMessageError);
     }
 
-    console.log(`✅ AI response generated and saved for canvas ${canvasId}`);
 
     // RAG에서 생성한 인용 정보 사용
 

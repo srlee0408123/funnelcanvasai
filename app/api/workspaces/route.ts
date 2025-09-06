@@ -1,17 +1,21 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { createServiceClient } from "@/lib/supabase/service";
 import { getUserWorkspaces, createWorkspace } from "@/services/workspace-service";
 
 export async function GET() {
-  const { userId } = await auth();
-  
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  try {
+    const { userId } = await auth();
+    
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-  const workspaces = await getUserWorkspaces(userId);
-  return NextResponse.json(workspaces);
+    const workspaces = await getUserWorkspaces(userId);
+    return NextResponse.json(workspaces);
+  } catch (error) {
+    console.error('Failed to fetch user workspaces:', error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {

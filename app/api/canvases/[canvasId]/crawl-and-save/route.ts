@@ -40,7 +40,6 @@ const postCrawlAndSave = async (
 
     const supabase = createServiceClient();
 
-    console.log(`🌐 Crawling ${url} and saving to canvas ${canvasId}`);
     const startTime = Date.now();
 
     let result;
@@ -51,7 +50,6 @@ const postCrawlAndSave = async (
 
     // URL 타입 감지 및 처리
     if (isValidYouTubeUrl(url)) {
-      console.log(`📺 Processing YouTube video: ${url}`);
       sourceType = "youtube";
       
       try {
@@ -75,7 +73,6 @@ const postCrawlAndSave = async (
           contentLength: transcriptResult.transcript.length
         };
 
-        console.log(`✅ YouTube processing successful: ${transcriptResult.transcript.length} characters`);
       } catch (error) {
         console.error(`❌ YouTube processing failed:`, error);
         return NextResponse.json({
@@ -84,7 +81,6 @@ const postCrawlAndSave = async (
         }, { status: 500 });
       }
     } else {
-      console.log(`🌐 Processing website: ${url}`);
       sourceType = "url";
       
       try {
@@ -112,7 +108,6 @@ const postCrawlAndSave = async (
           contentLength: crawlResult.text?.length || 0
         };
 
-        console.log(`✅ Website crawling successful: ${crawlResult.text?.length || 0} characters`);
       } catch (error) {
         console.error(`❌ Website crawling failed:`, error);
         return NextResponse.json({
@@ -123,7 +118,6 @@ const postCrawlAndSave = async (
     }
 
     // Canvas Knowledge에 저장
-    console.log(`💾 Saving to DB with type: "${sourceType}"`);
     const { data: knowledgeEntry, error: knowledgeError } = await (supabase as any)
       .from('canvas_knowledge')
       .insert({
@@ -144,7 +138,6 @@ const postCrawlAndSave = async (
       }, { status: 500 });
     }
 
-    console.log(`✅ Saved crawled content to knowledge base: ${knowledgeEntry.id}`);
     
     return NextResponse.json({
       success: true,

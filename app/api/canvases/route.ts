@@ -56,7 +56,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { title, workspace_id } = body;
     
-    console.log("Creating canvas:", { title, workspace_id, userId });
     
     if (!title || !workspace_id) {
       return NextResponse.json({ 
@@ -122,7 +121,6 @@ export async function POST(req: Request) {
       }, { status: 500 });
     }
     
-    console.log("Canvas created successfully:", data);
     return NextResponse.json(data);
   } catch (error) {
     console.error("Unexpected error in POST /api/canvases:", error);

@@ -4,7 +4,6 @@ import { WebhookEvent } from "@clerk/nextjs/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export async function POST(req: Request) {
-  console.log("Webhook endpoint hit");
   
   // Get the headers
   const headerPayload = await headers();
@@ -24,7 +23,6 @@ export async function POST(req: Request) {
   const payload = await req.json();
   const body = JSON.stringify(payload);
   
-  console.log("Webhook payload type:", payload.type);
 
   // Create a new Svix instance with your secret
   const webhookSecret = process.env.CLERK_WEBHOOK_SECRET;
@@ -53,14 +51,12 @@ export async function POST(req: Request) {
 
   // Get the event type
   const eventType = evt.type;
-  console.log("Webhook event type:", eventType);
   
   // Handle the webhook
   if (eventType === "user.created" || eventType === "user.updated") {
     const { id, email_addresses, first_name, last_name, image_url } = evt.data;
     const email = email_addresses[0]?.email_address;
     
-    console.log("Processing user:", { id, email, first_name, last_name });
     
     if (!email) {
       console.error("No email found for user:", id);
@@ -88,7 +84,6 @@ export async function POST(req: Request) {
       return new Response("Error saving user", { status: 500 });
     }
     
-    console.log("User saved to Supabase:", data);
 
     // Don't create any default workspace for new users
   }

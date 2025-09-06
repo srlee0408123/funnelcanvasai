@@ -48,7 +48,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    console.log(`📝 Fetching public chat messages for canvas ${canvasId}`);
 
     // 공개 캔버스 확인
     const publicCheck = await checkPublicCanvas(canvasId);
@@ -91,7 +90,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       // userId는 공개 API에서 제외
     })) || [];
 
-    console.log(`✅ Retrieved ${formattedMessages.length} public chat messages for canvas ${canvasId}`);
 
     return NextResponse.json(formattedMessages);
 
