@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { withAuthorization } from '@/lib/auth/withAuthorization';
+import { upsertCanvasNodesKnowledge } from '@/services/rag/localIngest';
 
 /**
  * nodes/route.ts - Canvas nodes management
@@ -102,6 +103,13 @@ const postNodes = async (
           return NextResponse.json({ error: 'Failed to save nodes', details: insertError }, { status: 500 });
         }
 
+        // RAG 동기화: 노드 텍스트를 canvas_knowledge 및 knowledge_chunks에 반영
+        try {
+          await upsertCanvasNodesKnowledge({ supabase, canvasId, nodes });
+        } catch (e) {
+          console.error('RAG sync (nodes bulk) failed:', e);
+        }
+
         return NextResponse.json({ nodes: insertedNodes }, { status: 201 });
       }
 
@@ -149,6 +157,13 @@ const postNodes = async (
         }, { status: 500 });
       }
 
+      // RAG 동기화: 단일 노드 저장 시에도 최신 상태 반영
+      try {
+        await upsertCanvasNodesKnowledge({ supabase, canvasId });
+      } catch (e) {
+        console.error('RAG sync (node upsert) failed:', e);
+      }
+
       return NextResponse.json({ node: savedNode }, { status: 201 });
     }
   } catch (error) {
@@ -183,6 +198,13 @@ const deleteNodes = async (
         return NextResponse.json({ error: 'Failed to delete node' }, { status: 500 });
       }
 
+      // RAG 동기화: 노드 삭제 반영
+      try {
+        await upsertCanvasNodesKnowledge({ supabase, canvasId });
+      } catch (e) {
+        console.error('RAG sync (node delete) failed:', e);
+      }
+
       return NextResponse.json({ message: 'Node deleted successfully' });
     } else {
       const { error: deleteError } = await supabase
@@ -193,6 +215,13 @@ const deleteNodes = async (
       if (deleteError) {
         console.error('Failed to delete nodes:', deleteError);
         return NextResponse.json({ error: 'Failed to delete nodes' }, { status: 500 });
+      }
+
+      // RAG 동기화: 전체 노드 삭제 반영
+      try {
+        await upsertCanvasNodesKnowledge({ supabase, canvasId });
+      } catch (e) {
+        console.error('RAG sync (all nodes delete) failed:', e);
       }
 
       return NextResponse.json({ message: 'All nodes deleted successfully' });

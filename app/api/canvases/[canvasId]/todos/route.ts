@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { withAuthorization } from '@/lib/auth/withAuthorization';
+import { upsertCanvasTodosKnowledge } from '@/services/rag/localIngest';
 
 /**
  * 캔버스 할일 목록 관리 API
@@ -97,6 +98,13 @@ const postTodo = async (
         { error: '할일을 생성하는데 실패했습니다.' },
         { status: 500 }
       );
+    }
+
+    // RAG 동기화: 할일 생성 반영
+    try {
+      await upsertCanvasTodosKnowledge({ supabase, canvasId });
+    } catch (e) {
+      console.error('RAG sync (todo create) failed:', e);
     }
 
     return NextResponse.json(newTodo);

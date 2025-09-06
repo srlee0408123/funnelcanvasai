@@ -3,6 +3,8 @@ import { auth } from '@clerk/nextjs/server';
 import type { Database } from '@/lib/database.types';
 import { getCanvasAccessInfo } from '@/lib/auth/auth-service';
 import { getLatestCanvasState, insertCanvasState, getCanvasById } from '@/services/canvas-service';
+import { createServiceClient } from '@/lib/supabase/service';
+import { upsertCanvasNodesKnowledge } from '@/services/rag/localIngest';
 
 /**
  * state/route.ts - Save/read canvas state (collection endpoint)
@@ -61,6 +63,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const inserted = await insertCanvasState(canvasId, statePayload, userId);
     if (!inserted) {
       return NextResponse.json({ error: 'Failed to save canvas state' }, { status: 500 });
+    }
+    // 비동기 RAG 동기화: 최신 상태 기반으로 노드 지식 업데이트 (todo 노드 제외)
+    try {
+      const supabase = createServiceClient();
+      await upsertCanvasNodesKnowledge({ supabase, canvasId });
+    } catch (e) {
+      console.error('RAG sync (state save) failed:', e);
+      // 저장 성공을 막지 않음
     }
     return NextResponse.json(inserted, { status: 201 });
   } catch (error) {
