@@ -234,10 +234,10 @@ export function CanvasEdges({
         return (
           <g transform={`translate(${viewport.x},${viewport.y}) scale(${viewport.zoom})`}>
             <path d={tempPath} stroke="rgba(59, 130, 246, 0.3)" strokeWidth={6 / viewport.zoom} fill="none" className="pointer-events-none" />
-            <path d={tempPath} stroke="url(#tempConnectionGradient)" strokeWidth={2.5 / viewport.zoom} fill="none" strokeDasharray={`${6 / viewport.zoom},${3 / viewport.zoom}`} markerEnd="url(#temp-arrowhead)" className="animate-pulse" style={{ filter: 'drop-shadow(0 0 4px rgba(59, 130, 246, 0.5))' }} />
-            <g className="animate-pulse">
-              <circle cx={targetX} cy={targetY} r={8 / viewport.zoom} fill="rgba(59, 130, 246, 0.2)" className="animate-ping" />
-              <circle cx={targetX} cy={targetY} r={4 / viewport.zoom} fill="url(#tempArrowGradient)" className="animate-bounce" />
+            <path d={tempPath} stroke="url(#tempConnectionGradient)" strokeWidth={2.5 / viewport.zoom} fill="none" strokeDasharray={`${6 / viewport.zoom},${3 / viewport.zoom}`} markerEnd="url(#temp-arrowhead)" style={{ filter: 'drop-shadow(0 0 4px rgba(59, 130, 246, 0.5))' }} />
+            <g>
+              <circle cx={targetX} cy={targetY} r={8 / viewport.zoom} fill="rgba(59, 130, 246, 0.2)" />
+              <circle cx={targetX} cy={targetY} r={4 / viewport.zoom} fill="url(#tempArrowGradient)" />
             </g>
           </g>
         );
