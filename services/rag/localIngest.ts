@@ -187,18 +187,7 @@ export async function upsertCanvasNodesKnowledge(params: {
       flowNodes = null;
     }
 
-    // 2) Fallback: canvas_nodes (단, todo 유사 노드는 제외)
-    let dbNodes: Array<{ node_id?: string; type?: string; data?: Record<string, any> }> = [];
-    if (!flowNodes) {
-      const { data } = await supabase
-        .from('canvas_nodes')
-        .select('node_id, type, data')
-        .eq('canvas_id', canvasId)
-        .order('created_at', { ascending: true });
-      dbNodes = (data || []) as Array<{ node_id?: string; type?: string; data?: Record<string, any> }>;
-    }
-
-    // 3) 소스 선택 + todo 노드 제외 필터
+    // 2) 소스 확정 + todo 노드 제외 필터 (canvas_nodes 폴백 제거)
     const isTodoLike = (n: { id?: string; node_id?: string; type?: string }) => {
       const t = (n?.type || '').toString().toLowerCase();
       const id = (n?.id || n?.node_id || '').toString();
@@ -206,7 +195,7 @@ export async function upsertCanvasNodesKnowledge(params: {
     };
 
     const normalizedNodes: Array<{ node_id?: string; type?: string; data?: Record<string, any> }> =
-      (flowNodes ?? dbNodes ?? [])
+      (flowNodes ?? [])
         .filter((n) => !isTodoLike(n))
         .map((n) => ({
           // canvas_states 기반 노드는 node_id가 없을 수 있으므로 id를 보존

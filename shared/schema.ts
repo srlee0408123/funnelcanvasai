@@ -258,25 +258,7 @@ export const canvasTodos = pgTable("canvas_todos", {
   index("canvas_todos_canvas_id_idx").on(table.canvasId),
 ]);
 
-// Canvas nodes for individual node storage with JSON metadata
-export const canvasNodes = pgTable("canvas_nodes", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  canvasId: uuid("canvas_id").references(() => canvases.id, { onDelete: "cascade" }).notNull(),
-  nodeId: varchar("node_id").notNull(), // Frontend node ID
-  type: varchar("type").notNull(), // Node type (landing, form, email, etc.)
-  position: jsonb("position").notNull(), // { x: number, y: number }
-  data: jsonb("data").notNull(), // Node data (title, subtitle, icon, color, etc.)
-  metadata: jsonb("metadata").default('{}'), // Additional metadata for the node
-  createdBy: varchar("created_by").references(() => users.id).notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table: any) => [
-  index("canvas_nodes_canvas_id_idx").on(table.canvasId),
-  index("canvas_nodes_type_idx").on(table.type),
-  index("canvas_nodes_created_by_idx").on(table.createdBy),
-  // Ensure unique node_id per canvas
-  index("canvas_nodes_canvas_node_unique_idx").on(table.canvasId, table.nodeId),
-]);
+// canvas_nodes was deprecated and fully removed. Use canvas_states as the source of truth.
 
 // Canvas edges for storing connections between nodes
 export const canvasEdges = pgTable("canvas_edges", {
@@ -338,8 +320,7 @@ export const canvasesRelations = relations(canvases, ({ one, many }: any) => ({
   assets: many(assets),
   knowledge: many(canvasKnowledge),
   feedbackRuns: many(feedbackRuns),
-  shares: many(canvasShares),
-  nodes: many(canvasNodes),
+  shares: many(canvasShares), 
   edges: many(canvasEdges),
   todos: many(canvasTodos),
   textMemos: many(textMemos),
@@ -352,10 +333,6 @@ export const canvasSharesRelations = relations(canvasShares, ({ one }: any) => (
   sharedByUser: one(users, { fields: [canvasShares.sharedBy], references: [users.id] }),
 }));
 
-export const canvasNodesRelations = relations(canvasNodes, ({ one }: any) => ({
-  canvas: one(canvases, { fields: [canvasNodes.canvasId], references: [canvases.id] }),
-  creator: one(users, { fields: [canvasNodes.createdBy], references: [users.id] }),
-}));
 
 export const canvasEdgesRelations = relations(canvasEdges, ({ one }: any) => ({
   canvas: one(canvases, { fields: [canvasEdges.canvasId], references: [canvases.id] }),
@@ -431,8 +408,6 @@ export type CanvasTodo = typeof canvasTodos.$inferSelect;
 export type InsertCanvasTodo = typeof canvasTodos.$inferInsert;
 export type CanvasShare = typeof canvasShares.$inferSelect;
 export type InsertCanvasShare = typeof canvasShares.$inferInsert;
-export type CanvasNode = typeof canvasNodes.$inferSelect;
-export type InsertCanvasNode = typeof canvasNodes.$inferInsert;
 export type CanvasEdge = typeof canvasEdges.$inferSelect;
 export type InsertCanvasEdge = typeof canvasEdges.$inferInsert;
 
