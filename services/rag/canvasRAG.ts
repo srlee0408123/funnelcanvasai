@@ -99,39 +99,28 @@ FALSE: 지식 컨텍스트만으로 부족하여 추가 웹 검색 필요`;
    * 지식 전용 답변 생성 (웹 검색 금지)
    */
   async answerFromKnowledgeOnly(params: { knowledgeContext: string; historyText: string; message: string; }): Promise<string> {
-    console.log('📚 [KB 전용] 지식 베이스만으로 답변 생성 시작');
     const { knowledgeContext, historyText, message } = params;
     const system = buildKBOnlySystemPrompt(knowledgeContext, historyText);
-    const answer = await this.openaiService.chat(system, message, {
+    return this.openaiService.chat(system, message, {
       maxTokens: 2500,
       temperature: 0.2,
       presencePenalty: 0.1,
       frequencyPenalty: 0.1,
     });
-    console.log('✅ [KB 전용] 답변 생성 완료, 길이:', answer.length, '자');
-    return answer;
   }
 
   /**
    * 지식+웹 답변 생성 (Perplexity 에이전트 포함)
    */
   async answerFromKnowledgeAndWeb(params: { knowledgeContext: string; historyText: string; message: string; }): Promise<{ content: string; webCitations: WebCitation[]; }> {
-    console.log('🌐 [KB+웹] 지식 베이스 + 웹 검색 답변 생성 시작');
     const { knowledgeContext, historyText, message } = params;
-    
     // 웹 검색
-    console.log('🔍 [웹 검색] 시작...');
     const { webCitations, webContext } = await this.maybeSearchWeb(message);
-    console.log('🔍 [웹 검색] 완료, 인용 수:', webCitations.length, '개, 컨텍스트 길이:', webContext.length, '자');
-    
     const system = buildKBAndWebSystemPrompt(knowledgeContext, webContext, historyText);
 
     // Perplexity 우선 시도 (검색+답변)
     try {
-      console.log('🚀 [Perplexity] 시도 중...');
       const { content, citations } = await this.answerWithPerplexity(system, message, { maxTokens: 2500, temperature: 0.2 });
-      console.log('✅ [Perplexity] 성공, 답변 길이:', content.length, '자, citations:', citations.length, '개');
-      
       const mergedCitations = [...webCitations];
       if (Array.isArray(citations) && citations.length > 0) {
         mergedCitations.push(...citations.slice(0, 5).map((url) => ({
@@ -142,11 +131,9 @@ FALSE: 지식 컨텍스트만으로 부족하여 추가 웹 검색 필요`;
           snippet: '',
           relevanceScore: null,
         })));
-        console.log('🔗 [Perplexity] citations 병합 완료, 총', mergedCitations.length, '개');
       }
       return { content, webCitations: mergedCitations };
-    } catch (error) {
-      console.warn('⚠️ [Perplexity] 실패, OpenAI로 폴백:', error instanceof Error ? error.message : 'Unknown error');
+    } catch {
       // 실패 시 OpenAI로 폴백
       const content = await this.openaiService.chat(system, message, {
         maxTokens: 2500,
@@ -154,7 +141,6 @@ FALSE: 지식 컨텍스트만으로 부족하여 추가 웹 검색 필요`;
         presencePenalty: 0.1,
         frequencyPenalty: 0.1,
       });
-      console.log('✅ [OpenAI 폴백] 답변 생성 완료, 길이:', content.length, '자');
       return { content, webCitations };
     }
   }
