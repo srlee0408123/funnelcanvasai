@@ -52,7 +52,9 @@ async function replaceKnowledgeChunks(params: {
       embedding: (embeddings && embeddings[idx] as unknown as any) ?? null,
     }));
 
-    const { error: insertError } = await supabase.from('knowledge_chunks').insert(inserts);
+    const { error: insertError } = await supabase
+      .from('knowledge_chunks')
+      .upsert(inserts, { onConflict: 'knowledge_id,seq' });
     if (insertError) {
       console.error('Failed to insert knowledge chunks:', insertError);
     }
