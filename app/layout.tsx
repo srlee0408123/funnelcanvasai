@@ -7,7 +7,7 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "FunnelCanvas AI",
+  title: "Canvas AI",
   description: "AI-powered funnel building and optimization platform",
 };
 

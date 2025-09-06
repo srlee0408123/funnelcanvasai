@@ -39,9 +39,9 @@ export function useCanvasSync(canvasId: string, options: UseCanvasSyncOptions = 
   const nodePositions = useCanvasStore((s) => s.nodePositions);
 
   const [saving, setSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const lastSavedHashRef = useRef<string>('');
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSavedAtRef = useRef<number | null>(null);
 
   const buildPayload = useCallback((): SavePayload => {
     // nodePositions를 실제 노드 위치에 병합하여 저장
@@ -53,10 +53,10 @@ export function useCanvasSync(canvasId: string, options: UseCanvasSyncOptions = 
     return payloadBuilder ? payloadBuilder(base) : base;
   }, [nodes, edges, nodePositions, payloadBuilder]);
 
-  const doSave = useCallback(async () => {
+  const doSave = useCallback(async (force = false) => {
     const payload = buildPayload();
     const currentHash = JSON.stringify(payload);
-    if (currentHash === lastSavedHashRef.current) return;
+    if (!force && currentHash === lastSavedHashRef.current) return;
 
     setSaving(true);
     try {
@@ -71,7 +71,7 @@ export function useCanvasSync(canvasId: string, options: UseCanvasSyncOptions = 
         throw new Error(`HTTP ${res.status}: ${text}`);
       }
       lastSavedHashRef.current = currentHash;
-      lastSavedAtRef.current = Date.now();
+      setLastSavedAt(Date.now());
       onSuccess?.();
     } catch (err) {
       onError?.(err);
@@ -84,7 +84,7 @@ export function useCanvasSync(canvasId: string, options: UseCanvasSyncOptions = 
   const scheduleSave = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
-      doSave();
+      doSave(false);
     }, debounceMs);
   }, [doSave, debounceMs]);
 
@@ -103,7 +103,7 @@ export function useCanvasSync(canvasId: string, options: UseCanvasSyncOptions = 
     async (_reason?: string, immediate = false) => {
       if (immediate) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        await doSave();
+        await doSave(true);
       } else {
         scheduleSave();
       }
@@ -113,7 +113,7 @@ export function useCanvasSync(canvasId: string, options: UseCanvasSyncOptions = 
 
   return {
     saving,
-    lastSavedAt: lastSavedAtRef.current,
+    lastSavedAt,
     triggerSave,
   } as const;
 }

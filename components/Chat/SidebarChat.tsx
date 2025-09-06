@@ -81,7 +81,7 @@ export default function SidebarChat({
       return [{
         id: 'welcome',
         role: 'assistant',
-        content: '안녕하세요! 저는 두더지 AI입니다. 퍼널 설계와 마케팅에 대해 궁금한 점이 있으시면 언제든 물어보세요. 업로드하신 자료와 글로벌 지식을 바탕으로 도움드리겠습니다.',
+        content: '안녕하세요! 저는 Canvas AI입니다. 퍼널 설계와 마케팅에 대해 궁금한 점이 있으시면 언제든 물어보세요. 업로드하신 자료와 글로벌 지식을 바탕으로 도움드리겠습니다.',
         timestamp: new Date()
       }];
     });
@@ -260,8 +260,7 @@ export default function SidebarChat({
         <div className="flex items-center space-x-2">
           <Bot className="h-5 w-5" />
           <div>
-            <h3 className="font-medium">두더지 AI</h3>
-            <p className="text-xs text-blue-100">퍼널 전문 어시스턴트</p>
+            <h3 className="font-medium">Canvas AI</h3>
           </div>
         </div>
         {onToggle && (

@@ -278,7 +278,7 @@ export default function Sidebar({
               <Brain className="h-4 w-4 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="font-semibold text-foreground">두더지 AI</h1>
+              <h1 className="font-semibold text-foreground">Canvas AI</h1>
               <p className="text-xs text-muted-foreground">Creator Canvas</p>
             </div>
           </div>

@@ -56,8 +56,6 @@ const postAsset = async (
 
     const supabase = createServiceClient();
 
-    console.log(`🚀 Creating ${type} asset: ${title} for canvas ${canvasId}`);
-    console.log(`📋 Request body:`, { type, title, url, canvasId, metaJson });
 
     let extractedContent = "";
     let processedTitle = title;
@@ -66,7 +64,6 @@ const postAsset = async (
     // 타입별 콘텐츠 추출 처리
     if (type === "youtube") {
       try {
-        console.log(`📺 Processing YouTube video: ${url}`);
         const transcriptResult = await extractYouTubeTranscript(url);
         
         extractedContent = `YouTube Video Transcript:\n\nTitle: ${transcriptResult.title}\nChannel: ${transcriptResult.channelName}\nDuration: ${transcriptResult.duration}\n\n${transcriptResult.transcript}`;
@@ -81,7 +78,6 @@ const postAsset = async (
           processedAt: new Date().toISOString()
         };
 
-        console.log(`✅ YouTube processing successful: ${transcriptResult.transcript.length} characters extracted`);
       } catch (error) {
         console.error(`❌ YouTube processing failed:`, error);
         return NextResponse.json({
@@ -90,7 +86,6 @@ const postAsset = async (
       }
     } else if (type === "url") {
       try {
-        console.log(`🌐 Processing website URL: ${url}`);
         const crawlResult = await crawlWebsite(url);
         
         if (!crawlResult.success) {
@@ -107,7 +102,6 @@ const postAsset = async (
           processedAt: new Date().toISOString()
         };
 
-        console.log(`✅ Website crawling successful: ${crawlResult.text?.length || 0} characters extracted`);
       } catch (error) {
         console.error(`❌ Website crawling failed:`, error);
         return NextResponse.json({
@@ -118,7 +112,6 @@ const postAsset = async (
 
     // Canvas Knowledge에 저장
     // 스키마: id (auto), canvas_id, type, title, content, metadata, embedding (null), created_at (auto), updated_at (auto)
-    console.log(`💾 Saving to DB with type: "${type}"`);
     const { data: knowledgeEntry, error: knowledgeError } = await (supabase as any)
       .from('canvas_knowledge')
       .insert({
@@ -140,7 +133,6 @@ const postAsset = async (
       }, { status: 500 });
     }
 
-    console.log(`✅ Saved to canvas knowledge: ${knowledgeEntry.id}`);
 
     return NextResponse.json({
       success: true,

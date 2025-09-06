@@ -23,11 +23,6 @@ export async function POST() {
       return NextResponse.json({ error: "No email found" }, { status: 400 });
     }
     
-    console.log("Syncing user to Supabase:", {
-      id: userId,
-      email,
-      name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-    });
     
     // Save user to Supabase using service role client
     const supabase = createServiceClient();
@@ -55,7 +50,6 @@ export async function POST() {
       }, { status: 500 });
     }
     
-    console.log("User profile saved:", profile);
     
     // Just sync the user profile, don't create any workspace
     

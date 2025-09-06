@@ -25,7 +25,7 @@ import { useMutation } from "@tanstack/react-query"
 import { Bot, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
-import { isUnauthorizedError } from "@/lib/authUtils"
+import { createToastMessage, ErrorDetectors } from "@/lib/messages/toast-utils"
 
 // Button 컴포넌트
 const buttonVariants = cva(
@@ -131,22 +131,17 @@ function AIFeedbackButton({ onRequestFeedback }: AIFeedbackButtonProps) {
     },
     onError: (error) => {
       setIsProcessing(false);
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "인증 실패",
-          description: "로그아웃되었습니다. 다시 로그인합니다...",
-          variant: "destructive",
-        });
+      if (ErrorDetectors.isUnauthorizedError(error)) {
+        const authMessage = createToastMessage.authError(error);
+        toast(authMessage);
         setTimeout(() => {
           window.location.href = "/api/login";
         }, 500);
         return;
       }
-      toast({
-        title: "AI 분석 실패",
-        description: "AI 분석에 실패했습니다. 다시 시도해주세요.",
-        variant: "destructive",
-      });
+      
+      const errorMessage = createToastMessage.aiMessage('ERROR', 'ANALYSIS_FAILED');
+      toast(errorMessage);
     },
   });
 

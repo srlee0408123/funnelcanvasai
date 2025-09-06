@@ -216,14 +216,12 @@ export default function FunnelNode({
           : "border-gray-200 hover:border-blue-300"
       }`}
       style={{
-        left: node.position.x,
-        top: node.position.y,
+        transform: `translate(${node.position.x}px, ${node.position.y}px) ${isDragging ? ' rotate(2deg)' : ''}`,
         zIndex: isDragging ? 20 : (selected ? 10 : 5),
-        transform: isDragging ? 'rotate(2deg)' : 'none',
         pointerEvents: 'auto',
-        // Debug: Add visible border for troubleshooting
         border: isReadOnly ? '2px solid red' : undefined,
-        backgroundColor: isReadOnly ? 'rgba(255,0,0,0.1)' : undefined
+        backgroundColor: isReadOnly ? 'rgba(255,0,0,0.1)' : undefined,
+        willChange: 'transform'
       }}
       onClick={!isReadOnly ? (e) => {
         // 삭제 버튼이나 연결점을 클릭한 경우 노드 클릭 이벤트 방지
@@ -360,6 +358,7 @@ export default function FunnelNode({
       {/* Connection points - Enhanced visibility and animation with larger hit area */}
       <div 
         className="connection-point absolute -right-3 top-1/2 transform -translate-y-1/2 cursor-crosshair z-50"
+        data-anchor="right"
         onMouseDown={(e) => {
           e.stopPropagation();
           if (onConnectionStart) {
@@ -388,6 +387,7 @@ export default function FunnelNode({
       {/* Extended right edge connection area for easier access */}
       <div 
         className="connection-point absolute right-0 top-0 w-4 h-full cursor-crosshair z-40 bg-transparent hover:bg-blue-100/20 transition-colors"
+        data-anchor="right"
         onMouseDown={(e) => {
           e.stopPropagation();
           if (onConnectionStart) {
@@ -409,6 +409,58 @@ export default function FunnelNode({
         title="연결 입력점"
       >
         <div className="absolute inset-0.5 bg-white rounded-full opacity-60"></div>
+      </div>
+
+      {/* Top connection point (outgoing) */}
+      <div 
+        className="connection-point absolute left-1/2 -top-3 transform -translate-x-1/2 cursor-crosshair z-50"
+        data-anchor="top"
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          if (onConnectionStart) {
+            onConnectionStart(node.id, e);
+          }
+        }}
+      >
+        <div className="absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 bg-transparent" 
+             title="드래그해서 다른 노드와 연결" />
+        <div 
+          className={`
+            w-5 h-5 rounded-full border-2 border-white shadow-lg transition-all duration-300
+            ${isConnectable 
+              ? "bg-green-500 opacity-100 scale-125 animate-pulse ring-2 ring-green-300" 
+              : "bg-blue-500 opacity-0 group-hover:opacity-100 hover:scale-110"
+            }
+          `}
+        >
+          <div className="absolute inset-1 bg-white rounded-full opacity-80"></div>
+        </div>
+      </div>
+
+      {/* Bottom connection point (outgoing) */}
+      <div 
+        className="connection-point absolute left-1/2 -bottom-3 transform -translate-x-1/2 cursor-crosshair z-50"
+        data-anchor="bottom"
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          if (onConnectionStart) {
+            onConnectionStart(node.id, e);
+          }
+        }}
+      >
+        <div className="absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 bg-transparent" 
+             title="드래그해서 다른 노드와 연결" />
+        <div 
+          className={`
+            w-5 h-5 rounded-full border-2 border-white shadow-lg transition-all duration-300
+            ${isConnectable 
+              ? "bg-green-500 opacity-100 scale-125 animate-pulse ring-2 ring-green-300" 
+              : "bg-blue-500 opacity-0 group-hover:opacity-100 hover:scale-110"
+            }
+          `}
+        >
+          <div className="absolute inset-1 bg-white rounded-full opacity-80"></div>
+        </div>
       </div>
     </div>
   );

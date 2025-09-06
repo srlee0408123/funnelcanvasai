@@ -1,4 +1,4 @@
-# FunnelCanvas AI - Next.js 15 + Supabase
+# Canvas AI - Next.js 15 + Supabase
 
 AI 기반 마케팅 퍼널 빌더 플랫폼
 

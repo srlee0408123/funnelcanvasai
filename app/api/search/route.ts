@@ -23,12 +23,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`🔍 Web search request: "${query}"`);
 
     // 웹 검색 실행
     const searchResponse = await webSearchService.searchWeb(query, numResults);
 
-    console.log(`✅ Search completed: ${searchResponse.results.length} results in ${searchResponse.searchTime}ms`);
 
     return NextResponse.json({
       success: true,

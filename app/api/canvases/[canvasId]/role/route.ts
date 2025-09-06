@@ -19,11 +19,13 @@ const getRole = async (
     }
     return NextResponse.json({ role: result.role ?? 'viewer' });
   } catch (error) {
+    console.error('Error resolving canvas role:', error);
     return NextResponse.json({ error: '역할 확인 중 오류가 발생했습니다.' }, { status: 500 });
   }
 };
 
 export const GET = withAuthorization({ resourceType: 'canvas' }, getRole);
+
 
 
 

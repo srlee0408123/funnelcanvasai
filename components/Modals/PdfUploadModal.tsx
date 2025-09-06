@@ -5,7 +5,7 @@ import { Button } from "@/components/Ui/buttons";
 import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { isUnauthorizedError } from "@/lib/authUtils";
+import { createToastMessage, ErrorDetectors } from "@/lib/messages/toast-utils";
 
 /**
  * PdfUploadModal - PDF 파일 업로드 전용 모달
@@ -79,20 +79,23 @@ export default function PdfUploadModal({ open, onOpenChange, workspaceId, canvas
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/workspaces", workspaceId, "assets"] });
-      toast({ title: "업로드 완료", description: "자료가 성공적으로 업로드되어 처리되었습니다." });
+      const successMessage = createToastMessage.uploadSuccess('PDF');
+      toast(successMessage);
       onOpenChange(false);
       resetForm();
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({ title: "Unauthorized", description: "You are logged out. Logging in again...", variant: "destructive" });
+      if (ErrorDetectors.isUnauthorizedError(error)) {
+        const authMessage = createToastMessage.authError(error);
+        toast(authMessage);
         setTimeout(() => {
           window.location.href = "/api/login";
         }, 500);
         return;
       }
-      // PDF 업로드는 일반화된 메시지 사용 (YouTube 에러와 분리)
-      toast({ title: "업로드 실패", description: "자료 업로드에 실패했습니다. 다시 시도해주세요.", variant: "destructive" });
+      
+      const errorMessage = createToastMessage.uploadError(error, 'pdf');
+      toast(errorMessage);
     },
   });
 
@@ -101,11 +104,13 @@ export default function PdfUploadModal({ open, onOpenChange, workspaceId, canvas
     if (!file) return;
 
     if (file.type !== "application/pdf") {
-      toast({ title: "파일 형식 오류", description: "PDF 파일만 업로드 가능합니다.", variant: "destructive" });
+      const errorMessage = createToastMessage.fileValidationError('TYPE');
+      toast(errorMessage);
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      toast({ title: "파일 크기 오류", description: "파일 크기는 10MB 이하여야 합니다.", variant: "destructive" });
+      const errorMessage = createToastMessage.fileValidationError('SIZE');
+      toast(errorMessage);
       return;
     }
     setSelectedFile(file);

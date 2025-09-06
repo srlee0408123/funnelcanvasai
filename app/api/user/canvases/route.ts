@@ -24,7 +24,7 @@ export async function GET() {
       .eq('user_id', userId);
 
     if (error) {
-      console.error("Database error:", error);
+      console.error('Database error fetching user canvases:', { userId, error });
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 

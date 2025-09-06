@@ -22,6 +22,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .single() as { data: Database['public']['Tables']['canvases']['Row'] | null, error: any };
 
     if (canvasError || !canvas) {
+      console.error('Error fetching canvas for latest state:', canvasError);
       return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
     }
 
@@ -45,13 +46,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Latest state only
-    const { data: stateRow } = await supabase
+    const { data: stateRow, error: stateError } = await supabase
       .from('canvas_states')
       .select('*')
       .eq('canvas_id', canvasId)
       .order('created_at', { ascending: false })
       .limit(1)
       .single() as { data: Database['public']['Tables']['canvas_states']['Row'] | null, error: any };
+
+    if (stateError) {
+      console.error('Error fetching latest canvas state:', stateError);
+      // 상태가 없을 수도 있으므로 에러로 처리하지 않음
+    }
 
     return NextResponse.json(stateRow ?? null);
   } catch (error) {

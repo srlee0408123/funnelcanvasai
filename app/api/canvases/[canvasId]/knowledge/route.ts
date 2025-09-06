@@ -18,7 +18,6 @@ const getKnowledge = async (
     const supabase = createServiceClient();
     const { canvasId } = await params;
 
-    console.log(`📚 Fetching knowledge for canvas ${canvasId}, user ${auth.userId}`);
 
     const { data: knowledge, error: knowledgeError } = await supabase
       .from('canvas_knowledge')
@@ -42,7 +41,6 @@ const getKnowledge = async (
       );
     }
 
-    console.log(`✅ Retrieved ${knowledge?.length || 0} knowledge items for canvas ${canvasId}`);
 
     return NextResponse.json(knowledge || []);
 

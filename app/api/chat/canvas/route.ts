@@ -15,7 +15,7 @@ import { buildSystemPrompt, formatChatHistory } from '@/services/rag';
  * 기능:
  * 1. 캔버스 지식 베이스 활용
  * 2. 웹 검색 결과 통합
- * 3. 마케팅 전문가 "두더지 AI" 페르소나
+ * 3. 마케팅 전문가 "Canvas AI" 페르소나
  * 4. 채팅 히스토리 저장
  */
 
@@ -43,7 +43,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`🤖 AI Chat request from user ${userId} for canvas ${canvasId}`);
 
     // 서비스 클라이언트 생성 (RLS 우회)
     const supabase = createServiceClient();
@@ -108,7 +107,6 @@ export async function POST(request: NextRequest) {
       console.error('Error saving assistant message:', assistantMessageError);
     }
 
-    console.log(`✅ AI response generated and saved for canvas ${canvasId}`);
 
     // RAG에서 생성한 인용 정보 사용
 

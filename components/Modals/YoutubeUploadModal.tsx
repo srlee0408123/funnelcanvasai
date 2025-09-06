@@ -5,7 +5,7 @@ import { Button } from "@/components/Ui/buttons";
 import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { isUnauthorizedError } from "@/lib/authUtils";
+import { createToastMessage, ErrorDetectors } from "@/lib/messages/toast-utils";
 import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /**
@@ -111,20 +111,23 @@ export default function YoutubeUploadModal({ open, onOpenChange, workspaceId, ca
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/workspaces", workspaceId, "assets"] });
-      toast({ title: "업로드 완료", description: "자료가 성공적으로 업로드되어 처리되었습니다." });
+      const successMessage = createToastMessage.uploadSuccess('YOUTUBE');
+      toast(successMessage);
       onOpenChange(false);
       setUrl("");
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({ title: "Unauthorized", description: "You are logged out. Logging in again...", variant: "destructive" });
+      if (ErrorDetectors.isUnauthorizedError(error)) {
+        const authMessage = createToastMessage.authError(error);
+        toast(authMessage);
         setTimeout(() => {
           window.location.href = "/api/login";
         }, 500);
         return;
       }
-      // 서버에서 전달된(또는 복원된) 에러 메시지를 그대로 노출
-      toast({ title: "업로드 실패", description: (error as any)?.message || "요청 처리 중 오류가 발생했습니다.", variant: "destructive" });
+      
+      const errorMessage = createToastMessage.uploadError(error, 'youtube');
+      toast(errorMessage);
     },
   });
 
@@ -140,9 +143,16 @@ export default function YoutubeUploadModal({ open, onOpenChange, workspaceId, ca
 
           <div>
             <Label htmlFor="youtube-url" className="text-sm font-medium text-foreground">유튜브 URL</Label>
-            <Input id="youtube-url" type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=... 또는 https://youtu.be/..." className="mt-1" />
+            <Input 
+              id="youtube-url" 
+              type="url" 
+              value={url} 
+              onChange={(e) => setUrl(e.target.value)} 
+              placeholder="https://www.youtube.com/watch?v=... 또는 https://youtu.be/..." 
+              className="mt-1" 
+            />
             {url && !isValidYouTubeUrl(url) && (
-              <p className="text-xs text-red-600 mt-1">올바른 유튜브 URL을 입력해주세요.</p>
+              <p className="text-xs text-red-600 mt-1">올바른 YouTube URL을 입력해주세요. 예: https://youtube.com/watch?v=...</p>
             )}
           </div>
         </div>

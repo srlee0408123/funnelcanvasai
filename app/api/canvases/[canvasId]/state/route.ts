@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { createClient } from '@/lib/supabase/server';
 import type { Database } from '@/lib/database.types';
+import { getCanvasAccessInfo } from '@/lib/auth/auth-service';
+import { getLatestCanvasState, insertCanvasState, getCanvasById } from '@/services/canvas-service';
 
 /**
  * state/route.ts - Save/read canvas state (collection endpoint)
@@ -19,49 +20,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { userId } = await auth();
     const { canvasId } = await params;
-    const supabase = await createClient();
+    const canvas = await getCanvasById(canvasId);
+    if (!canvas) return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
 
-    // Load canvas and workspace to check access
-    const { data: canvas, error: canvasError } = await supabase
-      .from('canvases')
-      .select('*')
-      .eq('id', canvasId)
-      .single() as { data: Database['public']['Tables']['canvases']['Row'] | null, error: any };
-
-    if (canvasError || !canvas) {
-      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
+    const access = await getCanvasAccessInfo(userId ?? null, canvasId);
+    if (!access.hasAccess) {
+      return NextResponse.json({ error: userId ? 'Forbidden' : 'Unauthorized' }, { status: userId ? 403 : 401 });
     }
 
-    if (!canvas.is_public) {
-      if (!userId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-
-      let member = null;
-      if (canvas.workspace_id) {
-        const memberResult = await supabase
-          .from('workspace_members')
-          .select('*')
-          .eq('workspace_id', canvas.workspace_id)
-          .eq('user_id', userId)
-          .single() as { data: Database['public']['Tables']['workspace_members']['Row'] | null, error: any };
-        member = memberResult.data;
-      }
-
-      if (!member && (canvas as any).created_by !== userId) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-      }
-    }
-
-    // Return latest state
-    const { data: stateRow } = await supabase
-      .from('canvas_states')
-      .select('*')
-      .eq('canvas_id', canvasId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single() as { data: Database['public']['Tables']['canvas_states']['Row'] | null, error: any };
-
+    const stateRow = await getLatestCanvasState(canvasId);
     return NextResponse.json(stateRow ?? null);
   } catch (error) {
     console.error('Failed to fetch canvas state:', error);
@@ -78,31 +45,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const { canvasId } = await params;
     const body = await request.json();
-    const supabase = await createClient();
-
-    // Check access
-    const { data: canvas, error: canvasError } = await supabase
-      .from('canvases')
-      .select('*')
-      .eq('id', canvasId)
-      .single() as { data: Database['public']['Tables']['canvases']['Row'] | null, error: any };
-
-    if (canvasError || !canvas) {
-      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
-    }
-
-    let member = null;
-    if (canvas.workspace_id) {
-      const memberResult = await supabase
-        .from('workspace_members')
-        .select('*')
-        .eq('workspace_id', canvas.workspace_id)
-        .eq('user_id', userId)
-        .single() as { data: Database['public']['Tables']['workspace_members']['Row'] | null, error: any };
-      member = memberResult.data;
-    }
-
-    if (!member && (canvas as any).created_by !== userId) {
+    const canvas = await getCanvasById(canvasId);
+    if (!canvas) return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
+    const access = await getCanvasAccessInfo(userId, canvasId);
+    if (!access.hasAccess || access.role === 'viewer') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -112,23 +58,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Missing flowJson in body' }, { status: 400 });
     }
 
-    const insertPayload = {
-      canvas_id: canvasId,
-      state: statePayload,
-      user_id: userId,
-    };
-
-    const { data: inserted, error: insertError } = await supabase
-      .from('canvas_states')
-      .insert(insertPayload as any)
-      .select('*')
-      .single();
-
-    if (insertError) {
-      console.error('Failed to save canvas state:', insertError);
+    const inserted = await insertCanvasState(canvasId, statePayload, userId);
+    if (!inserted) {
       return NextResponse.json({ error: 'Failed to save canvas state' }, { status: 500 });
     }
-
     return NextResponse.json(inserted, { status: 201 });
   } catch (error) {
     console.error('Canvas state POST error:', error);

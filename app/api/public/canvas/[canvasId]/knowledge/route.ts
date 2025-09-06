@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { getCanvasAccessInfo } from '@/lib/auth/auth-service';
 
 /**
  * 공개 캔버스 지식 베이스 조회 API - 인증 없이 접근 가능 (읽기 전용)
@@ -12,23 +13,11 @@ interface RouteParams {
 }
 
 async function checkPublicCanvas(canvasId: string) {
-  const supabase = createServiceClient();
-  const { data: canvasData, error: canvasError } = await supabase
-    .from('canvases')
-    .select('id, is_public, title')
-    .eq('id', canvasId)
-    .single();
-
-  type CanvasPub = { id: string; is_public: boolean; title: string };
-  const canvas = canvasData as CanvasPub | null;
-
-  if (canvasError || !canvas) {
-    return { isPublic: false, error: '캔버스를 찾을 수 없습니다.' };
-  }
-  if (!canvas.is_public) {
+  const access = await getCanvasAccessInfo(null, canvasId);
+  if (!access.hasAccess || access.role !== 'viewer') {
     return { isPublic: false, error: '이 캔버스는 공개되지 않았습니다.' };
   }
-  return { isPublic: true, canvas };
+  return { isPublic: true } as const;
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { getCanvasAccessInfo } from '@/lib/auth/auth-service';
 
 /**
  * 공개 캔버스 채팅 메시지 API - 인증 없이 접근 가능
@@ -31,28 +32,11 @@ interface RouteParams {
  * 캔버스가 공개 상태인지 검증
  */
 async function checkPublicCanvas(canvasId: string) {
-  const supabase = createServiceClient();
-  
-  // 캔버스 정보 조회
-  const { data: canvasData, error: canvasError } = await supabase
-    .from('canvases')
-    .select('id, is_public, title')
-    .eq('id', canvasId)
-    .single();
-
-  type CanvasPub = { id: string; is_public: boolean; title: string };
-  const canvas = canvasData as CanvasPub | null;
-
-  if (canvasError || !canvas) {
-    return { isPublic: false, error: '캔버스를 찾을 수 없습니다.' };
-  }
-
-  // 공개 캔버스 여부 확인
-  if (!canvas.is_public) {
+  const access = await getCanvasAccessInfo(null, canvasId);
+  if (!access.hasAccess || access.role !== 'viewer') {
     return { isPublic: false, error: '이 캔버스는 공개되지 않았습니다.' };
   }
-
-  return { isPublic: true, canvas };
+  return { isPublic: true } as const;
 }
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -64,7 +48,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    console.log(`📝 Fetching public chat messages for canvas ${canvasId}`);
 
     // 공개 캔버스 확인
     const publicCheck = await checkPublicCanvas(canvasId);
@@ -107,7 +90,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       // userId는 공개 API에서 제외
     })) || [];
 
-    console.log(`✅ Retrieved ${formattedMessages.length} public chat messages for canvas ${canvasId}`);
 
     return NextResponse.json(formattedMessages);
 

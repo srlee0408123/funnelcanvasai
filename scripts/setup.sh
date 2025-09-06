@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 FunnelCanvas AI - Next.js Setup Script"
+echo "🚀 Canvas AI - Next.js Setup Script"
 echo "========================================="
 
 # Check if Node.js is installed

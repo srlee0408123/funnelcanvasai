@@ -1,30 +1,19 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
-import { Button } from "@/components/Ui/buttons";
+import { CanvasHeader } from "@/components/Canvas/CanvasHeader";
+import { CanvasEdges } from "@/components/Canvas/CanvasEdges";
 import FunnelNode from "@/components/Canvas/FunnelNode";
 import NodeCreationModal from "@/components/Canvas/NodeCreationModal";
 import { TextMemo } from "@/components/Canvas/TextMemo";
 import { useToast } from "@/hooks/use-toast";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
+import { useCanvasInteractions } from "@/hooks/use-canvas-interactions";
 import { useCanvasSync } from "@/hooks/useCanvasSync";
-import { 
-  ArrowLeft, 
-  Check, 
-  X, 
-  Edit, 
-  Clock, 
-  Share, 
-  Plus, 
-  Minus, 
-  Mail, 
-  Monitor, 
-  MessageSquare,
-  Save,
-  Loader2
-} from "lucide-react";
+import { createToastMessage } from "@/lib/messages/toast-utils";
+import { Mail, Monitor, Share, MessageSquare } from "lucide-react";
 import type { Canvas, CanvasState } from "@shared/schema";
 import type { FlowNode, FlowEdge, TextMemoData } from "@/types/canvas";
+import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 
 interface CanvasAreaProps {
   canvas: Canvas;
@@ -93,6 +82,8 @@ export default function CanvasArea({
   const setConnectionStart = useCanvasStore(s => s.setConnectionStart);
   const temporaryConnection = useCanvasStore(s => s.temporaryConnection);
   const setTemporaryConnection = useCanvasStore(s => s.setTemporaryConnection);
+  const connectionStartAnchor = useCanvasStore(s => (s as any).connectionStartAnchor);
+  const setConnectionStartAnchor = useCanvasStore(s => (s as any).setConnectionStartAnchor);
   
   // Node creation modal state
   const [showNodeCreationModal, setShowNodeCreationModal] = useState(false);
@@ -101,12 +92,50 @@ export default function CanvasArea({
   // Text memos state
   const [memos, setMemos] = useState<Memo[]>([]);
   const [selectedMemoId, setSelectedMemoId] = useState<string | null>(null);
+  // 엣지 관련 UI 상태는 CanvasEdges로 이전됨
   
 
   
-  // Title editing state
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editedTitle, setEditedTitle] = useState("");
+  // Title 업데이트 콜백 (헤더에 전달)
+  const updateCanvasTitle = useCallback(async (newTitle: string) => {
+    const trimmed = newTitle.trim();
+    if (!trimmed || trimmed === canvas.title) return;
+    try {
+      const response = await fetch(`/api/canvases/${canvas.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ title: trimmed })
+      });
+      if (!response.ok) {
+        // API 실패 시 클라이언트 Supabase 세션으로 대체 업데이트 시도 (RLS 정책 충족 시)
+        const supabase = createSupabaseClient();
+        const { data: updatedRow, error } = await (supabase as any)
+          .from('canvases')
+          .update({ title: trimmed })
+          .eq('id', canvas.id)
+          .select('*')
+          .single();
+        if (error || !updatedRow) {
+          throw new Error(`Failed to update canvas title${error?.message ? `: ${error.message}` : ''}`);
+        }
+      }
+      // 성공 시 관련 목록/상세 쿼리 무효화
+      await queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/workspaces", canvas.workspaceId, "canvases"] });
+      // 최종적으로 상세 재조회 트리거(있다면)
+      await queryClient.refetchQueries({ queryKey: ["/api/canvases", canvas.id] });
+      // 사용자 피드백
+      const successMessage = createToastMessage.canvasSuccess('TITLE_UPDATE', trimmed);
+      toast(successMessage);
+    } catch (error) {
+      console.error("Failed to update canvas title:", error);
+      const errorMessage = createToastMessage.canvasError(error, 'UPDATE');
+      toast(errorMessage);
+      // 상위 컴포넌트가 편집 상태를 유지하도록 에러 전파
+      throw error;
+    }
+  }, [canvas.id, canvas.title, canvas.workspaceId, queryClient, toast]);
 
 
 
@@ -232,12 +261,25 @@ export default function CanvasArea({
     }
   }, [isReadOnly, flowData, setViewport]);
 
-  // Zustand 기반 디바운스 저장 훅
-  const { triggerSave } = useCanvasSync(canvas.id, {
+  // Zustand 기반 디바운스 저장 훅 + 수동 저장 토스트 표시
+  const manualSavePendingRef = useRef(false);
+  const { triggerSave, saving, lastSavedAt } = useCanvasSync(canvas.id, {
     debounceMs: 1000,
     onSuccess: () => {
       // 최신 상태 쿼리 무효화
       queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id, "state", "latest"] });
+      if (manualSavePendingRef.current) {
+        const successMessage = createToastMessage.canvasSuccess('SAVE');
+        toast(successMessage);
+        manualSavePendingRef.current = false;
+      }
+    },
+    onError: (error) => {
+      if (manualSavePendingRef.current) {
+        const errorMessage = createToastMessage.canvasError(error, 'SAVE');
+        toast(errorMessage);
+        manualSavePendingRef.current = false;
+      }
     }
   });
 
@@ -322,10 +364,8 @@ export default function CanvasArea({
     // 디바운스 저장
     triggerSave("add-node");
 
-    toast({
-      title: "노드 추가됨",
-      description: `${config.title} 노드가 캔버스에 추가되었습니다.`,
-    });
+    const successMessage = createToastMessage.canvasSuccess('NODE_ADD', config.title);
+    toast(successMessage);
   }, [isReadOnly, addNode, triggerSave, toast]);
 
   // onAddNode prop이 있으면 실제 노드 추가 함수로 연결
@@ -338,48 +378,44 @@ export default function CanvasArea({
 
 
 
-  // Node interaction handlers
-  const handleNodeMouseDown = useCallback((nodeId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    // Store initial mouse position for drag calculation
-    setDraggedNodeId(nodeId);
-    setNodeDragStart({
-      x: e.clientX,
-      y: e.clientY
-    });
-    
-    // Store initial node position
-    const node = nodes.find(n => n.id === nodeId);
-    if (node) {
-      setNodePositions(prev => ({
-        ...prev,
-        [nodeId]: node.position
-      }));
-    }
-  }, [nodes, setDraggedNodeId, setNodeDragStart, setNodePositions]);
+  // 캔버스 인터랙션 훅 사용 (패닝/줌/드래그 성능 최적화)
+  const { handleCanvasMouseDown, handleNodeMouseDown, handleWheel } = useCanvasInteractions({
+    canvasRef,
+    viewport,
+    setViewport,
+    nodes: renderNodes,
+    setNodePositions,
+    triggerSave,
+    isReadOnly,
+  });
 
   // Connection start from connection point
   const handleConnectionStart = useCallback((nodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setIsConnecting(true);
     setConnectionStart(nodeId);
+    // Detect anchor from data attribute on the clicked handle
+    let anchor: 'left' | 'right' | 'top' | 'bottom' = 'right';
+    const targetEl = e.currentTarget as HTMLElement;
+    const dataAnchor = targetEl.getAttribute('data-anchor') || (targetEl.closest('.connection-point') as HTMLElement | null)?.getAttribute('data-anchor');
+    if (dataAnchor === 'left' || dataAnchor === 'right' || dataAnchor === 'top' || dataAnchor === 'bottom') {
+      anchor = dataAnchor;
+    }
+    setConnectionStartAnchor(anchor);
     
     // Get the source node position for smooth temporary line
     const sourceNode = nodes.find(n => n.id === nodeId);
     if (sourceNode) {
       const rect = (e.target as HTMLElement).closest('.canvas-content')?.getBoundingClientRect();
       if (rect) {
-        // Start from the right edge of the source node
-        const startX = sourceNode.position.x + 160; // Right edge
-        const startY = sourceNode.position.y + 40;  // Center vertically
+        // Initialize temp connection at current mouse position (converted to canvas coordinates)
         setTemporaryConnection({ 
           x: (e.clientX - rect.left - viewport.x) / viewport.zoom, 
           y: (e.clientY - rect.top - viewport.y) / viewport.zoom
         });
       }
     }
-  }, [nodes, viewport.x, viewport.y, viewport.zoom, setIsConnecting, setConnectionStart, setTemporaryConnection]);
+  }, [nodes, viewport.x, viewport.y, viewport.zoom, setIsConnecting, setConnectionStart, setTemporaryConnection, setConnectionStartAnchor]);
 
   const handleNodeMouseUp = useCallback((nodeId: string) => {
     console.log('🎯 Node mouse up:', nodeId, 'IsConnecting:', isConnecting, 'ConnectionStart:', connectionStart);
@@ -396,6 +432,24 @@ export default function CanvasArea({
           id: `edge-${connectionStart}-${nodeId}-${Date.now()}`,
           source: connectionStart,
           target: nodeId,
+          data: {
+            sourceAnchor: (connectionStartAnchor as any) || 'right',
+            // Decide target anchor based on relative positions and orientation
+            targetAnchor: (() => {
+              const sourceNode = nodes.find(n => n.id === connectionStart);
+              const targetNode = nodes.find(n => n.id === nodeId);
+              if (sourceNode && targetNode) {
+                const src = sourceNode.position;
+                const tgt = targetNode.position;
+                const isVertical = connectionStartAnchor === 'top' || connectionStartAnchor === 'bottom';
+                if (isVertical) {
+                  return tgt.y >= src.y ? 'top' : 'bottom';
+                }
+                return 'left';
+              }
+              return 'left';
+            })()
+          }
         };
         
         // Update edges state
@@ -414,8 +468,9 @@ export default function CanvasArea({
     setIsConnecting(false);
     setConnectionStart(null);
     setTemporaryConnection(null);
+    setConnectionStartAnchor(null as any);
     setDraggedNodeId(null);
-  }, [isConnecting, connectionStart, edges, setIsConnecting, setConnectionStart, setTemporaryConnection, setDraggedNodeId, setEdges, triggerSave]);
+  }, [isConnecting, connectionStart, edges, setIsConnecting, setConnectionStart, setTemporaryConnection, setDraggedNodeId, setEdges, triggerSave, connectionStartAnchor, nodes, setConnectionStartAnchor]);
 
   // React Query mutation 제거: useCanvasSync로 통일
 
@@ -499,24 +554,7 @@ export default function CanvasArea({
     return { x, y };
   }, [viewport.x, viewport.y, viewport.zoom]);
 
-  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
-    const el = e.target as HTMLElement;
-    
-    // 노드 위라면 캔버스 패닝 금지 (노드 자체에서 처리하도록)
-    if (el.closest('[data-node]')) return;
-    // 메모 위라면 캔버스 패닝 금지
-    if (el.closest('[data-memo-id]')) return;
-    
-    // Clear any existing selections
-    onNodeSelect('');
-    setSelectedMemoId(null);
-    
-    // 배경/빈 공간이면 패닝 시작
-    setIsPanning(true);
-    setPanStart({ x: e.clientX, y: e.clientY });
-    setLastPanPoint({ x: viewport.x, y: viewport.y });
-    e.preventDefault();
-  }, [viewport.x, viewport.y, onNodeSelect, setIsPanning, setPanStart, setLastPanPoint]);
+  // 기존 패닝 시작 핸들러 제거 → 훅에서 처리
 
   // Memo management functions
   const createNewMemo = useCallback(async (x: number, y: number) => {
@@ -784,38 +822,9 @@ export default function CanvasArea({
     }
   }, [isPanning, draggedNodeId, isConnecting]);
 
-  const handleCanvasMouseUp = useCallback(() => {
-    setIsPanning(false);
-    setDraggedNodeId(null);
-    setIsConnecting(false);
-    setConnectionStart(null);
-    setTemporaryConnection(null);
-  }, [setIsPanning, setDraggedNodeId, setIsConnecting, setConnectionStart, setTemporaryConnection]);
+  // 마우스 업 전역 정리는 훅에서 처리
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newZoom = Math.max(0.1, Math.min(3, viewport.zoom * delta));
-    
-    // Calculate zoom center point
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (rect) {
-      const centerX = e.clientX - rect.left;
-      const centerY = e.clientY - rect.top;
-      
-      // Adjust position to zoom towards mouse cursor
-      const zoomRatio = newZoom / viewport.zoom;
-      const newX = centerX - (centerX - viewport.x) * zoomRatio;
-      const newY = centerY - (centerY - viewport.y) * zoomRatio;
-      
-      setViewport({
-        x: newX,
-        y: newY,
-        zoom: newZoom
-      });
-    }
-  }, [viewport, setViewport]);
+  // remove legacy handleWheel (replaced by hook)
 
   // Global mouse event listeners for dragging
   useEffect(() => {
@@ -887,6 +896,23 @@ export default function CanvasArea({
                 id: `edge-${connectionStart}-${targetNodeId}-${Date.now()}`,
                 source: connectionStart,
                 target: targetNodeId,
+                data: {
+                  sourceAnchor: (connectionStartAnchor as any) || 'right',
+                  targetAnchor: (() => {
+                    const sourceNode = nodes.find(n => n.id === connectionStart);
+                    const targetNode = nodes.find(n => n.id === targetNodeId);
+                    if (sourceNode && targetNode) {
+                      const src = sourceNode.position;
+                      const tgt = targetNode.position;
+                      const isVertical = connectionStartAnchor === 'top' || connectionStartAnchor === 'bottom';
+                      if (isVertical) {
+                        return tgt.y >= src.y ? 'top' : 'bottom';
+                      }
+                      return 'left';
+                    }
+                    return 'left';
+                  })()
+                }
               };
               
               console.log(`Creating new edge:`, newEdge);
@@ -929,6 +955,7 @@ export default function CanvasArea({
       setIsConnecting(false);
       setConnectionStart(null);
       setTemporaryConnection(null);
+      setConnectionStartAnchor(null as any);
       
       setIsPanning(false);
       setDraggedNodeId(null);
@@ -945,42 +972,7 @@ export default function CanvasArea({
     }
   }, [isPanning, panStart.x, panStart.y, lastPanPoint.x, lastPanPoint.y, draggedNodeId, viewport.x, viewport.y, viewport.zoom, isConnecting, connectionStart, temporaryConnection, edges, nodeDragStart.x, nodeDragStart.y, nodePositions, setConnectionStart, setDraggedNodeId, setEdges, setIsConnecting, setIsPanning, setNodePositions, setTemporaryConnection, setViewport, triggerSave]);
 
-  // Generate SVG path for edges with smooth bezier curves and proper connection points
-  const generatePath = useCallback((edge: FlowEdge): string => {
-    const sourceNode = nodes.find(n => n.id === edge.source);
-    const targetNode = nodes.find(n => n.id === edge.target);
-    
-    if (!sourceNode || !targetNode) {
-      return "";
-    }
-
-    // Standard node dimensions
-    const nodeWidth = 160;
-    const nodeHeight = 80;
-
-    // Connection points at the edges of the nodes (not center)
-    const sourceX = sourceNode.position.x + nodeWidth; // Right edge of source node
-    const sourceY = sourceNode.position.y + nodeHeight / 2;  // Center vertically
-    const targetX = targetNode.position.x;       // Left edge of target node  
-    const targetY = targetNode.position.y + nodeHeight / 2;  // Center vertically
-
-    // For multiple connections from same source, offset them vertically
-    const connectionsFromSource = edges.filter(e => e.source === edge.source);
-    const connectionIndex = connectionsFromSource.findIndex(e => e.id === edge.id);
-    const offsetY = (connectionIndex - (connectionsFromSource.length - 1) / 2) * 15;
-
-    // Calculate control points for smooth bezier curve
-    const deltaX = targetX - sourceX;
-    const controlOffset = Math.max(Math.abs(deltaX) * 0.4, 50);
-    
-    const control1X = sourceX + controlOffset;
-    const control1Y = sourceY + offsetY;
-    const control2X = targetX - controlOffset;
-    const control2Y = targetY;
-    
-    // Create smooth cubic bezier curve
-    return `M ${sourceX} ${sourceY + offsetY} C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${targetX} ${targetY}`;
-  }, [nodes, edges]);
+  // 엣지 지오메트리는 CanvasEdges로 이전됨
 
   // Handle edge deletion
   const handleEdgeDelete = useCallback((edgeId: string, e: React.MouseEvent) => {
@@ -1021,228 +1013,62 @@ export default function CanvasArea({
     return "none";
   };
 
-  // Handle title editing
-  const handleTitleEdit = () => {
-    setEditedTitle(canvas.title);
-    setIsEditingTitle(true);
-  };
-
-  const handleTitleSave = async () => {
-    if (editedTitle.trim() && editedTitle !== canvas.title) {
-      try {
-        console.log('🏷️ Saving canvas title:', editedTitle.trim());
-        
-        const response = await fetch(`/api/canvases/${canvas.id}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify({ title: editedTitle.trim() })
-        });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const updatedCanvas = await response.json();
-        console.log('✅ Canvas title updated successfully:', updatedCanvas);
-        
-        // Refresh canvas data
-        queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id] });
-        queryClient.invalidateQueries({ queryKey: ["/api/workspaces", canvas.workspaceId, "canvases"] });
-        
-        // Force immediate refetch
-        await queryClient.refetchQueries({ queryKey: ["/api/canvases", canvas.id] });
-        
-      } catch (error) {
-        console.error("❌ Failed to update canvas title:", error);
-      }
-    }
-    setIsEditingTitle(false);
-  };
-
-  const handleTitleCancel = () => {
-    setEditedTitle("");
-    setIsEditingTitle(false);
-  };
-
-  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleTitleSave();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      handleTitleCancel();
-    }
-  };
+  // 타이틀 편집 로직은 CanvasHeader로 이전됨
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50 min-w-0 min-h-0">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between group">
-          <div className="flex items-center space-x-4">
-            <Link
-              href="/"
-              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-colors"
-              title="워크스페이스로 돌아가기"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-            {isEditingTitle ? (
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  value={editedTitle}
-                  onChange={(e) => setEditedTitle(e.target.value)}
-                  onKeyDown={handleTitleKeyDown}
-                  onBlur={handleTitleSave}
-                  className="font-semibold text-gray-900 bg-transparent border-b-2 border-blue-500 focus:outline-none text-lg px-1"
-                  autoFocus
-                />
-                <div className="flex items-center space-x-1">
-                  <button
-                    onClick={handleTitleSave}
-                    className="p-1 text-green-600 hover:bg-green-100 rounded"
-                    title="저장"
-                  >
-                    <Check className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={handleTitleCancel}
-                    className="p-1 text-red-600 hover:bg-red-100 rounded"
-                    title="취소"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <h2 
-                className={`font-semibold text-gray-900 flex items-center space-x-2 ${!isReadOnly ? 'cursor-pointer hover:text-blue-600 transition-colors' : ''}`}
-                onClick={!isReadOnly ? handleTitleEdit : undefined}
-                title={!isReadOnly ? "클릭해서 이름 변경" : ""}
-              >
-                <span>{canvas.title}</span>
-                {!isReadOnly && <Edit className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />}
-              </h2>
-            )}
-            <div className="flex items-center space-x-2 text-sm text-gray-500">
-              <Clock className="h-4 w-4" />
-              <span>마지막 저장: {canvasState ? new Date(canvasState.createdAt!).toLocaleString() : "저장된 상태 없음"}</span>
-            </div>
-          </div>
-          <div className="flex items-center space-x-3">
-            {!isReadOnly && (
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => {
-                  // 캔버스 중앙에 노드 생성 모달 열기
-                  const canvasRect = canvasRef.current?.getBoundingClientRect();
-                  if (canvasRect) {
-                    const centerX = (canvasRect.width / 2 - viewport.x) / viewport.zoom;
-                    const centerY = (canvasRect.height / 2 - viewport.y) / viewport.zoom;
-                    setNodeCreationPosition({ x: centerX, y: centerY });
-                  } else {
-                    setNodeCreationPosition({ x: 400, y: 300 });
-                  }
-                  setShowNodeCreationModal(true);
-                }}
-                title="노드 추가"
-                className="hover:bg-blue-50 hover:text-blue-600"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            )}
-            {!isReadOnly && (
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => {
-                  // 즉시 저장
-                  triggerSave("manual", true);
-                  console.log('캔버스를 수동으로 저장했습니다.');
-                }}
-                title="수동 저장"
-              >
-                <Save className="h-4 w-4" />
-              </Button>
-            )}
-            {(typeof canShare === 'boolean' ? canShare : !isReadOnly) && (
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => onOpenShareModal?.()}
-                title="캔버스 사용자 공유"
-              >
-                <Share className="h-4 w-4" />
-              </Button>
-            )}
-            <div className="w-px h-6 bg-gray-200"></div>
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => {
-                if (finalNodes.length > 0) {
-                  // Calculate bounding box of all nodes
-                  const minX = Math.min(...finalNodes.map((node: FlowNode) => node.position.x));
-                  const maxX = Math.max(...finalNodes.map((node: FlowNode) => node.position.x));
-                  const minY = Math.min(...finalNodes.map((node: FlowNode) => node.position.y));
-                  const maxY = Math.max(...finalNodes.map((node: FlowNode) => node.position.y));
-                  
-                  const centerX = (minX + maxX) / 2;
-                  const centerY = (minY + maxY) / 2;
-                  
-                  // Center viewport on nodes
-                  const canvasWidth = window.innerWidth;
-                  const canvasHeight = window.innerHeight;
-                  
-                  setViewport({
-                    x: canvasWidth / 2 - centerX,
-                    y: canvasHeight / 2 - centerY,
-                    zoom: 1
-                  });
-                } else {
-                  setViewport({ x: 0, y: 0, zoom: 1 });
-                }
-              }}
-            >
-              {Math.round(viewport.zoom * 100)}%
-            </Button>
-            <div className="flex items-center space-x-1">
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => setViewport({ ...viewport, zoom: Math.min(3, viewport.zoom * 1.2) })}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => setViewport({ ...viewport, zoom: Math.max(0.1, viewport.zoom * 0.8) })}
-              >
-                <Minus className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CanvasHeader
+        canvas={canvas}
+        canvasState={canvasState}
+        isReadOnly={isReadOnly}
+        viewport={viewport}
+        setViewport={setViewport}
+        canShare={canShare}
+        onOpenShareModal={onOpenShareModal}
+        onOpenCreateNode={() => {
+          const canvasRect = canvasRef.current?.getBoundingClientRect();
+          if (canvasRect) {
+            const centerX = (canvasRect.width / 2 - viewport.x) / viewport.zoom;
+            const centerY = (canvasRect.height / 2 - viewport.y) / viewport.zoom;
+            setNodeCreationPosition({ x: centerX, y: centerY });
+          } else {
+            setNodeCreationPosition({ x: 400, y: 300 });
+          }
+          setShowNodeCreationModal(true);
+        }}
+        onManualSave={() => { manualSavePendingRef.current = true; triggerSave("manual", true); }}
+        onUpdateTitle={updateCanvasTitle}
+        onResetOrCenterViewport={() => {
+          if (finalNodes.length > 0) {
+            const minX = Math.min(...finalNodes.map((node: FlowNode) => node.position.x));
+            const maxX = Math.max(...finalNodes.map((node: FlowNode) => node.position.x));
+            const minY = Math.min(...finalNodes.map((node: FlowNode) => node.position.y));
+            const maxY = Math.max(...finalNodes.map((node: FlowNode) => node.position.y));
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+            const canvasWidth = window.innerWidth;
+            const canvasHeight = window.innerHeight;
+            setViewport({ x: canvasWidth / 2 - centerX, y: canvasHeight / 2 - centerY, zoom: 1 });
+          } else {
+            setViewport({ x: 0, y: 0, zoom: 1 });
+          }
+        }}
+        lastSavedAt={lastSavedAt}
+        isSaving={saving}
+      />
 
       {/* Canvas Content */}
       <div 
         ref={canvasRef}
         className="flex-1 relative overflow-hidden canvas-content min-w-0 min-h-0"
         style={{ 
-          cursor: isPanning ? 'grabbing' : (draggedNodeId ? 'move' : 'grab'),
+          cursor: draggedNodeId ? 'move' : 'grab',
           width: '100%',
           height: '100%'
         }}
         onMouseDown={!isReadOnly ? handleCanvasMouseDown : undefined}
         onMouseMove={!isReadOnly ? handleCanvasMouseMove : undefined}
-        onMouseUp={!isReadOnly ? handleCanvasMouseUp : undefined}
+        onMouseUp={undefined}
         onDoubleClick={!isReadOnly ? handleCanvasDoubleClick : undefined}
         onWheel={handleWheel}
         onDragOver={!isReadOnly ? handleDragOver : undefined}
@@ -1261,307 +1087,17 @@ export default function CanvasArea({
           }}
         ></div>
         
-        {/* SVG for Connection Lines */}
-        <svg 
-          className="absolute inset-0 w-full h-full" 
-          style={{ 
-            zIndex: 1,
-            pointerEvents: 'none'
-          }}
-        >
-          <defs>
-            {/* 일반 화살표 - 그라데이션과 그림자 효과 */}
-            <linearGradient id="arrowGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" style={{stopColor:"#6366F1", stopOpacity:1}} />
-              <stop offset="100%" style={{stopColor:"#3B82F6", stopOpacity:1}} />
-            </linearGradient>
-            <filter id="arrowShadow" x="-50%" y="-50%" width="200%" height="200%">
-              <feDropShadow dx="1" dy="1" stdDeviation="1" floodOpacity="0.3"/>
-            </filter>
-            <marker
-              id="arrowhead"
-              markerWidth="8"
-              markerHeight="6"
-              refX="7"
-              refY="3"
-              orient="auto"
-              markerUnits="strokeWidth"
-            >
-              <path
-                d="M 0 0 L 8 3 L 0 6 L 2 3 Z"
-                fill="url(#arrowGradient)"
-                filter="url(#arrowShadow)"
-              />
-            </marker>
-
-            {/* 임시 연결 화살표 - 더 밝고 애니메이션 효과 */}
-            <linearGradient id="tempArrowGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" style={{stopColor:"#06B6D4", stopOpacity:1}} />
-              <stop offset="100%" style={{stopColor:"#3B82F6", stopOpacity:1}} />
-            </linearGradient>
-            <marker
-              id="temp-arrowhead"
-              markerWidth="10"
-              markerHeight="7"
-              refX="9"
-              refY="3.5"
-              orient="auto"
-              markerUnits="strokeWidth"
-            >
-              <path
-                d="M 0 0 L 10 3.5 L 0 7 L 2.5 3.5 Z"
-                fill="url(#tempArrowGradient)"
-                filter="url(#arrowShadow)"
-              />
-            </marker>
-
-            {/* 연결선 그라데이션 */}
-            <linearGradient id="connectionGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" style={{stopColor:"#8B5CF6", stopOpacity:0.8}} />
-              <stop offset="50%" style={{stopColor:"#6366F1", stopOpacity:0.9}} />
-              <stop offset="100%" style={{stopColor:"#3B82F6", stopOpacity:0.8}} />
-            </linearGradient>
-
-            {/* 임시 연결선 그라데이션 */}
-            <linearGradient id="tempConnectionGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" style={{stopColor:"#06B6D4", stopOpacity:0.7}} />
-              <stop offset="100%" style={{stopColor:"#3B82F6", stopOpacity:0.9}} />
-            </linearGradient>
-          </defs>
-          {(isReadOnly ? (flowData?.edges || []) : edges).map((edge: FlowEdge) => {
-            const path = generatePath(edge);
-            const sourceNode = (isReadOnly ? renderNodes : nodes).find((n: FlowNode) => n.id === edge.source);
-            const targetNode = (isReadOnly ? renderNodes : nodes).find((n: FlowNode) => n.id === edge.target);
-            
-            if (!sourceNode || !targetNode || !path) {
-              return null;
-            }
-            
-            // Calculate precise midpoint using EXACT same logic as generatePath function
-            const nodeWidth = 160;
-            const nodeHeight = 80;
-            const sourceX = sourceNode.position.x + nodeWidth;
-            const sourceY = sourceNode.position.y + nodeHeight / 2;
-            const targetX = targetNode.position.x;
-            const targetY = targetNode.position.y + nodeHeight / 2;
-            
-            // IMPORTANT: Use exact same offsetY calculation as generatePath
-            const currentEdges = isReadOnly ? (flowData?.edges || []) : edges;
-            const connectionsFromSource = currentEdges.filter((e: FlowEdge) => e.source === edge.source);
-            const connectionIndex = connectionsFromSource.findIndex((e: FlowEdge) => e.id === edge.id);
-            const offsetY = (connectionIndex - (connectionsFromSource.length - 1) / 2) * 15;
-            
-            // IMPORTANT: Use exact same control point calculation as generatePath
-            const deltaX = targetX - sourceX;
-            const controlOffset = Math.max(Math.abs(deltaX) * 0.4, 50);
-            const control1X = sourceX + controlOffset;
-            const control1Y = sourceY + offsetY;
-            const control2X = targetX - controlOffset;
-            const control2Y = targetY;
-            
-            // Calculate the actual midpoint of the cubic bezier curve at t=0.5
-            const t = 0.5;
-            const midX = Math.pow(1-t, 3) * sourceX + 
-                       3 * Math.pow(1-t, 2) * t * control1X + 
-                       3 * (1-t) * Math.pow(t, 2) * control2X + 
-                       Math.pow(t, 3) * targetX;
-            const midY = Math.pow(1-t, 3) * (sourceY + offsetY) + 
-                       3 * Math.pow(1-t, 2) * t * control1Y + 
-                       3 * (1-t) * Math.pow(t, 2) * control2Y + 
-                       Math.pow(t, 3) * targetY;
-            
-            return (
-              <g key={edge.id} data-edge={edge.id}>
-                <g transform={`translate(${viewport.x},${viewport.y}) scale(${viewport.zoom})`}>
-                  {/* 배경 그림자 라인 */}
-                  <path
-                    d={path}
-                    stroke="rgba(0,0,0,0.1)"
-                    strokeWidth={4 / viewport.zoom}
-                    fill="none"
-                    className="pointer-events-none"
-                  />
-                  {/* 메인 연결선 */}
-                  <path
-                    d={path}
-                    stroke="url(#connectionGradient)"
-                    strokeWidth={2 / viewport.zoom}
-                    fill="none"
-                    markerEnd="url(#arrowhead)"
-                    className="hover:stroke-[url(#tempConnectionGradient)] transition-all duration-300 hover:drop-shadow-lg"
-                    style={{ 
-                      pointerEvents: 'stroke',
-                      filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))'
-                    }}
-                    onMouseEnter={() => {
-                      // Show delete button when hovering over connection line
-                      const deleteButton = document.querySelector(`[data-edge="${edge.id}"] .delete-button`);
-                      if (deleteButton) {
-                        (deleteButton as HTMLElement).style.opacity = '1';
-                      }
-                    }}
-                    onMouseLeave={() => {
-                      // Hide delete button when leaving connection line
-                      setTimeout(() => {
-                        const deleteButton = document.querySelector(`[data-edge="${edge.id}"] .delete-button`);
-                        if (deleteButton && !deleteButton.matches(':hover')) {
-                          (deleteButton as HTMLElement).style.opacity = '0';
-                        }
-                      }, 100);
-                    }}
-                  />
-                </g>
-                
-                {/* 연결선 삭제 버튼을 뷰포트 변환 내부에 배치 */}
-                <g transform={`translate(${viewport.x},${viewport.y}) scale(${viewport.zoom})`}>
-                  <g 
-                    className="delete-button opacity-0 hover:opacity-100 transition-opacity duration-200"
-                    style={{
-                      pointerEvents: 'all',
-                      cursor: 'pointer'
-                    }}
-                    transform={`translate(${midX}, ${midY})`}
-                    onMouseEnter={() => {
-                      // Force show on hover
-                      const target = document.querySelector(`[data-edge="${edge.id}"] .delete-button`);
-                      if (target) (target as HTMLElement).style.opacity = '1';
-                    }}
-                    onMouseLeave={() => {
-                      // Hide delete button when leaving button area
-                      const target = document.querySelector(`[data-edge="${edge.id}"] .delete-button`);
-                      if (target) (target as HTMLElement).style.opacity = '0';
-                    }}
-                    onClick={(e) => {
-                      console.log('🗑️ Delete button clicked for edge:', edge.id);
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleEdgeDelete(edge.id, e);
-                    }}
-                    onMouseDown={(e) => {
-                      console.log('🗑️ Delete button mouse down for edge:', edge.id);
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                  >
-                    {/* 클릭 영역 - 약간 더 작게 */}
-                    <circle
-                      cx={0}
-                      cy={0}
-                      r={10 / viewport.zoom}
-                      fill="transparent"
-                      style={{ 
-                        pointerEvents: 'all',
-                        cursor: 'pointer'
-                      }}
-                    />
-                    {/* 배경 원 - 더 작게 */}
-                    <circle
-                      cx={0}
-                      cy={0}
-                      r={8 / viewport.zoom}
-                      fill="white"
-                      stroke="#EF4444"
-                      strokeWidth={1.5 / viewport.zoom}
-                      style={{ 
-                        pointerEvents: 'none',
-                        filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3))'
-                      }}
-                    />
-                    {/* X 아이콘 - 더 작고 정확한 크기 */}
-                    <g style={{ pointerEvents: 'none' }}>
-                      <line
-                        x1={-3 / viewport.zoom}
-                        y1={-3 / viewport.zoom}
-                        x2={3 / viewport.zoom}
-                        y2={3 / viewport.zoom}
-                        stroke="#EF4444"
-                        strokeWidth={1.5 / viewport.zoom}
-                        strokeLinecap="round"
-                      />
-                      <line
-                        x1={3 / viewport.zoom}
-                        y1={-3 / viewport.zoom}
-                        x2={-3 / viewport.zoom}
-                        y2={3 / viewport.zoom}
-                        stroke="#EF4444"
-                        strokeWidth={1.5 / viewport.zoom}
-                        strokeLinecap="round"
-                      />
-                    </g>
-                  </g>
-                </g>
-              </g>
-            );
-          })}
-          
-          {/* Temporary connection line while connecting */}
-          {!isReadOnly && isConnecting && connectionStart && temporaryConnection && (() => {
-            const sourceNode = (isReadOnly ? renderNodes : nodes).find((n: FlowNode) => n.id === connectionStart);
-            if (!sourceNode) return null;
-            
-            // Standard node dimensions
-            const nodeWidth = 160;
-            const nodeHeight = 80;
-            
-            const sourceX = sourceNode.position.x + nodeWidth; // Right edge of source node
-            const sourceY = sourceNode.position.y + nodeHeight / 2;  // Center vertically
-            const targetX = temporaryConnection.x;
-            const targetY = temporaryConnection.y;
-            
-            // Create a smooth bezier curve for temporary connection
-            const deltaX = targetX - sourceX;
-            const controlOffset = Math.max(Math.abs(deltaX) * 0.4, 50);
-            const control1X = sourceX + controlOffset;
-            const control1Y = sourceY;
-            const control2X = targetX - controlOffset;
-            const control2Y = targetY;
-            
-            const tempPath = `M ${sourceX} ${sourceY} C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${targetX} ${targetY}`;
-            
-            return (
-              <g transform={`translate(${viewport.x},${viewport.y}) scale(${viewport.zoom})`}>
-                {/* 배경 글로우 효과 */}
-                <path
-                  d={tempPath}
-                  stroke="rgba(59, 130, 246, 0.3)"
-                  strokeWidth={6 / viewport.zoom}
-                  fill="none"
-                  className="pointer-events-none"
-                />
-                {/* 메인 임시 연결선 */}
-                <path
-                  d={tempPath}
-                  stroke="url(#tempConnectionGradient)"
-                  strokeWidth={2.5 / viewport.zoom}
-                  fill="none"
-                  strokeDasharray={`${6 / viewport.zoom},${3 / viewport.zoom}`}
-                  markerEnd="url(#temp-arrowhead)"
-                  className="animate-pulse"
-                  style={{
-                    filter: 'drop-shadow(0 0 4px rgba(59, 130, 246, 0.5))'
-                  }}
-                />
-                {/* 향상된 타겟 포인트 */}
-                <g className="animate-pulse">
-                  <circle 
-                    cx={targetX} 
-                    cy={targetY} 
-                    r={8 / viewport.zoom} 
-                    fill="rgba(59, 130, 246, 0.2)" 
-                    className="animate-ping"
-                  />
-                  <circle 
-                    cx={targetX} 
-                    cy={targetY} 
-                    r={4 / viewport.zoom} 
-                    fill="url(#tempArrowGradient)"
-                    className="animate-bounce"
-                  />
-                </g>
-              </g>
-            );
-          })()}
-        </svg>
+        <CanvasEdges
+          nodes={(isReadOnly ? (renderNodes as FlowNode[]) : nodes)}
+          edges={(isReadOnly ? (flowData?.edges || []) : edges) as FlowEdge[]}
+          viewport={viewport}
+          isReadOnly={isReadOnly}
+          isConnecting={isConnecting}
+          connectionStart={connectionStart}
+          connectionStartAnchor={connectionStartAnchor as any}
+          temporaryConnection={temporaryConnection}
+          onDeleteEdge={(edgeId) => handleEdgeDelete(edgeId, { preventDefault() {}, stopPropagation() {} } as any)}
+        />
 
         {/* Canvas Nodes */}
         <div
@@ -1572,7 +1108,7 @@ export default function CanvasArea({
             transformOrigin: '0 0',
             width: '100%',
             height: '100%',
-            pointerEvents: 'auto'
+            pointerEvents: 'none'
           }}
         >
           {(() => {
@@ -1591,47 +1127,49 @@ export default function CanvasArea({
               });
               
               return (
-                <FunnelNode
-                  key={node.id}
-                  node={node}
-                  selected={selectedNodeId === node.id}
-                  feedbackSeverity={getNodeFeedbackSeverity(node.id)}
-                  onDoubleClick={!isReadOnly ? () => handleNodeDoubleClick(node.id) : undefined}
-                  onMouseDown={!isReadOnly ? (e) => handleNodeMouseDown(node.id, e) : undefined}
-                  onMouseUp={!isReadOnly ? () => handleNodeMouseUp(node.id) : undefined}
-                  isDragging={draggedNodeId === node.id}
-                  isConnectable={isConnecting && connectionStart !== node.id && !isReadOnly}
-                  onConnectionStart={!isReadOnly ? handleConnectionStart : undefined}
-                  onDelete={!isReadOnly ? handleNodeDelete : undefined}
-                  isReadOnly={isReadOnly}
-                  size={(node.data as any)?.size || "medium"}
-                />
+                <div key={node.id} style={{ pointerEvents: 'auto' }}>
+                  <FunnelNode
+                    node={node}
+                    selected={selectedNodeId === node.id}
+                    feedbackSeverity={getNodeFeedbackSeverity(node.id)}
+                    onDoubleClick={!isReadOnly ? () => handleNodeDoubleClick(node.id) : undefined}
+                    onMouseDown={!isReadOnly ? (e) => handleNodeMouseDown(node.id, e) : undefined}
+                    onMouseUp={!isReadOnly ? () => handleNodeMouseUp(node.id) : undefined}
+                    isDragging={draggedNodeId === node.id}
+                    isConnectable={isConnecting && connectionStart !== node.id && !isReadOnly}
+                    onConnectionStart={!isReadOnly ? handleConnectionStart : undefined}
+                    onDelete={!isReadOnly ? handleNodeDelete : undefined}
+                    isReadOnly={isReadOnly}
+                    size={(node.data as any)?.size || "medium"}
+                  />
+                </div>
               );
             });
           })()}
 
           {/* Text Memos */}
           {memos.map((memo) => (
-            <TextMemo
-              key={memo.id}
-              id={memo.id}
-              position={memo.position}
-              content={memo.content}
-              size={memo.size || { width: 280, height: 180 }}
-              isSelected={!isReadOnly && selectedMemoId === memo.id}
-              onUpdate={!isReadOnly ? updateMemo : () => {}}
-              onDelete={!isReadOnly ? deleteMemo : () => {}}
-              onSelect={(id) => {
-                if (!isReadOnly) {
-                  setSelectedMemoId(id);
-                  onNodeSelect(''); // Clear node selection
-                }
-              }}
-              onPositionChange={!isReadOnly ? updateMemoPosition : () => {}}
-              onSizeChange={!isReadOnly ? handleMemoSizeChange : () => {}}
-              viewport={viewport}
-              isReadOnly={isReadOnly}
-            />
+            <div key={memo.id} style={{ pointerEvents: 'auto' }}>
+              <TextMemo
+                id={memo.id}
+                position={memo.position}
+                content={memo.content}
+                size={memo.size || { width: 280, height: 180 }}
+                isSelected={!isReadOnly && selectedMemoId === memo.id}
+                onUpdate={!isReadOnly ? updateMemo : () => {}}
+                onDelete={!isReadOnly ? deleteMemo : () => {}}
+                onSelect={(id) => {
+                  if (!isReadOnly) {
+                    setSelectedMemoId(id);
+                    onNodeSelect(''); // Clear node selection
+                  }
+                }}
+                onPositionChange={!isReadOnly ? updateMemoPosition : () => {}}
+                onSizeChange={!isReadOnly ? handleMemoSizeChange : () => {}}
+                viewport={viewport}
+                isReadOnly={isReadOnly}
+              />
+            </div>
           ))}
         </div>
 
