@@ -6,12 +6,11 @@ import { useToast } from "@/hooks/use-toast";
 
 import Sidebar from "@/components/Layout/Sidebar";
 import CanvasArea from "@/components/Layout/CanvasArea";
-import RightPanel from "@/components/Layout/RightPanel";
+import NodeDetailsPanel from "@/components/Node/NodeDetailsPanel";
 import SidebarChat from "@/components/Chat/SidebarChat";
 import TodoSticker, { TodoStickerToggle } from "@/components/TodoSticker/TodoSticker";
 import UploadModal from "@/components/Modals/UploadModal";
 import TemplateModal from "@/components/Modals/TemplateModal";
-import AIFeedbackModal from "@/components/Modals/AIFeedbackModal";
 import { WorkspaceMembersModal } from "@/components/Modals/WorkspaceMembersModal";
 import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
 import { useCanvasRole } from "@/hooks/useCanvasRole";
@@ -51,7 +50,6 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   const [showRightPanel, setShowRightPanel] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [showAIModal, setShowAIModal] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showCanvasShareModal, setShowCanvasShareModal] = useState(false);
   const [uploadType, setUploadType] = useState<UploadType>("pdf");
@@ -97,9 +95,6 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
     setShowMembersModal(true);
   };
 
-  const handleRequestAIFeedback = () => {
-    setShowAIModal(true);
-  };
 
   const handleToggleChatSidebar = () => {
     setChatCollapsed(!chatCollapsed);
@@ -198,7 +193,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
 
       {/* Right Panel - 노드가 선택된 경우 우선 표시 */}
       {showRightPanel && selectedNodeId ? (
-        <RightPanel
+        <NodeDetailsPanel
           nodeId={selectedNodeId}
           canvasId={canvas.id}
           onClose={handleCloseRightPanel}
@@ -213,8 +208,6 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         />
       )}
 
-      {/* AI Feedback Button */}
-      {/* <AIFeedbackButton onRequestFeedback={handleRequestAIFeedback} /> */}
 
       {/* Todo Sticker */}
       {showTodoSticker ? (
@@ -244,11 +237,6 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         canvasId={canvas.id}
       />
 
-      <AIFeedbackModal
-        open={showAIModal}
-        onOpenChange={setShowAIModal}
-        canvasId={canvas.id}
-      />
 
       <WorkspaceMembersModal
         isOpen={showMembersModal}

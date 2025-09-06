@@ -1,4 +1,4 @@
-import { X, AlertTriangle, Check } from "lucide-react";
+import { X } from "lucide-react";
 
 interface Node {
   id: string;
@@ -19,7 +19,6 @@ interface Node {
 interface FunnelNodeProps {
   node: Node;
   selected: boolean;
-  feedbackSeverity: "none" | "low" | "medium" | "high";
   onClick?: () => void;
   onDoubleClick?: () => void;
   onMouseDown?: (e: React.MouseEvent) => void;
@@ -35,7 +34,6 @@ interface FunnelNodeProps {
 export default function FunnelNode({
   node,
   selected,
-  feedbackSeverity,
   onClick,
   onDoubleClick,
   onMouseDown,
@@ -50,14 +48,6 @@ export default function FunnelNode({
   // 노드 데이터의 size를 우선적으로 사용, 없으면 prop의 size 사용
   const actualSize = node.data?.size || size;
   
-  // Debug logging for node rendering
-  console.log('🔧 FunnelNode rendering:', {
-    nodeId: node.id,
-    position: node.position,
-    title: node.data?.title,
-    isReadOnly,
-    size: actualSize
-  });
 
   // 노드 크기에 따른 스타일 설정
   const getSizeStyles = () => {
@@ -124,38 +114,6 @@ export default function FunnelNode({
     }
   };
 
-  const getFeedbackBadge = () => {
-    if (feedbackSeverity === "none") return null;
-
-    const badges = {
-      high: {
-        icon: <X className="h-3 w-3" />,
-        color: "bg-red-500",
-        tooltip: "중요한 개선사항 있음",
-      },
-      medium: {
-        icon: <AlertTriangle className="h-3 w-3" />,
-        color: "bg-yellow-500",
-        tooltip: "개선 권장사항 있음",
-      },
-      low: {
-        icon: <Check className="h-3 w-3" />,
-        color: "bg-green-500",
-        tooltip: "잘 설계됨",
-      },
-    };
-
-    const badge = badges[feedbackSeverity];
-
-    return (
-      <div
-        className={`absolute -top-2 -right-2 w-6 h-6 ${badge.color} rounded-full flex items-center justify-center cursor-help`}
-        title={badge.tooltip}
-      >
-        <div className="text-primary-foreground">{badge.icon}</div>
-      </div>
-    );
-  };
 
   const getAssigneeAvatars = () => {
     const assignees = (node.data as any).assignees;
@@ -306,7 +264,6 @@ export default function FunnelNode({
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            console.log('🗑️ Delete button clicked for node:', node.id);
             if (onDelete) {
               onDelete(node.id);
             }
@@ -314,7 +271,6 @@ export default function FunnelNode({
           onMouseDown={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            console.log('🗑️ Delete button mouse down for node:', node.id);
           }}
           onMouseUp={(e) => {
             e.preventDefault();
@@ -352,7 +308,7 @@ export default function FunnelNode({
 
 
       
-      {getFeedbackBadge()}
+      {getAssigneeAvatars()}
       
       {/* Connection points - Enhanced visibility and animation with larger hit area */}
       <div 
