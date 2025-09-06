@@ -137,7 +137,7 @@ const postNodes = async (
           data: node.data,
           metadata: node.metadata || {},
           created_by: auth.userId,
-        })
+        }, { onConflict: 'canvas_id,node_id' })
         .select('*')
         .single();
 

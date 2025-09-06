@@ -161,7 +161,7 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
                 </svg>
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">FunnelCanvas AI</h1>
+                <h1 className="text-xl font-bold text-gray-900">Canvas AI</h1>
                 <p className="text-sm text-gray-600">Workspaces</p>
               </div>
             </div>

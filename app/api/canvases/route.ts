@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { getCanvasAccessInfo } from "@/lib/auth/auth-service";
+import { getCanvasById } from "@/services/canvas-service";
 
 export async function GET() {
   const { userId } = await auth();
@@ -11,27 +13,29 @@ export async function GET() {
 
   const supabase = createServiceClient();
   
-  // First get user's workspaces
-  const { data: wsListData, error: wsError } = await supabase
+  // 소유자 워크스페이스 + 멤버 워크스페이스 모두 포함
+  const { data: ownedWs } = await supabase
     .from('workspaces')
     .select('id')
     .eq('owner_id', userId);
-  
-  if (wsError) {
-    return NextResponse.json({ error: wsError.message }, { status: 500 });
-  }
-  
-  const wsList = (wsListData || []) as { id: string }[];
+  const { data: memberWs } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('user_id', userId);
 
-  if (!wsList?.length) {
+  const workspaceIds = [
+    ...((ownedWs || []).map(w => (w as any).id)),
+    ...((memberWs || []).map(m => (m as any).workspace_id)),
+  ];
+
+  if (!workspaceIds.length) {
     return NextResponse.json([]);
   }
-  
-  // Then get canvases from those workspaces
+
   const { data, error } = await supabase
     .from('canvases')
     .select('*')
-    .in('workspace_id', wsList.map(w => w.id))
+    .in('workspace_id', workspaceIds)
     .order('updated_at', { ascending: false });
   
   if (error) {

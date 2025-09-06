@@ -7,6 +7,7 @@ import NodeCreationModal from "@/components/Canvas/NodeCreationModal";
 import { TextMemo } from "@/components/Canvas/TextMemo";
 import { useToast } from "@/hooks/use-toast";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
+import { useCanvasInteractions } from "@/hooks/use-canvas-interactions";
 import { useCanvasSync } from "@/hooks/useCanvasSync";
 import { 
   ArrowLeft, 
@@ -93,6 +94,8 @@ export default function CanvasArea({
   const setConnectionStart = useCanvasStore(s => s.setConnectionStart);
   const temporaryConnection = useCanvasStore(s => s.temporaryConnection);
   const setTemporaryConnection = useCanvasStore(s => s.setTemporaryConnection);
+  const connectionStartAnchor = useCanvasStore(s => (s as any).connectionStartAnchor);
+  const setConnectionStartAnchor = useCanvasStore(s => (s as any).setConnectionStartAnchor);
   
   // Node creation modal state
   const [showNodeCreationModal, setShowNodeCreationModal] = useState(false);
@@ -101,6 +104,9 @@ export default function CanvasArea({
   // Text memos state
   const [memos, setMemos] = useState<Memo[]>([]);
   const [selectedMemoId, setSelectedMemoId] = useState<string | null>(null);
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
+  const edgePathRefs = useRef<Map<string, SVGPathElement>>(new Map());
+  const [edgeMidpoints, setEdgeMidpoints] = useState<Record<string, { x: number; y: number }>>({});
   
 
   
@@ -338,48 +344,44 @@ export default function CanvasArea({
 
 
 
-  // Node interaction handlers
-  const handleNodeMouseDown = useCallback((nodeId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    // Store initial mouse position for drag calculation
-    setDraggedNodeId(nodeId);
-    setNodeDragStart({
-      x: e.clientX,
-      y: e.clientY
-    });
-    
-    // Store initial node position
-    const node = nodes.find(n => n.id === nodeId);
-    if (node) {
-      setNodePositions(prev => ({
-        ...prev,
-        [nodeId]: node.position
-      }));
-    }
-  }, [nodes, setDraggedNodeId, setNodeDragStart, setNodePositions]);
+  // 캔버스 인터랙션 훅 사용 (패닝/줌/드래그 성능 최적화)
+  const { handleCanvasMouseDown, handleNodeMouseDown, handleWheel } = useCanvasInteractions({
+    canvasRef,
+    viewport,
+    setViewport,
+    nodes: renderNodes,
+    setNodePositions,
+    triggerSave,
+    isReadOnly,
+  });
 
   // Connection start from connection point
   const handleConnectionStart = useCallback((nodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setIsConnecting(true);
     setConnectionStart(nodeId);
+    // Detect anchor from data attribute on the clicked handle
+    let anchor: 'left' | 'right' | 'top' | 'bottom' = 'right';
+    const targetEl = e.currentTarget as HTMLElement;
+    const dataAnchor = targetEl.getAttribute('data-anchor') || (targetEl.closest('.connection-point') as HTMLElement | null)?.getAttribute('data-anchor');
+    if (dataAnchor === 'left' || dataAnchor === 'right' || dataAnchor === 'top' || dataAnchor === 'bottom') {
+      anchor = dataAnchor;
+    }
+    setConnectionStartAnchor(anchor);
     
     // Get the source node position for smooth temporary line
     const sourceNode = nodes.find(n => n.id === nodeId);
     if (sourceNode) {
       const rect = (e.target as HTMLElement).closest('.canvas-content')?.getBoundingClientRect();
       if (rect) {
-        // Start from the right edge of the source node
-        const startX = sourceNode.position.x + 160; // Right edge
-        const startY = sourceNode.position.y + 40;  // Center vertically
+        // Initialize temp connection at current mouse position (converted to canvas coordinates)
         setTemporaryConnection({ 
           x: (e.clientX - rect.left - viewport.x) / viewport.zoom, 
           y: (e.clientY - rect.top - viewport.y) / viewport.zoom
         });
       }
     }
-  }, [nodes, viewport.x, viewport.y, viewport.zoom, setIsConnecting, setConnectionStart, setTemporaryConnection]);
+  }, [nodes, viewport.x, viewport.y, viewport.zoom, setIsConnecting, setConnectionStart, setTemporaryConnection, setConnectionStartAnchor]);
 
   const handleNodeMouseUp = useCallback((nodeId: string) => {
     console.log('🎯 Node mouse up:', nodeId, 'IsConnecting:', isConnecting, 'ConnectionStart:', connectionStart);
@@ -396,6 +398,24 @@ export default function CanvasArea({
           id: `edge-${connectionStart}-${nodeId}-${Date.now()}`,
           source: connectionStart,
           target: nodeId,
+          data: {
+            sourceAnchor: (connectionStartAnchor as any) || 'right',
+            // Decide target anchor based on relative positions and orientation
+            targetAnchor: (() => {
+              const sourceNode = nodes.find(n => n.id === connectionStart);
+              const targetNode = nodes.find(n => n.id === nodeId);
+              if (sourceNode && targetNode) {
+                const src = sourceNode.position;
+                const tgt = targetNode.position;
+                const isVertical = connectionStartAnchor === 'top' || connectionStartAnchor === 'bottom';
+                if (isVertical) {
+                  return tgt.y >= src.y ? 'top' : 'bottom';
+                }
+                return 'left';
+              }
+              return 'left';
+            })()
+          }
         };
         
         // Update edges state
@@ -414,8 +434,9 @@ export default function CanvasArea({
     setIsConnecting(false);
     setConnectionStart(null);
     setTemporaryConnection(null);
+    setConnectionStartAnchor(null as any);
     setDraggedNodeId(null);
-  }, [isConnecting, connectionStart, edges, setIsConnecting, setConnectionStart, setTemporaryConnection, setDraggedNodeId, setEdges, triggerSave]);
+  }, [isConnecting, connectionStart, edges, setIsConnecting, setConnectionStart, setTemporaryConnection, setDraggedNodeId, setEdges, triggerSave, connectionStartAnchor, nodes, setConnectionStartAnchor]);
 
   // React Query mutation 제거: useCanvasSync로 통일
 
@@ -499,24 +520,7 @@ export default function CanvasArea({
     return { x, y };
   }, [viewport.x, viewport.y, viewport.zoom]);
 
-  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
-    const el = e.target as HTMLElement;
-    
-    // 노드 위라면 캔버스 패닝 금지 (노드 자체에서 처리하도록)
-    if (el.closest('[data-node]')) return;
-    // 메모 위라면 캔버스 패닝 금지
-    if (el.closest('[data-memo-id]')) return;
-    
-    // Clear any existing selections
-    onNodeSelect('');
-    setSelectedMemoId(null);
-    
-    // 배경/빈 공간이면 패닝 시작
-    setIsPanning(true);
-    setPanStart({ x: e.clientX, y: e.clientY });
-    setLastPanPoint({ x: viewport.x, y: viewport.y });
-    e.preventDefault();
-  }, [viewport.x, viewport.y, onNodeSelect, setIsPanning, setPanStart, setLastPanPoint]);
+  // 기존 패닝 시작 핸들러 제거 → 훅에서 처리
 
   // Memo management functions
   const createNewMemo = useCallback(async (x: number, y: number) => {
@@ -784,38 +788,9 @@ export default function CanvasArea({
     }
   }, [isPanning, draggedNodeId, isConnecting]);
 
-  const handleCanvasMouseUp = useCallback(() => {
-    setIsPanning(false);
-    setDraggedNodeId(null);
-    setIsConnecting(false);
-    setConnectionStart(null);
-    setTemporaryConnection(null);
-  }, [setIsPanning, setDraggedNodeId, setIsConnecting, setConnectionStart, setTemporaryConnection]);
+  // 마우스 업 전역 정리는 훅에서 처리
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newZoom = Math.max(0.1, Math.min(3, viewport.zoom * delta));
-    
-    // Calculate zoom center point
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (rect) {
-      const centerX = e.clientX - rect.left;
-      const centerY = e.clientY - rect.top;
-      
-      // Adjust position to zoom towards mouse cursor
-      const zoomRatio = newZoom / viewport.zoom;
-      const newX = centerX - (centerX - viewport.x) * zoomRatio;
-      const newY = centerY - (centerY - viewport.y) * zoomRatio;
-      
-      setViewport({
-        x: newX,
-        y: newY,
-        zoom: newZoom
-      });
-    }
-  }, [viewport, setViewport]);
+  // remove legacy handleWheel (replaced by hook)
 
   // Global mouse event listeners for dragging
   useEffect(() => {
@@ -887,6 +862,23 @@ export default function CanvasArea({
                 id: `edge-${connectionStart}-${targetNodeId}-${Date.now()}`,
                 source: connectionStart,
                 target: targetNodeId,
+                data: {
+                  sourceAnchor: (connectionStartAnchor as any) || 'right',
+                  targetAnchor: (() => {
+                    const sourceNode = nodes.find(n => n.id === connectionStart);
+                    const targetNode = nodes.find(n => n.id === targetNodeId);
+                    if (sourceNode && targetNode) {
+                      const src = sourceNode.position;
+                      const tgt = targetNode.position;
+                      const isVertical = connectionStartAnchor === 'top' || connectionStartAnchor === 'bottom';
+                      if (isVertical) {
+                        return tgt.y >= src.y ? 'top' : 'bottom';
+                      }
+                      return 'left';
+                    }
+                    return 'left';
+                  })()
+                }
               };
               
               console.log(`Creating new edge:`, newEdge);
@@ -929,6 +921,7 @@ export default function CanvasArea({
       setIsConnecting(false);
       setConnectionStart(null);
       setTemporaryConnection(null);
+      setConnectionStartAnchor(null as any);
       
       setIsPanning(false);
       setDraggedNodeId(null);
@@ -945,42 +938,76 @@ export default function CanvasArea({
     }
   }, [isPanning, panStart.x, panStart.y, lastPanPoint.x, lastPanPoint.y, draggedNodeId, viewport.x, viewport.y, viewport.zoom, isConnecting, connectionStart, temporaryConnection, edges, nodeDragStart.x, nodeDragStart.y, nodePositions, setConnectionStart, setDraggedNodeId, setEdges, setIsConnecting, setIsPanning, setNodePositions, setTemporaryConnection, setViewport, triggerSave]);
 
-  // Generate SVG path for edges with smooth bezier curves and proper connection points
-  const generatePath = useCallback((edge: FlowEdge): string => {
-    const sourceNode = nodes.find(n => n.id === edge.source);
-    const targetNode = nodes.find(n => n.id === edge.target);
-    
-    if (!sourceNode || !targetNode) {
-      return "";
+  // Edge geometry helper to support horizontal and vertical connections
+  const computeEdgeGeometry = useCallback((edge: FlowEdge) => {
+    const nodeList = isReadOnly ? (renderNodes as FlowNode[]) : nodes;
+    const currentEdges = (isReadOnly ? (flowData?.edges || []) : edges) as FlowEdge[];
+    const sourceNode = nodeList.find(n => n.id === edge.source);
+    const targetNode = nodeList.find(n => n.id === edge.target);
+    if (!sourceNode || !targetNode) return null;
+
+    const measureNodeSize = (id: string) => {
+      const el = document.querySelector(`[data-node-id="${id}"]`) as HTMLElement | null;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        return { width: rect.width / viewport.zoom, height: rect.height / viewport.zoom };
+      }
+      return { width: 160, height: 80 };
+    };
+    const srcSize = measureNodeSize(sourceNode.id);
+    const tgtSize = measureNodeSize(targetNode.id);
+
+    const sourceAnchor = ((edge.data as any)?.sourceAnchor as 'left' | 'right' | 'top' | 'bottom') || 'right';
+    const targetAnchor = ((edge.data as any)?.targetAnchor as 'left' | 'right' | 'top' | 'bottom') || 'left';
+
+    const getAnchorPoint = (n: FlowNode, a: 'left' | 'right' | 'top' | 'bottom') => {
+      const size = n.id === sourceNode.id ? srcSize : tgtSize;
+      switch (a) {
+        case 'left': return { x: n.position.x, y: n.position.y + size.height / 2 };
+        case 'right': return { x: n.position.x + size.width, y: n.position.y + size.height / 2 };
+        case 'top': return { x: n.position.x + size.width / 2, y: n.position.y };
+        case 'bottom': return { x: n.position.x + size.width / 2, y: n.position.y + size.height };
+      }
+    };
+
+    const { x: sourceX, y: sourceY } = getAnchorPoint(sourceNode, sourceAnchor);
+    const { x: targetX, y: targetY } = getAnchorPoint(targetNode, targetAnchor);
+
+    const isVertical = sourceAnchor === 'top' || sourceAnchor === 'bottom' || targetAnchor === 'top' || targetAnchor === 'bottom';
+
+    // Multi-connection offset: vertical edges offset horizontally, horizontal edges offset vertically
+    const connectionsFromSameAnchor = currentEdges.filter(e => e.source === edge.source && ((((e.data as any)?.sourceAnchor) || 'right') === sourceAnchor));
+    const connectionIndex = connectionsFromSameAnchor.findIndex(e => e.id === edge.id);
+    const offsetAmount = (connectionIndex - (connectionsFromSameAnchor.length - 1) / 2) * 15;
+    const offsetX = isVertical ? offsetAmount : 0;
+    const offsetY = isVertical ? 0 : offsetAmount;
+
+    if (!isVertical) {
+      const deltaX = targetX - sourceX;
+      const controlOffset = Math.max(Math.abs(deltaX) * 0.4, 50);
+      const control1X = sourceX + controlOffset;
+      const control1Y = sourceY + offsetY;
+      const control2X = targetX - controlOffset;
+      const control2Y = targetY;
+      const path = `M ${sourceX} ${sourceY} C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${targetX} ${targetY}`;
+      return { path, sourceX, sourceY, targetX, targetY, control1X, control1Y, control2X, control2Y };
+    } else {
+      const deltaY = targetY - sourceY;
+      const controlOffset = Math.max(Math.abs(deltaY) * 0.4, 50);
+      const control1X = sourceX + offsetX;
+      const control1Y = sourceY + (sourceAnchor === 'top' ? -controlOffset : controlOffset);
+      const control2X = targetX + offsetX;
+      const control2Y = targetY + (targetAnchor === 'top' ? -controlOffset : controlOffset);
+      const path = `M ${sourceX} ${sourceY} C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${targetX} ${targetY}`;
+      return { path, sourceX, sourceY, targetX, targetY, control1X, control1Y, control2X, control2Y };
     }
+  }, [nodes, edges, isReadOnly, renderNodes, flowData, viewport.zoom]);
 
-    // Standard node dimensions
-    const nodeWidth = 160;
-    const nodeHeight = 80;
-
-    // Connection points at the edges of the nodes (not center)
-    const sourceX = sourceNode.position.x + nodeWidth; // Right edge of source node
-    const sourceY = sourceNode.position.y + nodeHeight / 2;  // Center vertically
-    const targetX = targetNode.position.x;       // Left edge of target node  
-    const targetY = targetNode.position.y + nodeHeight / 2;  // Center vertically
-
-    // For multiple connections from same source, offset them vertically
-    const connectionsFromSource = edges.filter(e => e.source === edge.source);
-    const connectionIndex = connectionsFromSource.findIndex(e => e.id === edge.id);
-    const offsetY = (connectionIndex - (connectionsFromSource.length - 1) / 2) * 15;
-
-    // Calculate control points for smooth bezier curve
-    const deltaX = targetX - sourceX;
-    const controlOffset = Math.max(Math.abs(deltaX) * 0.4, 50);
-    
-    const control1X = sourceX + controlOffset;
-    const control1Y = sourceY + offsetY;
-    const control2X = targetX - controlOffset;
-    const control2Y = targetY;
-    
-    // Create smooth cubic bezier curve
-    return `M ${sourceX} ${sourceY + offsetY} C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${targetX} ${targetY}`;
-  }, [nodes, edges]);
+  // Generate SVG path string from geometry
+  const generatePath = useCallback((edge: FlowEdge): string => {
+    const geom = computeEdgeGeometry(edge);
+    return geom ? geom.path : "";
+  }, [computeEdgeGeometry]);
 
   // Handle edge deletion
   const handleEdgeDelete = useCallback((edgeId: string, e: React.MouseEvent) => {
@@ -1236,13 +1263,13 @@ export default function CanvasArea({
         ref={canvasRef}
         className="flex-1 relative overflow-hidden canvas-content min-w-0 min-h-0"
         style={{ 
-          cursor: isPanning ? 'grabbing' : (draggedNodeId ? 'move' : 'grab'),
+          cursor: draggedNodeId ? 'move' : 'grab',
           width: '100%',
           height: '100%'
         }}
         onMouseDown={!isReadOnly ? handleCanvasMouseDown : undefined}
         onMouseMove={!isReadOnly ? handleCanvasMouseMove : undefined}
-        onMouseUp={!isReadOnly ? handleCanvasMouseUp : undefined}
+        onMouseUp={undefined}
         onDoubleClick={!isReadOnly ? handleCanvasDoubleClick : undefined}
         onWheel={handleWheel}
         onDragOver={!isReadOnly ? handleDragOver : undefined}
@@ -1266,7 +1293,7 @@ export default function CanvasArea({
           className="absolute inset-0 w-full h-full" 
           style={{ 
             zIndex: 1,
-            pointerEvents: 'none'
+            pointerEvents: 'auto'
           }}
         >
           <defs>
@@ -1337,158 +1364,162 @@ export default function CanvasArea({
               return null;
             }
             
-            // Calculate precise midpoint using EXACT same logic as generatePath function
-            const nodeWidth = 160;
-            const nodeHeight = 80;
-            const sourceX = sourceNode.position.x + nodeWidth;
-            const sourceY = sourceNode.position.y + nodeHeight / 2;
-            const targetX = targetNode.position.x;
-            const targetY = targetNode.position.y + nodeHeight / 2;
-            
-            // IMPORTANT: Use exact same offsetY calculation as generatePath
-            const currentEdges = isReadOnly ? (flowData?.edges || []) : edges;
-            const connectionsFromSource = currentEdges.filter((e: FlowEdge) => e.source === edge.source);
-            const connectionIndex = connectionsFromSource.findIndex((e: FlowEdge) => e.id === edge.id);
-            const offsetY = (connectionIndex - (connectionsFromSource.length - 1) / 2) * 15;
-            
-            // IMPORTANT: Use exact same control point calculation as generatePath
-            const deltaX = targetX - sourceX;
-            const controlOffset = Math.max(Math.abs(deltaX) * 0.4, 50);
-            const control1X = sourceX + controlOffset;
-            const control1Y = sourceY + offsetY;
-            const control2X = targetX - controlOffset;
-            const control2Y = targetY;
-            
+            // Calculate precise midpoint using EXACT same logic as computeEdgeGeometry
+            const geom = computeEdgeGeometry(edge);
+            if (!geom) return null;
+            const { sourceX, sourceY, targetX, targetY, control1X, control1Y, control2X, control2Y } = geom;
             // Calculate the actual midpoint of the cubic bezier curve at t=0.5
             const t = 0.5;
             const midX = Math.pow(1-t, 3) * sourceX + 
                        3 * Math.pow(1-t, 2) * t * control1X + 
                        3 * (1-t) * Math.pow(t, 2) * control2X + 
                        Math.pow(t, 3) * targetX;
-            const midY = Math.pow(1-t, 3) * (sourceY + offsetY) + 
+            const midY = Math.pow(1-t, 3) * (sourceY) + 
                        3 * Math.pow(1-t, 2) * t * control1Y + 
                        3 * (1-t) * Math.pow(t, 2) * control2Y + 
                        Math.pow(t, 3) * targetY;
             
             return (
-              <g key={edge.id} data-edge={edge.id}>
+              <g key={edge.id} data-edge={edge.id} className="edge-group group">
                 <g transform={`translate(${viewport.x},${viewport.y}) scale(${viewport.zoom})`}>
                   {/* 배경 그림자 라인 */}
                   <path
                     d={path}
                     stroke="rgba(0,0,0,0.1)"
-                    strokeWidth={4 / viewport.zoom}
+                    strokeWidth={6 / viewport.zoom}
                     fill="none"
                     className="pointer-events-none"
+                  />
+                  {/* 호버 영역 확대를 위한 투명 라인 */}
+                  <path
+                    d={path}
+                    stroke="transparent"
+                    strokeWidth={Math.max(28, 28 / viewport.zoom)}
+                    fill="none"
+                    style={{ 
+                      pointerEvents: 'stroke',
+                      cursor: 'pointer',
+                      strokeLinecap: 'round',
+                      strokeLinejoin: 'round'
+                    }}
+                    ref={(el) => {
+                      if (el) {
+                        edgePathRefs.current.set(edge.id, el);
+                      } else {
+                        edgePathRefs.current.delete(edge.id);
+                      }
+                    }}
+                    onMouseEnter={() => {
+                      const pathEl = edgePathRefs.current.get(edge.id);
+                      if (pathEl) {
+                        try {
+                          const total = pathEl.getTotalLength();
+                          const p = pathEl.getPointAtLength(total / 2);
+                          setEdgeMidpoints(prev => ({ ...prev, [edge.id]: { x: p.x, y: p.y } }));
+                        } catch (e) {
+                          // no-op, fallback to computed midpoint
+                        }
+                      }
+                      setHoveredEdgeId(edge.id);
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredEdgeId(prev => (prev === edge.id ? null : prev));
+                    }}
                   />
                   {/* 메인 연결선 */}
                   <path
                     d={path}
                     stroke="url(#connectionGradient)"
-                    strokeWidth={2 / viewport.zoom}
+                    strokeWidth={3 / viewport.zoom}
                     fill="none"
                     markerEnd="url(#arrowhead)"
                     className="hover:stroke-[url(#tempConnectionGradient)] transition-all duration-300 hover:drop-shadow-lg"
                     style={{ 
-                      pointerEvents: 'stroke',
+                      pointerEvents: 'none',
                       filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))'
-                    }}
-                    onMouseEnter={() => {
-                      // Show delete button when hovering over connection line
-                      const deleteButton = document.querySelector(`[data-edge="${edge.id}"] .delete-button`);
-                      if (deleteButton) {
-                        (deleteButton as HTMLElement).style.opacity = '1';
-                      }
-                    }}
-                    onMouseLeave={() => {
-                      // Hide delete button when leaving connection line
-                      setTimeout(() => {
-                        const deleteButton = document.querySelector(`[data-edge="${edge.id}"] .delete-button`);
-                        if (deleteButton && !deleteButton.matches(':hover')) {
-                          (deleteButton as HTMLElement).style.opacity = '0';
-                        }
-                      }, 100);
                     }}
                   />
                 </g>
                 
-                {/* 연결선 삭제 버튼을 뷰포트 변환 내부에 배치 */}
+                {/* 연결선 삭제 버튼을 뷰포트 변환 내부에 배치 (호버 시 위치 고정) */}
                 <g transform={`translate(${viewport.x},${viewport.y}) scale(${viewport.zoom})`}>
-                  <g 
-                    className="delete-button opacity-0 hover:opacity-100 transition-opacity duration-200"
-                    style={{
-                      pointerEvents: 'all',
-                      cursor: 'pointer'
-                    }}
-                    transform={`translate(${midX}, ${midY})`}
-                    onMouseEnter={() => {
-                      // Force show on hover
-                      const target = document.querySelector(`[data-edge="${edge.id}"] .delete-button`);
-                      if (target) (target as HTMLElement).style.opacity = '1';
-                    }}
-                    onMouseLeave={() => {
-                      // Hide delete button when leaving button area
-                      const target = document.querySelector(`[data-edge="${edge.id}"] .delete-button`);
-                      if (target) (target as HTMLElement).style.opacity = '0';
-                    }}
-                    onClick={(e) => {
-                      console.log('🗑️ Delete button clicked for edge:', edge.id);
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleEdgeDelete(edge.id, e);
-                    }}
-                    onMouseDown={(e) => {
-                      console.log('🗑️ Delete button mouse down for edge:', edge.id);
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                  >
-                    {/* 클릭 영역 - 약간 더 작게 */}
-                    <circle
-                      cx={0}
-                      cy={0}
-                      r={10 / viewport.zoom}
-                      fill="transparent"
-                      style={{ 
-                        pointerEvents: 'all',
-                        cursor: 'pointer'
-                      }}
-                    />
-                    {/* 배경 원 - 더 작게 */}
-                    <circle
-                      cx={0}
-                      cy={0}
-                      r={8 / viewport.zoom}
-                      fill="white"
-                      stroke="#EF4444"
-                      strokeWidth={1.5 / viewport.zoom}
-                      style={{ 
-                        pointerEvents: 'none',
-                        filter: 'drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3))'
-                      }}
-                    />
-                    {/* X 아이콘 - 더 작고 정확한 크기 */}
-                    <g style={{ pointerEvents: 'none' }}>
-                      <line
-                        x1={-3 / viewport.zoom}
-                        y1={-3 / viewport.zoom}
-                        x2={3 / viewport.zoom}
-                        y2={3 / viewport.zoom}
-                        stroke="#EF4444"
-                        strokeWidth={1.5 / viewport.zoom}
-                        strokeLinecap="round"
-                      />
-                      <line
-                        x1={3 / viewport.zoom}
-                        y1={-3 / viewport.zoom}
-                        x2={-3 / viewport.zoom}
-                        y2={3 / viewport.zoom}
-                        stroke="#EF4444"
-                        strokeWidth={1.5 / viewport.zoom}
-                        strokeLinecap="round"
-                      />
-                    </g>
-                  </g>
+                  {(() => {
+                    const mid = edgeMidpoints[edge.id];
+                    const displayX = mid ? mid.x : midX;
+                    const displayY = mid ? mid.y : midY;
+                    return (
+                      <g transform={`translate(${displayX}, ${displayY})`}>
+                        <g 
+                          className="delete-button opacity-20 group-hover:opacity-100 hover:opacity-100 transition-opacity duration-200"
+                          style={{
+                            pointerEvents: 'all',
+                            cursor: 'pointer'
+                          }}
+                          onClick={(e) => {
+                            console.log('🗑️ Delete button clicked for edge:', edge.id);
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleEdgeDelete(edge.id, e);
+                          }}
+                          onMouseEnter={() => setHoveredEdgeId(edge.id)}
+                          onMouseLeave={() => setHoveredEdgeId(null)}
+                          onMouseDown={(e) => {
+                            console.log('🗑️ Delete button mouse down for edge:', edge.id);
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        >
+                          <g transform={`scale(${hoveredEdgeId === edge.id ? 1.1 : 1})`}>
+                            {/* 클릭 영역 - 더 넓게 */}
+                            <circle
+                              cx={0}
+                              cy={0}
+                              r={Math.max(14, 14 / viewport.zoom)}
+                              fill="transparent"
+                              style={{ 
+                                pointerEvents: 'all',
+                                cursor: 'pointer'
+                              }}
+                            />
+                            {/* 배경 원 - 최소 크기 보장 */}
+                            <circle
+                              cx={0}
+                              cy={0}
+                              r={Math.max(10, 10 / viewport.zoom)}
+                              fill="white"
+                              stroke="#EF4444"
+                              strokeWidth={Math.max(2, 2 / viewport.zoom)}
+                              style={{ 
+                                pointerEvents: 'none',
+                                filter: 'drop-shadow(0 2px 4px rgba(239, 68, 68, 0.3))'
+                              }}
+                            />
+                            {/* X 아이콘 - 더 명확하고 큰 크기 */}
+                            <g style={{ pointerEvents: 'none' }}>
+                              <line
+                                x1={Math.max(-4, -4 / viewport.zoom)}
+                                y1={Math.max(-4, -4 / viewport.zoom)}
+                                x2={Math.max(4, 4 / viewport.zoom)}
+                                y2={Math.max(4, 4 / viewport.zoom)}
+                                stroke="#EF4444"
+                                strokeWidth={Math.max(2, 2 / viewport.zoom)}
+                                strokeLinecap="round"
+                              />
+                              <line
+                                x1={Math.max(4, 4 / viewport.zoom)}
+                                y1={Math.max(-4, -4 / viewport.zoom)}
+                                x2={Math.max(-4, -4 / viewport.zoom)}
+                                y2={Math.max(4, 4 / viewport.zoom)}
+                                stroke="#EF4444"
+                                strokeWidth={Math.max(2, 2 / viewport.zoom)}
+                                strokeLinecap="round"
+                              />
+                            </g>
+                          </g>
+                        </g>
+                      </g>
+                    );
+                  })()}
                 </g>
               </g>
             );
@@ -1499,24 +1530,53 @@ export default function CanvasArea({
             const sourceNode = (isReadOnly ? renderNodes : nodes).find((n: FlowNode) => n.id === connectionStart);
             if (!sourceNode) return null;
             
-            // Standard node dimensions
-            const nodeWidth = 160;
-            const nodeHeight = 80;
+            // Measure actual node size
+            const el = document.querySelector(`[data-node-id="${connectionStart}"]`) as HTMLElement | null;
+            let nodeWidth = 160;
+            let nodeHeight = 80;
+            if (el) {
+              const rect = el.getBoundingClientRect();
+              nodeWidth = rect.width / viewport.zoom;
+              nodeHeight = rect.height / viewport.zoom;
+            }
             
-            const sourceX = sourceNode.position.x + nodeWidth; // Right edge of source node
-            const sourceY = sourceNode.position.y + nodeHeight / 2;  // Center vertically
+            // Determine start point based on anchor
+            const startAnchor = (connectionStartAnchor as any) || 'right';
+            let sourceX = sourceNode.position.x + nodeWidth;
+            let sourceY = sourceNode.position.y + nodeHeight / 2;
+            if (startAnchor === 'left') {
+              sourceX = sourceNode.position.x;
+              sourceY = sourceNode.position.y + nodeHeight / 2;
+            } else if (startAnchor === 'top') {
+              sourceX = sourceNode.position.x + nodeWidth / 2;
+              sourceY = sourceNode.position.y;
+            } else if (startAnchor === 'bottom') {
+              sourceX = sourceNode.position.x + nodeWidth / 2;
+              sourceY = sourceNode.position.y + nodeHeight;
+            }
             const targetX = temporaryConnection.x;
             const targetY = temporaryConnection.y;
             
             // Create a smooth bezier curve for temporary connection
-            const deltaX = targetX - sourceX;
-            const controlOffset = Math.max(Math.abs(deltaX) * 0.4, 50);
-            const control1X = sourceX + controlOffset;
-            const control1Y = sourceY;
-            const control2X = targetX - controlOffset;
-            const control2Y = targetY;
-            
-            const tempPath = `M ${sourceX} ${sourceY} C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${targetX} ${targetY}`;
+            const isVertical = startAnchor === 'top' || startAnchor === 'bottom';
+            let tempPath = '';
+            if (!isVertical) {
+              const deltaX = targetX - sourceX;
+              const controlOffset = Math.max(Math.abs(deltaX) * 0.4, 50);
+              const control1X = sourceX + controlOffset;
+              const control1Y = sourceY;
+              const control2X = targetX - controlOffset;
+              const control2Y = targetY;
+              tempPath = `M ${sourceX} ${sourceY} C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${targetX} ${targetY}`;
+            } else {
+              const deltaY = targetY - sourceY;
+              const controlOffset = Math.max(Math.abs(deltaY) * 0.4, 50);
+              const control1X = sourceX;
+              const control1Y = sourceY + (startAnchor === 'top' ? -controlOffset : controlOffset);
+              const control2X = targetX;
+              const control2Y = targetY + (startAnchor === 'top' ? -controlOffset : controlOffset);
+              tempPath = `M ${sourceX} ${sourceY} C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${targetX} ${targetY}`;
+            }
             
             return (
               <g transform={`translate(${viewport.x},${viewport.y}) scale(${viewport.zoom})`}>
@@ -1572,7 +1632,7 @@ export default function CanvasArea({
             transformOrigin: '0 0',
             width: '100%',
             height: '100%',
-            pointerEvents: 'auto'
+            pointerEvents: 'none'
           }}
         >
           {(() => {
@@ -1591,47 +1651,49 @@ export default function CanvasArea({
               });
               
               return (
-                <FunnelNode
-                  key={node.id}
-                  node={node}
-                  selected={selectedNodeId === node.id}
-                  feedbackSeverity={getNodeFeedbackSeverity(node.id)}
-                  onDoubleClick={!isReadOnly ? () => handleNodeDoubleClick(node.id) : undefined}
-                  onMouseDown={!isReadOnly ? (e) => handleNodeMouseDown(node.id, e) : undefined}
-                  onMouseUp={!isReadOnly ? () => handleNodeMouseUp(node.id) : undefined}
-                  isDragging={draggedNodeId === node.id}
-                  isConnectable={isConnecting && connectionStart !== node.id && !isReadOnly}
-                  onConnectionStart={!isReadOnly ? handleConnectionStart : undefined}
-                  onDelete={!isReadOnly ? handleNodeDelete : undefined}
-                  isReadOnly={isReadOnly}
-                  size={(node.data as any)?.size || "medium"}
-                />
+                <div key={node.id} style={{ pointerEvents: 'auto' }}>
+                  <FunnelNode
+                    node={node}
+                    selected={selectedNodeId === node.id}
+                    feedbackSeverity={getNodeFeedbackSeverity(node.id)}
+                    onDoubleClick={!isReadOnly ? () => handleNodeDoubleClick(node.id) : undefined}
+                    onMouseDown={!isReadOnly ? (e) => handleNodeMouseDown(node.id, e) : undefined}
+                    onMouseUp={!isReadOnly ? () => handleNodeMouseUp(node.id) : undefined}
+                    isDragging={draggedNodeId === node.id}
+                    isConnectable={isConnecting && connectionStart !== node.id && !isReadOnly}
+                    onConnectionStart={!isReadOnly ? handleConnectionStart : undefined}
+                    onDelete={!isReadOnly ? handleNodeDelete : undefined}
+                    isReadOnly={isReadOnly}
+                    size={(node.data as any)?.size || "medium"}
+                  />
+                </div>
               );
             });
           })()}
 
           {/* Text Memos */}
           {memos.map((memo) => (
-            <TextMemo
-              key={memo.id}
-              id={memo.id}
-              position={memo.position}
-              content={memo.content}
-              size={memo.size || { width: 280, height: 180 }}
-              isSelected={!isReadOnly && selectedMemoId === memo.id}
-              onUpdate={!isReadOnly ? updateMemo : () => {}}
-              onDelete={!isReadOnly ? deleteMemo : () => {}}
-              onSelect={(id) => {
-                if (!isReadOnly) {
-                  setSelectedMemoId(id);
-                  onNodeSelect(''); // Clear node selection
-                }
-              }}
-              onPositionChange={!isReadOnly ? updateMemoPosition : () => {}}
-              onSizeChange={!isReadOnly ? handleMemoSizeChange : () => {}}
-              viewport={viewport}
-              isReadOnly={isReadOnly}
-            />
+            <div key={memo.id} style={{ pointerEvents: 'auto' }}>
+              <TextMemo
+                id={memo.id}
+                position={memo.position}
+                content={memo.content}
+                size={memo.size || { width: 280, height: 180 }}
+                isSelected={!isReadOnly && selectedMemoId === memo.id}
+                onUpdate={!isReadOnly ? updateMemo : () => {}}
+                onDelete={!isReadOnly ? deleteMemo : () => {}}
+                onSelect={(id) => {
+                  if (!isReadOnly) {
+                    setSelectedMemoId(id);
+                    onNodeSelect(''); // Clear node selection
+                  }
+                }}
+                onPositionChange={!isReadOnly ? updateMemoPosition : () => {}}
+                onSizeChange={!isReadOnly ? handleMemoSizeChange : () => {}}
+                viewport={viewport}
+                isReadOnly={isReadOnly}
+              />
+            </div>
           ))}
         </div>
 

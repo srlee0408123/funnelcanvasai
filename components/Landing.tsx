@@ -16,7 +16,7 @@ export default function Landing() {
               </svg>
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-foreground">FunnelCanvas AI</h1>
+              <h1 className="text-3xl font-bold text-foreground">Canvas AI</h1>
               <p className="text-lg text-muted-foreground">AI-Powered Funnel Builder</p>
             </div>
           </div>

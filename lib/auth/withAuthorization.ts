@@ -19,6 +19,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { canAccessCanvas, canAccessWorkspace, type AccessRole } from '@/lib/auth/permissions';
+import { getCanvasAccessInfo } from '@/lib/auth/auth-service';
 
 type ResourceType = 'canvas' | 'workspace';
 
@@ -69,6 +70,12 @@ export function withAuthorization(options: AuthOptions, handler: AuthorizedHandl
       | Awaited<ReturnType<typeof canAccessWorkspace>>;
 
     if (options.resourceType === 'canvas') {
+      // 우선 중앙 접근 정보로 빠르게 판정
+      const access = await getCanvasAccessInfo(userId, resourceId);
+      if (!access.hasAccess) {
+        return NextResponse.json({ error: '접근 권한이 없습니다.' }, { status: 403 });
+      }
+      // 일부 호출부가 canvas 메타를 기대하므로 기존 함수로 최소 메타 포함 응답을 조합
       permissionCheck = await canAccessCanvas(userId, resourceId);
     } else if (options.resourceType === 'workspace') {
       permissionCheck = await canAccessWorkspace(userId, resourceId);

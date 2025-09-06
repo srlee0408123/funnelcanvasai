@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { withAuthorization } from '@/lib/auth/withAuthorization';
+import { getCanvasAccessInfo } from '@/lib/auth/auth-service';
 
 /**
  * 캔버스 채팅 메시지 API - 중앙 권한 레이어(HOF) 적용
@@ -40,6 +41,11 @@ const getChatMessages = async (
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
+
+    const access = await getCanvasAccessInfo(null, canvasId);
+    if (!access.hasAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const { data: messages, error } = await supabase
       .from('chat_messages')

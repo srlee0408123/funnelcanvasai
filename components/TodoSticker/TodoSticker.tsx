@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Plus, Check, Trash2, ChevronDown, ChevronUp, Circle, CheckCircle2 } from 'lucide-react';
+import { X, Plus, Check, Trash2, ChevronDown, ChevronUp, Circle } from 'lucide-react';
 import { Button } from '@/components/Ui/buttons';
 import { Input } from '@/components/Ui/form-controls';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -44,12 +44,48 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
   // Dragging state
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [position, setPosition] = useState({ x: 16, y: 16 }); // top-4 right-4 in pixels
+  const [position, setPosition] = useState(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        // 공통 키 사용 - 스티커와 토글이 동일한 위치 공유
+        const savedPosition = localStorage.getItem(`todo-position-${canvasId}`);
+        if (savedPosition) {
+          return JSON.parse(savedPosition);
+        }
+        // Legacy fallbacks: 기존 분리된 키들에서 마이그레이션
+        const legacyPosition =
+          localStorage.getItem(`todo-sticker-position-${canvasId}`) ||
+          localStorage.getItem(`todo-toggle-position-${canvasId}`);
+        if (legacyPosition) {
+          const parsed = JSON.parse(legacyPosition);
+          // 공통 키로 마이그레이션
+          localStorage.setItem(`todo-position-${canvasId}`, JSON.stringify(parsed));
+          return parsed;
+        }
+      }
+    } catch (_) {
+      // ignore and fallback
+    }
+    // Default position
+    return { x: 16, y: 16 };
+  });
   
   // Resizing state
   const [isResizing, setIsResizing] = useState(false);
   const [resizeOffset, setResizeOffset] = useState({ x: 0, y: 0 });
-  const [size, setSize] = useState({ width: 300, height: 400 });
+  const [size, setSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const savedSize = localStorage.getItem(`todo-size-${canvasId}`);
+      if (savedSize) {
+        try {
+          return JSON.parse(savedSize);
+        } catch (_) {
+          // ignore and use default
+        }
+      }
+    }
+    return { width: 300, height: 400 };
+  });
 
   // Realtime state
   const [optimisticTodos, setOptimisticTodos] = useState<TodoItem[]>([]);
@@ -408,26 +444,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
     }
   });
 
-  // Load position and size from localStorage on mount
-  useEffect(() => {
-    const savedPosition = localStorage.getItem(`todo-position-${canvasId}`);
-    if (savedPosition) {
-      try {
-        setPosition(JSON.parse(savedPosition));
-      } catch (error) {
-        console.error('Failed to load position:', error);
-      }
-    }
-    
-    const savedSize = localStorage.getItem(`todo-size-${canvasId}`);
-    if (savedSize) {
-      try {
-        setSize(JSON.parse(savedSize));
-      } catch (error) {
-        console.error('Failed to load size:', error);
-      }
-    }
-  }, [canvasId]);
+  // (Position and size are lazily initialized above to avoid initial jump/flicker)
 
   // Save position and size to localStorage whenever they change
   useEffect(() => {
@@ -676,12 +693,29 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
     };
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
+  // Global mouse event listeners for dragging
+  useEffect(() => {
+    if (!isDragging) return;
+    const mm = (e: MouseEvent) => handleMouseMove(e);
+    const mu = () => handleMouseUp();
+    document.addEventListener('mousemove', mm);
+    document.addEventListener('mouseup', mu);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+    return () => {
+      document.removeEventListener('mousemove', mm);
+      document.removeEventListener('mouseup', mu);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isDragging, handleMouseMove, handleMouseUp]);
+
   if (!isVisible) return null;
 
   return (
     <div 
-      className={`fixed z-50 bg-yellow-50 dark:bg-yellow-900 border-2 border-yellow-300 dark:border-yellow-700 rounded-lg shadow-lg transition-shadow ${
-        isDragging ? 'shadow-2xl scale-105' : isResizing ? 'shadow-xl' : 'shadow-lg'
+      className={`fixed z-50 todo-sticker-modern transition-all duration-200 ${
+        isDragging ? 'shadow-2xl scale-105' : isResizing ? 'shadow-xl' : 'shadow-xl'
       }`}
       style={{
         left: `${position.x}px`,
@@ -693,18 +727,18 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
     >
       {/* Header - Draggable area */}
       <div 
-        className={`flex items-center justify-between p-3 border-b border-yellow-300 dark:border-yellow-700 select-none ${
+        className={`todo-sticker-header flex items-center justify-between select-none ${
           isReadOnly ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
         }`}
         onMouseDown={handleMouseDown}
       >
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-yellow-400 rounded-full"></div>
-          <h3 className="font-medium text-yellow-800 dark:text-yellow-200">
+        <div className="flex items-center gap-3">
+          <div className="w-3 h-3 bg-amber-600 rounded-full shadow-sm"></div>
+          <h3 className="font-semibold todo-text-primary text-base">
             할일 체크리스트
           </h3>
           {totalCount > 0 && (
-            <span className="text-xs text-yellow-600 dark:text-yellow-400">
+            <span className="text-sm todo-text-secondary font-medium bg-amber-200 px-2 py-1 rounded-full">
               {completedCount}/{totalCount}
             </span>
           )}
@@ -713,7 +747,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 w-6 p-0 text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 dark:hover:text-yellow-200"
+            className="h-7 w-7 p-0 todo-text-secondary hover:bg-amber-200 rounded-full transition-colors"
             onClick={(e) => {
               e.stopPropagation();
               setIsCollapsed(!isCollapsed);
@@ -725,7 +759,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 w-6 p-0 text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 dark:hover:text-yellow-200"
+              className="h-7 w-7 p-0 todo-text-secondary hover:bg-amber-200 rounded-full transition-colors"
               onClick={(e) => {
                 e.stopPropagation();
                 console.log('🙈 Todo 스티커 숨기기 - Canvas:', canvasId);
@@ -741,23 +775,21 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
 
       {/* Content */}
       {!isCollapsed && (
-        <div className="p-3">
+        <div className="todo-sticker-content">
           {/* Add todo input - Only show in edit mode */}
           {!isReadOnly && (
-            <div className="flex gap-2 mb-3">
+            <div className="flex gap-3 mb-4">
               <Input
                 placeholder="새 할일 추가..."
                 value={newTodoText}
                 onChange={(e) => setNewTodoText(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && addTodo()}
-                className="text-sm bg-white dark:bg-white text-black dark:text-black border-yellow-300 dark:border-yellow-700 focus:border-yellow-500 dark:focus:border-yellow-500"
-                disabled={createTodoMutation.isPending}
+                className="text-sm bg-white border-amber-300 focus:border-amber-500 rounded-xl px-4 py-2 todo-text-primary placeholder:todo-text-muted"
               />
               <Button
                 onClick={addTodo}
                 size="sm"
-                className="bg-yellow-500 hover:bg-yellow-600 text-yellow-900 dark:text-yellow-100"
-                disabled={createTodoMutation.isPending}
+                className="bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-4 py-2 shadow-sm transition-all duration-200"
               >
                 <Plus className="w-4 h-4" />
               </Button>
@@ -765,21 +797,21 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
           )}
 
           {/* Todo list */}
-          <div className="space-y-3 overflow-y-auto" style={{ maxHeight: `${size.height - 150}px` }}>
+          <div className="space-y-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: `${size.height - 150}px` }}>
             {isLoading ? (
-              <p className="text-yellow-600 dark:text-yellow-400 text-sm text-center py-4">
+              <p className="todo-text-muted text-sm text-center py-8">
                 불러오는 중...
               </p>
             ) : totalCount === 0 ? (
-              <p className="text-yellow-600 dark:text-yellow-400 text-sm text-center py-4">
+              <p className="todo-text-muted text-sm text-center py-8">
                 아직 할일이 없습니다
               </p>
             ) : (
               <>
                 {/* 미완료 할일 섹션 */}
                 {incompleteTodos.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-300 border-b border-yellow-300/50 dark:border-yellow-600/50 pb-1">
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-semibold todo-text-secondary border-b border-amber-300 pb-2">
                       진행중 ({incompleteTodos.length})
                     </h4>
                     {incompleteTodos.map((todo) => {
@@ -790,49 +822,51 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
                       return (
                       <div
                         key={todo.id}
-                        className={`flex items-center gap-2 p-2 rounded border bg-white dark:bg-gray-100 border-yellow-300 dark:border-yellow-700 transition-all ${
+                        className={`todo-item-modern ${
                           isPending ? 'opacity-60 pointer-events-none' : ''
                         }`}
                       >
-                        <button
-                          onClick={!isReadOnly ? () => toggleTodo(todo.id) : undefined}
-                          className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors border-yellow-400 dark:border-yellow-600 hover:border-yellow-500 ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
-                          disabled={updateTodoMutation.isPending || isReadOnly}
-                        >
-                          {todo.completed && <Check className="w-3 h-3" />}
-                        </button>
-                        {editingTodoId === todo.id ? (
-                          <Input
-                            value={editingText}
-                            onChange={(e) => setEditingText(e.target.value)}
-                            onKeyDown={handleEditKeyPress}
-                            onBlur={saveEditing}
-                            autoFocus
-                            className="flex-1 text-sm h-auto py-1 px-2 bg-white dark:bg-white text-black dark:text-black border-yellow-400 dark:border-yellow-600 focus:border-yellow-500"
-                          />
-                        ) : (
-                          <div className="flex items-center gap-2 flex-1">
-                            <Circle className="w-3 h-3 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
-                            <span 
-                              className="text-sm text-yellow-800 dark:text-yellow-200 cursor-pointer hover:bg-yellow-200/30 dark:hover:bg-yellow-800/30 px-1 py-0.5 rounded transition-colors"
-                              onDoubleClick={() => startEditing(todo)}
-                              title="더블클릭하여 수정"
-                            >
-                              {todo.text}
-                            </span>
-                          </div>
-                        )}
-                        {!isReadOnly && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 text-yellow-600 hover:text-red-600 dark:text-yellow-400 dark:hover:text-red-400"
-                            onClick={() => deleteTodo(todo.id)}
-                            disabled={deleteTodoMutation.isPending}
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={!isReadOnly ? () => toggleTodo(todo.id) : undefined}
+                            className={`todo-checkbox-modern ${isReadOnly ? 'cursor-default' : ''}`}
+                            disabled={updateTodoMutation.isPending || isReadOnly}
                           >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        )}
+                            {todo.completed && <Check className="w-3 h-3" />}
+                          </button>
+                          {editingTodoId === todo.id ? (
+                            <Input
+                              value={editingText}
+                              onChange={(e) => setEditingText(e.target.value)}
+                              onKeyDown={handleEditKeyPress}
+                              onBlur={saveEditing}
+                              autoFocus
+                              className="flex-1 text-sm bg-white border-amber-300 focus:border-amber-500 rounded-lg px-3 py-2 todo-text-primary"
+                            />
+                          ) : (
+                            <div className="flex items-center gap-2 flex-1">
+                              <Circle className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                              <span 
+                                className="text-sm todo-text-primary cursor-pointer hover:bg-amber-100 px-2 py-1 rounded-lg transition-colors flex-1"
+                                onDoubleClick={() => startEditing(todo)}
+                                title="더블클릭하여 수정"
+                              >
+                                {todo.text}
+                              </span>
+                            </div>
+                          )}
+                          {!isReadOnly && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 todo-text-muted hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                              onClick={() => deleteTodo(todo.id)}
+                              disabled={deleteTodoMutation.isPending}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                       );
                     })}
@@ -841,15 +875,15 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
 
                 {/* 완료된 할일 섹션 */}
                 {completedTodos.length > 0 && (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-medium text-yellow-700 dark:text-yellow-400 border-b border-yellow-300/50 dark:border-yellow-600/50 pb-1 flex-1">
+                      <h4 className="text-sm font-semibold todo-text-secondary border-b border-amber-300 pb-2 flex-1">
                         완료됨 ({completedTodos.length})
                       </h4>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 dark:hover:text-yellow-200 ml-2"
+                        className="h-7 w-7 p-0 todo-text-secondary hover:bg-amber-200 rounded-full transition-colors ml-2"
                         onClick={() => setShowCompleted(!showCompleted)}
                       >
                         {showCompleted ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -866,49 +900,50 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
                           return (
                           <div
                             key={todo.id}
-                            className={`flex items-center gap-2 p-2 rounded border bg-yellow-100 dark:bg-yellow-200 border-yellow-400 dark:border-yellow-600 transition-all opacity-90 ${
+                            className={`todo-item-modern todo-item-completed ${
                               isPending ? 'opacity-40 pointer-events-none' : ''
                             }`}
                           >
-                            <button
-                              onClick={!isReadOnly ? () => toggleTodo(todo.id) : undefined}
-                              className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors bg-yellow-500 border-yellow-500 text-primary-foreground ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
-                              disabled={updateTodoMutation.isPending || isReadOnly}
-                            >
-                              <Check className="w-3 h-3" />
-                            </button>
-                            {editingTodoId === todo.id ? (
-                              <Input
-                                value={editingText}
-                                onChange={(e) => setEditingText(e.target.value)}
-                                onKeyDown={handleEditKeyPress}
-                                onBlur={saveEditing}
-                                autoFocus
-                                className="flex-1 text-sm h-auto py-1 px-2 bg-white dark:bg-white text-black dark:text-black border-yellow-400 dark:border-yellow-600 focus:border-yellow-500"
-                              />
-                            ) : (
-                              <div className="flex items-center gap-2 flex-1">
-                                <CheckCircle2 className="w-3 h-3 text-green-600 dark:text-green-400 flex-shrink-0" />
-                                <span 
-                                  className="text-sm line-through text-yellow-600 dark:text-yellow-400 cursor-pointer hover:bg-yellow-200/30 dark:hover:bg-yellow-800/30 px-1 py-0.5 rounded transition-colors"
-                                  onDoubleClick={() => startEditing(todo)}
-                                  title="더블클릭하여 수정"
-                                >
-                                  {todo.text}
-                                </span>
-                              </div>
-                            )}
-                            {!isReadOnly && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0 text-yellow-600 hover:text-red-600 dark:text-yellow-400 dark:hover:text-red-400"
-                                onClick={() => deleteTodo(todo.id)}
-                                disabled={deleteTodoMutation.isPending}
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={!isReadOnly ? () => toggleTodo(todo.id) : undefined}
+                                className={`todo-checkbox-modern todo-checkbox-completed ${isReadOnly ? 'cursor-default' : ''}`}
+                                disabled={updateTodoMutation.isPending || isReadOnly}
                               >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            )}
+                                <Check className="w-3 h-3" />
+                              </button>
+                              {editingTodoId === todo.id ? (
+                                <Input
+                                  value={editingText}
+                                  onChange={(e) => setEditingText(e.target.value)}
+                                  onKeyDown={handleEditKeyPress}
+                                  onBlur={saveEditing}
+                                  autoFocus
+                                  className="flex-1 text-sm bg-white border-amber-300 focus:border-amber-500 rounded-lg px-3 py-2 todo-text-primary"
+                                />
+                              ) : (
+                                <div className="flex items-center gap-2 flex-1">
+                                  <span 
+                                    className="text-sm line-through todo-text-muted cursor-pointer hover:bg-amber-100 px-2 py-1 rounded-lg transition-colors flex-1"
+                                    onDoubleClick={() => startEditing(todo)}
+                                    title="더블클릭하여 수정"
+                                  >
+                                    {todo.text}
+                                  </span>
+                                </div>
+                              )}
+                              {!isReadOnly && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 todo-text-muted hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                                  onClick={() => deleteTodo(todo.id)}
+                                  disabled={deleteTodoMutation.isPending}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              )}
+                            </div>
                           </div>
                           );
                         })}
@@ -922,14 +957,14 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
 
           {/* Progress bar */}
           {totalCount > 0 && (
-            <div className="mt-3 pt-2 border-t border-yellow-300 dark:border-yellow-700">
-              <div className="w-full bg-yellow-200 dark:bg-yellow-300 rounded-full h-2">
+            <div className="mt-4 pt-4 border-t border-amber-300">
+              <div className="todo-progress-bar">
                 <div
-                  className="bg-yellow-500 dark:bg-yellow-600 h-2 rounded-full transition-all duration-300"
+                  className="todo-progress-fill"
                   style={{ width: `${(completedCount / totalCount) * 100}%` }}
                 ></div>
               </div>
-              <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1 text-center">
+              <p className="text-sm todo-text-secondary mt-3 text-center font-medium">
                 {completedCount === totalCount && totalCount > 0
                   ? '🎉 모든 할일을 완료했습니다!'
                   : `${Math.round((completedCount / totalCount) * 100)}% 완료`
@@ -943,7 +978,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       {/* Resize handle - Only show in edit mode */}
       {!isReadOnly && (
         <div
-          className="absolute bottom-0 right-0 w-4 h-4 cursor-nw-resize bg-yellow-400 dark:bg-yellow-600 opacity-70 hover:opacity-100 transition-opacity"
+          className="absolute bottom-0 right-0 w-4 h-4 cursor-nw-resize bg-amber-500 opacity-60 hover:opacity-100 transition-opacity rounded-tl-lg"
           style={{
             clipPath: 'polygon(100% 0, 0 100%, 100% 100%)'
           }}
@@ -957,7 +992,27 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
 
 // Show/Hide button for when the sticker is hidden
 export function TodoStickerToggle({ canvasId, onShow }: { canvasId: string; onShow: () => void }) {
-  const [position, setPosition] = useState({ x: 16, y: 16 });
+  const [position, setPosition] = useState(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        // 스티커와 동일한 공통 키 사용 - 같은 위치 공유
+        const savedPosition = localStorage.getItem(`todo-position-${canvasId}`);
+        if (savedPosition) {
+          return JSON.parse(savedPosition);
+        }
+        // Legacy fallback: 기존 분리된 키에서 마이그레이션
+        const legacy = localStorage.getItem(`todo-toggle-position-${canvasId}`);
+        if (legacy) {
+          const parsed = JSON.parse(legacy);
+          localStorage.setItem(`todo-position-${canvasId}`, JSON.stringify(parsed));
+          return parsed;
+        }
+      }
+    } catch (_) {
+      // ignore and fallback
+    }
+    return { x: 16, y: 16 };
+  });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [clickPrevented, setClickPrevented] = useState(false);
@@ -969,18 +1024,9 @@ export function TodoStickerToggle({ canvasId, onShow }: { canvasId: string; onSh
     enabled: !!canvasId
   });
 
-  useEffect(() => {
-    const savedPosition = localStorage.getItem(`todo-position-${canvasId}`);
-    if (savedPosition) {
-      try {
-        setPosition(JSON.parse(savedPosition));
-      } catch (error) {
-        setPosition({ x: 16, y: 16 });
-      }
-    }
-  }, [canvasId]);
+  // Position is lazily initialized above
 
-  // Save position to localStorage whenever it changes
+  // Save position to localStorage whenever it changes - 스티커와 동일한 키 사용
   useEffect(() => {
     localStorage.setItem(`todo-position-${canvasId}`, JSON.stringify(position));
   }, [position, canvasId]);
@@ -1050,15 +1096,19 @@ export function TodoStickerToggle({ canvasId, onShow }: { canvasId: string; onSh
       onClick={handleClick}
       onMouseDown={handleMouseDown}
       size="sm"
-      className={`fixed z-40 bg-yellow-500 hover:bg-yellow-600 text-yellow-900 shadow-lg transition-shadow ${
-        isDragging ? 'shadow-2xl cursor-grabbing' : 'cursor-grab'
+      className={`fixed z-40 bg-amber-500 hover:bg-amber-600 text-white shadow-xl rounded-2xl px-4 py-2 font-semibold transition-all duration-200 ${
+        isDragging ? 'shadow-2xl cursor-grabbing scale-105' : 'cursor-grab hover:scale-105'
       }`}
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`
       }}
     >
-      할일 {todos.length > 0 && `(${todos.length})`}
+      할일 {todos.length > 0 && (
+        <span className="bg-amber-600 text-white px-2 py-0.5 rounded-full text-xs ml-1">
+          {todos.length}
+        </span>
+      )}
     </Button>
   );
 }

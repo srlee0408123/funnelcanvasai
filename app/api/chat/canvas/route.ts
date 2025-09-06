@@ -15,7 +15,7 @@ import { buildSystemPrompt, formatChatHistory } from '@/services/rag';
  * 기능:
  * 1. 캔버스 지식 베이스 활용
  * 2. 웹 검색 결과 통합
- * 3. 마케팅 전문가 "두더지 AI" 페르소나
+ * 3. 마케팅 전문가 "Canvas AI" 페르소나
  * 4. 채팅 히스토리 저장
  */
 

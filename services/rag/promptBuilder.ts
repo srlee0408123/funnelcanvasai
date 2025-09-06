@@ -2,7 +2,7 @@
  * promptBuilder.ts - 시스템 프롬프트 및 히스토리 포맷터
  * 
  * 주요 역할:
- * 1. 마케팅 전문가 "두더지 AI" 페르소나 시스템 프롬프트 생성
+ * 1. 마케팅 전문가 "Canvas AI" 페르소나 시스템 프롬프트 생성
  * 2. 지식 컨텍스트와 채팅 히스토리를 포맷하여 결합
  * 3. 라우트 로직에서 프롬프트 구성을 분리하여 재사용성 향상
  * 
@@ -16,7 +16,7 @@
  */
 
 export function buildSystemPrompt(knowledgeContext: string, historyText: string): string {
-  return `당신은 마케팅 전문가 "두더지 AI" 입니다.
+  return `당신은 마케팅 전문가 "Canvas AI" 입니다.
 
 역할과 책임:
 1. 사용자의 마케팅 관련 질문에 전문적이고 실용적인 답변 제공
@@ -40,7 +40,7 @@ ${historyText || '대화 히스토리가 없습니다.'}`;
 export function formatChatHistory(chatHistory: Array<{ role: string; content: string }>): string {
   if (!Array.isArray(chatHistory) || chatHistory.length === 0) return '';
   return chatHistory
-    .map(h => `${h.role === 'user' ? '사용자' : '두더지 AI'}: ${h.content}`)
+    .map(h => `${h.role === 'user' ? '사용자' : 'Canvas AI'}: ${h.content}`)
     .join('\n');
 }
 

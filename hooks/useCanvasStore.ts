@@ -27,6 +27,7 @@ export interface Viewport {
 
 type Point = { x: number; y: number };
 type NodePositions = Record<string, Point>;
+type ConnectionAnchor = 'left' | 'right' | 'top' | 'bottom';
 
 interface CanvasStoreState {
   // Core
@@ -48,6 +49,7 @@ interface CanvasStoreState {
   isConnecting: boolean;
   connectionStart: string | null;
   temporaryConnection: Point | null;
+  connectionStartAnchor: ConnectionAnchor | null;
 
   // Actions
   setNodes: (nodes: FlowNode[]) => void;
@@ -72,6 +74,7 @@ interface CanvasStoreState {
   setIsConnecting: (v: boolean) => void;
   setConnectionStart: (id: string | null) => void;
   setTemporaryConnection: (p: Point | null) => void;
+  setConnectionStartAnchor: (a: ConnectionAnchor | null) => void;
 
   resetEphemeral: () => void;
   resetAll: () => void;
@@ -94,6 +97,7 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   isConnecting: false,
   connectionStart: null,
   temporaryConnection: null,
+  connectionStartAnchor: null,
 
   // Node actions
   setNodes: (nodes) => set({ nodes }),
@@ -137,6 +141,7 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   setIsConnecting: (v) => set({ isConnecting: v }),
   setConnectionStart: (id) => set({ connectionStart: id }),
   setTemporaryConnection: (p) => set({ temporaryConnection: p }),
+  setConnectionStartAnchor: (a) => set({ connectionStartAnchor: a }),
 
   // Reset helpers
   resetEphemeral: () =>
@@ -146,6 +151,7 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
       isConnecting: false,
       connectionStart: null,
       temporaryConnection: null,
+      connectionStartAnchor: null,
     }),
   resetAll: () =>
     set({
@@ -161,6 +167,7 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
       isConnecting: false,
       connectionStart: null,
       temporaryConnection: null,
+      connectionStartAnchor: null,
     }),
 }));
 

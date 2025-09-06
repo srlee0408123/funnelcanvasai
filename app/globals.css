@@ -56,6 +56,17 @@
     --todo-bg: rgb(254 240 138); /* yellow-100 */
     --todo-border: rgb(253 224 71); /* yellow-300 */
     
+    /* Todo 스티커 개선된 색상 시스템 */
+    --todo-sticker-bg: rgb(255 251 235); /* amber-50 */
+    --todo-sticker-border: rgb(251 191 36); /* amber-400 */
+    --todo-header-bg: rgb(252 211 77); /* amber-300 */
+    --todo-item-bg: rgb(254 243 199); /* amber-100 */
+    --todo-item-hover: rgb(253 230 138); /* amber-200 */
+    --todo-completed-bg: rgb(250 204 21); /* yellow-400 */
+    --todo-text-primary: rgb(146 64 14); /* amber-800 */
+    --todo-text-secondary: rgb(180 83 9); /* amber-700 */
+    --todo-text-muted: rgb(217 119 6); /* amber-600 */
+    
     /* 간격 시스템 */
     --spacing-xs: 0.25rem;
     --spacing-sm: 0.5rem;
@@ -155,6 +166,69 @@
     background-color: var(--todo-bg);
     border-color: var(--todo-border);
     @apply border-2 shadow-md rounded-lg p-3;
+  }
+  
+  /* 개선된 Todo 스티커 스타일 */
+  .todo-sticker-modern {
+    background-color: var(--todo-sticker-bg);
+    border-color: var(--todo-sticker-border);
+    @apply border-2 shadow-xl rounded-2xl overflow-hidden;
+  }
+  
+  .todo-sticker-header {
+    background-color: var(--todo-header-bg);
+    @apply px-4 py-3 border-b border-amber-300;
+  }
+  
+  .todo-sticker-content {
+    @apply p-4 space-y-3;
+  }
+  
+  .todo-item-modern {
+    background-color: var(--todo-item-bg);
+    @apply rounded-xl p-3 border border-amber-200 transition-all duration-200;
+  }
+  
+  .todo-item-modern:hover {
+    background-color: var(--todo-item-hover);
+    @apply shadow-sm;
+  }
+  
+  .todo-item-completed {
+    background-color: var(--todo-completed-bg);
+    @apply opacity-80;
+  }
+  
+  .todo-checkbox-modern {
+    @apply w-5 h-5 rounded-full border-2 border-amber-500 flex items-center justify-center transition-all duration-200 cursor-pointer;
+  }
+  
+  .todo-checkbox-modern:hover {
+    @apply border-amber-600 bg-amber-100;
+  }
+  
+  .todo-checkbox-completed {
+    @apply bg-amber-500 border-amber-500 text-white;
+  }
+  
+  .todo-text-primary {
+    color: var(--todo-text-primary);
+  }
+  
+  .todo-text-secondary {
+    color: var(--todo-text-secondary);
+  }
+  
+  .todo-text-muted {
+    color: var(--todo-text-muted);
+  }
+  
+  .todo-progress-bar {
+    @apply w-full bg-amber-200 rounded-full h-2;
+  }
+  
+  .todo-progress-fill {
+    @apply bg-amber-500 h-2 rounded-full transition-all duration-300;
   }
   
   /* 캔버스 그리드 라인 */

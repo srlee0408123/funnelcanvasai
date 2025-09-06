@@ -85,3 +85,4 @@ export const DELETE = withAuthorization({ resourceType: 'canvas', minRole: 'memb
 
 
 
+

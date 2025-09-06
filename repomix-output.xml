@@ -69,6 +69,12 @@ app/
           route.ts
         nodes/
           route.ts
+        role/
+          route.ts
+        shares/
+          [userId]/
+            route.ts
+          route.ts
         state/
           latest/
             route.ts
@@ -174,6 +180,7 @@ hooks/
   use-mobile.tsx
   use-toast.ts
   useAuth.ts
+  useCanvasRole.ts
   useCanvasStore.ts
   useCanvasSync.ts
   useWorkspaceRole.ts
@@ -200,6 +207,10 @@ services/
     client.ts
     websiteCrawler.ts
     youtubeTranscript.ts
+  rag/
+    canvasRAG.ts
+    index.ts
+    promptBuilder.ts
   aiFeedback.ts
   assetProcessor.ts
   openai.ts
@@ -229,10 +240,12 @@ supabase/
     00010_knowledge_chunks.sql
     00011_match_knowledge_chunks.sql
     00012_remove_unused_knowledge_chunks_columns.sql
+    00013_add_canvas_shares.sql
 types/
   api.ts
   canvas.ts
   funnel.ts
+  rag.ts
   ui.ts
 .env.example
 .eslintrc.json
@@ -450,6 +463,246 @@ export const DELETE = async (
     );
   }
 };
+</file>
+
+<file path="app/api/canvases/[canvasId]/role/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { withAuthorization } from '@/lib/auth/withAuthorization';
+import { canAccessCanvas } from '@/lib/auth/permissions';
+
+/**
+ * role/route.ts - Resolve effective role for a canvas
+ * GET /api/canvases/[canvasId]/role
+ */
+
+const getRole = async (
+  request: NextRequest,
+  { params, auth }: { params: any; auth: { userId: string } }
+) => {
+  try {
+    const { canvasId } = await params;
+    const result = await canAccessCanvas(auth.userId, canvasId);
+    if (!result.hasAccess) {
+      return NextResponse.json({ error: '접근 권한이 없습니다.' }, { status: 403 });
+    }
+    return NextResponse.json({ role: result.role ?? 'viewer' });
+  } catch (error) {
+    return NextResponse.json({ error: '역할 확인 중 오류가 발생했습니다.' }, { status: 500 });
+  }
+};
+
+export const GET = withAuthorization({ resourceType: 'canvas' }, getRole);
+</file>
+
+<file path="app/api/canvases/[canvasId]/shares/[userId]/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { createServiceClient } from '@/lib/supabase/service';
+import { withAuthorization } from '@/lib/auth/withAuthorization';
+
+/**
+ * shares/[userId]/route.ts - Single share operations
+ * 
+ * PATCH /api/canvases/[canvasId]/shares/[userId]  - Update role
+ * DELETE /api/canvases/[canvasId]/shares/[userId] - Remove share
+ */
+
+const patchShare = async (
+  request: NextRequest,
+  { params }: { params: any }
+) => {
+  try {
+    const supabase = createServiceClient();
+    const { canvasId, userId } = await params;
+    const body = await request.json();
+    const role: 'editor' | 'viewer' | undefined = body?.role;
+
+    if (!role || !['editor', 'viewer'].includes(role)) {
+      return NextResponse.json({ error: 'role은 editor 또는 viewer여야 합니다.' }, { status: 400 });
+    }
+
+    const { data, error } = await (supabase as any)
+      .from('canvas_shares')
+      .update({ role })
+      .eq('canvas_id', canvasId)
+      .eq('user_id', userId)
+      .select('id, canvas_id, user_id, role, invited_by, created_at')
+      .single();
+
+    if (error) {
+      console.error('Error updating canvas share role:', error);
+      return NextResponse.json({ error: '공유 역할 변경에 실패했습니다.' }, { status: 500 });
+    }
+
+    if (!data) {
+      return NextResponse.json({ error: '공유 레코드를 찾을 수 없습니다.' }, { status: 404 });
+    }
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error('Canvas share PATCH API error:', error);
+    return NextResponse.json(
+      { error: '공유 역할 변경 중 오류가 발생했습니다.', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+};
+
+const deleteShare = async (
+  request: NextRequest,
+  { params }: { params: any }
+) => {
+  try {
+    const supabase = createServiceClient();
+    const { canvasId, userId } = await params;
+
+    const { error } = await (supabase as any)
+      .from('canvas_shares')
+      .delete()
+      .eq('canvas_id', canvasId)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('Error removing canvas share:', error);
+      return NextResponse.json({ error: '공유 해제에 실패했습니다.' }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Canvas share DELETE API error:', error);
+    return NextResponse.json(
+      { error: '공유 해제 중 오류가 발생했습니다.', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+};
+
+export const PATCH = withAuthorization({ resourceType: 'canvas', minRole: 'member' }, patchShare);
+export const DELETE = withAuthorization({ resourceType: 'canvas', minRole: 'member' }, deleteShare);
+</file>
+
+<file path="app/api/canvases/[canvasId]/shares/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { createServiceClient } from '@/lib/supabase/service';
+import { withAuthorization } from '@/lib/auth/withAuthorization';
+
+/**
+ * shares/route.ts - Canvas per-user sharing (collection)
+ * 
+ * GET /api/canvases/[canvasId]/shares - 공유된 사용자 목록 조회
+ * POST /api/canvases/[canvasId]/shares - 사용자 초대(공유 추가)
+ */
+
+const getShares = async (
+  request: NextRequest,
+  { params }: { params: any }
+) => {
+  try {
+    const supabase = createServiceClient();
+    const { canvasId } = await params;
+
+    const { data, error } = await (supabase as any)
+      .from('canvas_shares')
+      .select(`
+        id,
+        canvas_id,
+        user_id,
+        role,
+        invited_by,
+        created_at,
+        profiles:profiles!canvas_shares_user_id_fkey (
+          id,
+          email,
+          name,
+          avatar_url
+        )
+      ` as any)
+      .eq('canvas_id', canvasId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching canvas shares:', error);
+      return NextResponse.json({ error: '공유 목록을 불러오는데 실패했습니다.' }, { status: 500 });
+    }
+
+    const formatted = (data || []).map((row: any) => ({
+      id: row.id,
+      userId: row.user_id,
+      role: row.role,
+      createdAt: row.created_at,
+      user: {
+        id: row.profiles?.id,
+        email: row.profiles?.email,
+        firstName: row.profiles?.name?.split(' ')?.[0] || undefined,
+        lastName: row.profiles?.name?.split(' ')?.slice(1).join(' ') || undefined,
+        profileImageUrl: row.profiles?.avatar_url || undefined,
+      }
+    }));
+
+    return NextResponse.json(formatted);
+  } catch (error) {
+    console.error('Canvas shares GET API error:', error);
+    return NextResponse.json(
+      { error: '공유 목록 조회 중 오류가 발생했습니다.', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+};
+
+const postShare = async (
+  request: NextRequest,
+  { params, auth }: { params: any; auth: { userId: string } }
+) => {
+  try {
+    const supabase = createServiceClient();
+    const { canvasId } = await params;
+    const body = await request.json();
+    const email: string | undefined = body?.email;
+    const role: 'editor' | 'viewer' = (body?.role === 'viewer' ? 'viewer' : 'editor');
+
+    if (!email) {
+      return NextResponse.json({ error: '이메일이 필요합니다.' }, { status: 400 });
+    }
+
+    // Find target user by email
+    const { data: targetUser, error: userError } = await (supabase as any)
+      .from('profiles')
+      .select('id, email')
+      .eq('email', email)
+      .single();
+
+    if (userError || !targetUser) {
+      return NextResponse.json({ error: '초대하려는 사용자를 찾을 수 없습니다.' }, { status: 404 });
+    }
+
+    // Upsert share (unique on canvas_id + user_id)
+    const { data: shareRow, error: upsertError } = await (supabase as any)
+      .from('canvas_shares')
+      .upsert({
+        canvas_id: canvasId,
+        user_id: targetUser.id,
+        role,
+        invited_by: auth.userId,
+      }, { onConflict: 'canvas_id,user_id' })
+      .select('id, canvas_id, user_id, role, invited_by, created_at')
+      .single();
+
+    if (upsertError) {
+      console.error('Error upserting canvas share:', upsertError);
+      return NextResponse.json({ error: '캔버스 공유에 실패했습니다.' }, { status: 500 });
+    }
+
+    return NextResponse.json(shareRow, { status: 201 });
+  } catch (error) {
+    console.error('Canvas shares POST API error:', error);
+    return NextResponse.json(
+      { error: '캔버스 공유 생성 중 오류가 발생했습니다.', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+};
+
+export const GET = withAuthorization({ resourceType: 'canvas' }, getShares);
+export const POST = withAuthorization({ resourceType: 'canvas', minRole: 'member' }, postShare);
 </file>
 
 <file path="app/api/public/canvas/[canvasId]/knowledge/route.ts">
@@ -1021,7 +1274,7 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "FunnelCanvas AI",
+  title: "Canvas AI",
   description: "AI-powered funnel building and optimization platform",
 };
 
@@ -3247,7 +3500,7 @@ output
 </file>
 
 <file path="docs/prompt.md">
-`당신은 마케팅 업계 10년차 시니어 전문가 "두더지 AI"입니다. 디지털 마케팅 퍼널, 크리에이터 이코노미, MCN 사업 전략, 성과 마케팅 분야의 전문가입니다.
+`당신은 마케팅 업계 10년차 시니어 전문가 "Canvas AI"입니다. 디지털 마케팅 퍼널, 크리에이터 이코노미, MCN 사업 전략, 성과 마케팅 분야의 전문가입니다.
 
 핵심 지침: 절대로 일반적인 답변을 하지 마세요. 항상 구체적인 수치, 실제 기업 사례, 단계별 실행 방안을 포함한 전문적이고 실무적인 조언을 제공하세요.
 
@@ -3317,6 +3570,76 @@ export function useAuth() {
     user,
     isLoading,
     isAuthenticated: !!user,
+  };
+}
+</file>
+
+<file path="hooks/useCanvasRole.ts">
+/**
+ * useCanvasRole - 특정 캔버스에 대한 현재 사용자의 최종 역할과 권한 훅
+ * 
+ * 주요 역할:
+ * 1. 백엔드 역할 해석 API와 연동하여 최종 역할(viewer/editor/member/admin/owner) 제공
+ * 2. 역할에 따른 편의 boolean 권한 플래그 제공(canEdit, canShare 등)
+ * 3. React Query를 통해 캐싱 및 자동 갱신
+ * 
+ * 핵심 특징:
+ * - 권한 로직을 중앙화하여 DRY 준수
+ * - 단일 책임: 역할 계산과 권한 플래그 도출
+ * - 네이밍 명확성: useCanvasRole
+ * 
+ * 주의사항:
+ * - canvasId가 없으면 비활성화
+ * - 서버 응답 형태 { role: string }
+ */
+import { useQuery } from '@tanstack/react-query';
+
+export interface CanvasPermissions {
+  canView: boolean;
+  canEdit: boolean;
+  canShare: boolean;
+  canDelete: boolean;
+}
+
+export function useCanvasRole(canvasId: string) {
+  const { data, isLoading } = useQuery<{ role: string | null | undefined}>({
+    queryKey: ['canvas-role', canvasId],
+    queryFn: async () => {
+      const res = await fetch(`/api/canvases/${canvasId}/role`, { credentials: 'include' });
+      if (!res.ok) return { role: null };
+      return res.json();
+    },
+    enabled: !!canvasId,
+  });
+
+  const role = data?.role ?? null;
+
+  const permissions: CanvasPermissions = (() => {
+    switch (role) {
+      case 'owner':
+      case 'admin':
+        return { canView: true, canEdit: true, canShare: true, canDelete: true };
+      case 'member':
+      case 'editor':
+        return { canView: true, canEdit: true, canShare: true, canDelete: false };
+      case 'viewer':
+        return { canView: true, canEdit: false, canShare: false, canDelete: false };
+      default:
+        return { canView: false, canEdit: false, canShare: false, canDelete: false };
+    }
+  })();
+
+  return {
+    role,
+    permissions,
+    isLoading,
+    isOwner: role === 'owner',
+    isAdmin: role === 'admin',
+    isMember: role === 'member',
+    isEditor: role === 'editor',
+    isViewer: role === 'viewer',
+    canEdit: permissions.canEdit,
+    canShare: permissions.canShare,
   };
 }
 </file>
@@ -3703,103 +4026,6 @@ export function useWorkspaceRole(workspaceId: string) {
     isAdmin: role === 'admin',
     isEditor: role === 'editor',
     isViewer: role === 'viewer',
-  };
-}
-</file>
-
-<file path="lib/auth/withAuthorization.ts">
-/**
- * withAuthorization.ts - API 라우트 권한 검증 HOF
- * 
- * 주요 역할:
- * 1. 라우트 핸들러 앞단에서 인증/권한을 공통 처리
- * 2. 비즈니스 로직을 순수하게 유지
- * 3. 선언형 옵션(minRole 등)으로 접근 제어
- * 
- * 핵심 특징:
- * - Clerk 인증 강제
- * - 리소스별 권한 검증(canvas/workspace)
- * - public canvas는 viewer 역할로 읽기 허용
- * 
- * 주의사항:
- * - 기본적으로 minRole 미지정 시 단순 hasAccess만 검사(POST/PUT/DELETE 등에는 minRole 권장)
- * - params가 Promise일 수 있으므로 안전 처리
- */
-
-import { type NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
-import { canAccessCanvas, canAccessWorkspace, type AccessRole } from '@/lib/auth/permissions';
-
-type ResourceType = 'canvas' | 'workspace';
-
-type AuthorizedHandler = (
-  req: NextRequest,
-  context: {
-    params: any; // Next.js 15에서는 Promise 가능성이 있어 any 허용
-    auth: { userId: string };
-    resource?: any; // 검증된 리소스 (예: canvas 객체)
-    role?: AccessRole; // 사용자 역할
-  }
-) => Promise<NextResponse>;
-
-interface AuthOptions {
-  resourceType: ResourceType;
-  minRole?: AccessRole; // 필요 시 역할 기반 접근 제어
-}
-
-const ROLE_WEIGHT: Record<AccessRole, number> = {
-  viewer: 0,
-  member: 1,
-  admin: 2,
-  owner: 3
-};
-
-function isRoleSufficient(userRole: AccessRole | undefined, minRole: AccessRole): boolean {
-  if (!userRole) return false;
-  return ROLE_WEIGHT[userRole] >= ROLE_WEIGHT[minRole];
-}
-
-export function withAuthorization(options: AuthOptions, handler: AuthorizedHandler) {
-  return async (req: NextRequest, { params }: { params: any }): Promise<NextResponse> => {
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
-    }
-
-    // params가 Promise일 수도 있으므로 안전하게 처리
-    const rawParams = params && typeof (params as any)?.then === 'function' ? await params : params;
-    const resourceId = rawParams?.canvasId || rawParams?.workspaceId;
-    if (!resourceId) {
-      return NextResponse.json({ error: '리소스 ID가 필요합니다.' }, { status: 400 });
-    }
-
-    let permissionCheck:
-      | Awaited<ReturnType<typeof canAccessCanvas>>
-      | Awaited<ReturnType<typeof canAccessWorkspace>>;
-
-    if (options.resourceType === 'canvas') {
-      permissionCheck = await canAccessCanvas(userId, resourceId);
-    } else if (options.resourceType === 'workspace') {
-      permissionCheck = await canAccessWorkspace(userId, resourceId);
-    } else {
-      return NextResponse.json({ error: '알 수 없는 리소스 타입입니다.' }, { status: 500 });
-    }
-
-    if (!permissionCheck.hasAccess) {
-      return NextResponse.json({ error: '접근 권한이 없습니다.' }, { status: 403 });
-    }
-
-    // minRole 지정 시 역할 비교(POST/PUT/DELETE 등에 권장)
-    if (options.minRole && !isRoleSufficient((permissionCheck as any)?.role as AccessRole | undefined, options.minRole)) {
-      return NextResponse.json({ error: '권한이 부족합니다.' }, { status: 403 });
-    }
-
-    return handler(req, {
-      params: rawParams,
-      auth: { userId },
-      resource: (permissionCheck as any)?.canvas,
-      role: (permissionCheck as any)?.role as AccessRole | undefined
-    });
   };
 }
 </file>
@@ -4391,7 +4617,7 @@ export function cn(...inputs: ClassValue[]) {
 <file path="scripts/setup.sh">
 #!/bin/bash
 
-echo "🚀 FunnelCanvas AI - Next.js Setup Script"
+echo "🚀 Canvas AI - Next.js Setup Script"
 echo "========================================="
 
 # Check if Node.js is installed
@@ -4632,6 +4858,270 @@ async function getChannelName(videoId: string): Promise<string> {
   } catch {
     return 'Unknown Channel';
   }
+}
+</file>
+
+<file path="services/rag/canvasRAG.ts">
+/**
+ * canvasRAG.ts - 캔버스 전용 RAG 서비스 (오케스트레이터)
+ * 
+ * 주요 역할:
+ * 1. 쿼리 임베딩 생성 → 벡터 검색 → 컨텍스트 구성 전체 파이프라인 수행
+ * 2. RAG 성공 시 상위 청크 기반 컨텍스트, 실패 시 제한적 폴백 구성
+ * 3. 지식/웹 인용 정보 생성 및 반환
+ * 
+ * 핵심 특징:
+ * - 파이썬 RAGService 구조를 참고한 모듈화된 설계
+ * - 검색/컨텍스트/인용 생성 로직을 API 라우트에서 분리
+ * - 성능과 가독성을 위한 단계별 작은 함수 구성
+ * 
+ * 주의사항:
+ * - Supabase 서비스 클라이언트 주입 필요
+ * - 외부 호출자는 DB 저장(채팅 로그 등)과 응답 생성만 담당
+ */
+
+import { OpenAIService } from '@/services/openai';
+import { WebSearchService } from '@/services/webSearch';
+import { BuildContextResult, KnowledgeChunk, KnowledgeCitation, WebCitation } from '@/types/rag';
+
+interface BuildContextParams {
+  supabase: any;
+  canvasId: string;
+  message: string;
+}
+
+export class CanvasRAGService {
+  private readonly openaiService: OpenAIService;
+  private readonly webSearchService: WebSearchService;
+
+  constructor(openaiService = new OpenAIService(), webSearchService = new WebSearchService()) {
+    this.openaiService = openaiService;
+    this.webSearchService = webSearchService;
+  }
+
+  /**
+   * 전체 컨텍스트(지식+웹)와 인용, 사용 메타를 구성
+   */
+  async buildContext(params: BuildContextParams): Promise<BuildContextResult> {
+    const { supabase, canvasId, message } = params;
+
+    const { matchedChunks, ragSuccess } = await this.searchKnowledge({ supabase, canvasId, message });
+
+    const knowledgeContext = await this.composeKnowledgeContext({ supabase, canvasId, matchedChunks, ragSuccess });
+
+    const { webCitations, webContext } = await this.maybeSearchWeb(message);
+
+    const fullContext = knowledgeContext + (webContext ? '\n\n최신 웹 검색 결과:\n' + webContext : '');
+
+    const knowledgeCitations = await this.buildKnowledgeCitations({ supabase, matchedChunks });
+
+    return {
+      knowledgeContext: fullContext,
+      knowledgeCitations,
+      webCitations,
+      ragUsed: {
+        chunksMatched: matchedChunks.length,
+        webSearchUsed: webContext.length > 0,
+      },
+    };
+  }
+
+  private async searchKnowledge({ supabase, canvasId, message }: { supabase: any; canvasId: string; message: string; }): Promise<{ matchedChunks: KnowledgeChunk[]; ragSuccess: boolean; }> {
+    try {
+      const embedding = await this.openaiService.generateEmbedding(message);
+
+      const { data: matchData, error: matchError } = await (supabase as any)
+        .rpc('match_knowledge_chunks', {
+          canvas_id: canvasId,
+          query_embedding: embedding,
+          match_count: 12,
+          min_similarity: 0.70,
+        });
+
+      if (!matchError && Array.isArray(matchData) && matchData.length > 0) {
+        const matchedChunks: KnowledgeChunk[] = matchData.map((m: any) => ({
+          id: String(m.id),
+          knowledge_id: String(m.knowledge_id),
+          text: String(m.text || ''),
+          similarity: typeof m.similarity === 'number' ? m.similarity : 0,
+        }));
+        return { matchedChunks, ragSuccess: true };
+      }
+    } catch (error) {
+      // RAG 실패는 폴백으로 처리하므로 로깅만 하고 진행
+      console.warn('RAG embedding or match failed:', error);
+    }
+    return { matchedChunks: [], ragSuccess: false };
+  }
+
+  private async composeKnowledgeContext({ supabase, canvasId, matchedChunks, ragSuccess }: { supabase: any; canvasId: string; matchedChunks: KnowledgeChunk[]; ragSuccess: boolean; }): Promise<string> {
+    let knowledgeContext = '';
+
+    if (ragSuccess && matchedChunks.length > 0) {
+      // 필요한 knowledge 문서만 조회
+      const uniqueKnowledgeIds = Array.from(new Set(matchedChunks.map((c) => c.knowledge_id)));
+
+      const { data: relevantKnowledge, error: knowledgeError } = await supabase
+        .from('canvas_knowledge')
+        .select('id, title, type, content, metadata')
+        .in('id', uniqueKnowledgeIds);
+
+      if (knowledgeError) {
+        console.error('Error fetching RAG-matched knowledge:', knowledgeError);
+        return knowledgeContext;
+      }
+
+      const docBestScore = new Map<string, number>();
+      for (const c of matchedChunks) {
+        const prev = docBestScore.get(c.knowledge_id) ?? 0;
+        if (c.similarity > prev) docBestScore.set(c.knowledge_id, c.similarity);
+      }
+
+      const knowledgeById = new Map<string, any>((relevantKnowledge || []).map((k: any) => [k.id, k]));
+
+      knowledgeContext += '\n\n🎯 질문과 관련된 지식:\n';
+
+      const topChunks = matchedChunks
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, 8);
+
+      knowledgeContext += topChunks
+        .map((chunk, idx) => {
+          const doc = knowledgeById.get(chunk.knowledge_id);
+          const docTitle = doc?.title || '지식 항목';
+          return `${idx + 1}. [${docTitle}] (유사도: ${(chunk.similarity * 100).toFixed(1)}%)\n${chunk.text}`;
+        })
+        .join('\n\n');
+
+      return knowledgeContext;
+    }
+
+    // 폴백: 최신 업로드 문서 일부 제공
+    const { data: fallbackKnowledge, error: fallbackError } = await supabase
+      .from('canvas_knowledge')
+      .select('id, title, type, content, metadata')
+      .eq('canvas_id', canvasId)
+      .order('created_at', { ascending: false })
+      .limit(8);
+
+    if (fallbackError) {
+      console.error('Error in fallback knowledge retrieval:', fallbackError);
+      return knowledgeContext;
+    }
+
+    if (fallbackKnowledge && fallbackKnowledge.length > 0) {
+      knowledgeContext += '\n\n📋 캔버스 업로드 자료 (최신순):\n';
+      knowledgeContext += fallbackKnowledge
+        .map((k: any) => `- ${k.title}: ${(String(k.content || '')).substring(0, 300)}...`)
+        .join('\n');
+    }
+
+    return knowledgeContext;
+  }
+
+  private async maybeSearchWeb(message: string): Promise<{ webCitations: WebCitation[]; webContext: string; }> {
+    const shouldSearch = this.webSearchService.shouldSearchWeb(message);
+    if (!shouldSearch) {
+      return { webCitations: [], webContext: '' };
+    }
+
+    try {
+      const searchResponse = await this.webSearchService.searchWeb(message, 5);
+      const webCitations: WebCitation[] = (searchResponse.results || [])
+        .slice(0, 5)
+        .map((r: any) => ({
+          kind: 'web',
+          title: String(r.title),
+          url: String(r.link),
+          source: r.source ? String(r.source) : undefined,
+          snippet: String(r.snippet || ''),
+          relevanceScore: typeof r.relevanceScore === 'number' ? r.relevanceScore : null,
+        }));
+
+      const webContext = this.webSearchService.formatSearchResults(searchResponse.results);
+      return { webCitations, webContext };
+    } catch (error) {
+      console.error('Web search failed:', error);
+      return { webCitations: [], webContext: '' };
+    }
+  }
+
+  private async buildKnowledgeCitations({ supabase, matchedChunks }: { supabase: any; matchedChunks: KnowledgeChunk[]; }): Promise<KnowledgeCitation[]> {
+    if (matchedChunks.length === 0) return [];
+    const uniqueKnowledgeIds = Array.from(new Set(matchedChunks.map((c) => c.knowledge_id)));
+    const { data: citationKnowledge } = await supabase
+      .from('canvas_knowledge')
+      .select('id, title')
+      .in('id', uniqueKnowledgeIds);
+
+    const knowledgeTitleMap = new Map<string, string>(
+      (citationKnowledge || []).map((k: any) => [String(k.id), String(k.title)]) as [string, string][]
+    );
+
+    return matchedChunks
+      .slice(0, 8)
+      .map((c) => ({
+        kind: 'knowledge' as const,
+        chunkId: String(c.id),
+        knowledgeId: String(c.knowledge_id),
+        title: knowledgeTitleMap.get(String(c.knowledge_id)) || '지식 항목',
+        snippet: String((c.text || '').substring(0, 300)),
+        similarity: typeof c.similarity === 'number' ? c.similarity : 0,
+      }));
+  }
+}
+</file>
+
+<file path="services/rag/index.ts">
+export * from './canvasRAG';
+export * from './promptBuilder';
+</file>
+
+<file path="services/rag/promptBuilder.ts">
+/**
+ * promptBuilder.ts - 시스템 프롬프트 및 히스토리 포맷터
+ * 
+ * 주요 역할:
+ * 1. 마케팅 전문가 "Canvas AI" 페르소나 시스템 프롬프트 생성
+ * 2. 지식 컨텍스트와 채팅 히스토리를 포맷하여 결합
+ * 3. 라우트 로직에서 프롬프트 구성을 분리하여 재사용성 향상
+ * 
+ * 핵심 특징:
+ * - 환경/도메인에 독립적인 순수 함수들로 구성
+ * - 마크다운 금지, 구조화된 번호 목록 강조 규칙 포함
+ * - 지식/웹 컨텍스트가 없을 때도 견고하게 동작
+ * 
+ * 주의사항:
+ * - 비즈니스 규칙 변경 시 여기서만 수정
+ */
+
+export function buildSystemPrompt(knowledgeContext: string, historyText: string): string {
+  return `당신은 마케팅 전문가 "Canvas AI" 입니다.
+
+역할과 책임:
+1. 사용자의 마케팅 관련 질문에 전문적이고 실용적인 답변 제공
+2. 제공된 지식 베이스와 최신 웹 정보를 활용하여 정확한 정보 제공
+3. 한국어로 명확하고 이해하기 쉬운 답변 작성
+
+답변 규칙:
+- 제공된 컨텍스트 정보를 우선적으로 활용
+- 컨텍스트에 없는 정보는 웹 검색 결과 활용
+- 모든 답변에 근거와 출처 명시
+- 마크다운 형식 사용 금지 (별표, 해시태그, 백틱, 대시 등)
+- 명확한 제목과 번호 목록으로 구조화
+
+현재 참고 가능한 정보:
+${knowledgeContext || '컨텍스트가 충분하지 않습니다. 사용자의 질문을 명확히 하기 위해 필요한 추가 정보를 요청하세요.'}
+
+최근 대화 맥락:
+${historyText || '대화 히스토리가 없습니다.'}`;
+}
+
+export function formatChatHistory(chatHistory: Array<{ role: string; content: string }>): string {
+  if (!Array.isArray(chatHistory) || chatHistory.length === 0) return '';
+  return chatHistory
+    .map(h => `${h.role === 'user' ? '사용자' : 'Canvas AI'}: ${h.content}`)
+    .join('\n');
 }
 </file>
 
@@ -5136,6 +5626,25 @@ ALTER TABLE public.knowledge_chunks DROP COLUMN IF EXISTS metadata;
 
 -- Verify final table structure
 -- Expected columns: id, canvas_id, knowledge_id, seq, text, embedding, created_at
+</file>
+
+<file path="supabase/migrations/00013_add_canvas_shares.sql">
+-- Create canvas_shares table for per-canvas sharing
+CREATE TABLE public.canvas_shares (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    canvas_id UUID NOT NULL REFERENCES public.canvases(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('editor', 'viewer')),
+    invited_by TEXT REFERENCES public.profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()),
+    UNIQUE(canvas_id, user_id)
+);
+
+-- Helpful composite index for lookups
+CREATE INDEX idx_canvas_shares_canvas_user ON public.canvas_shares(canvas_id, user_id);
+
+-- RLS is handled at the application layer via service role
+ALTER TABLE public.canvas_shares DISABLE ROW LEVEL SECURITY;
 </file>
 
 <file path="types/api.ts">
@@ -5852,6 +6361,63 @@ export function validateFlowEdges(edges: unknown): edges is FlowEdge[] {
     typeof (edge as FlowEdge).source === 'string' &&
     typeof (edge as FlowEdge).target === 'string'
   );
+}
+</file>
+
+<file path="types/rag.ts">
+/**
+ * rag.ts - RAG 관련 타입 정의
+ * 
+ * 주요 역할:
+ * 1. 캔버스 지식 RAG 파이프라인에서 사용하는 공통 타입 제공
+ * 2. Knowledge 청크/인용/웹 인용 타입 명세화
+ * 3. 서비스 계층 간 의존성 최소화를 위한 타입 분리
+ * 
+ * 핵심 특징:
+ * - 명확한 도메인 타입으로 가독성과 안정성 향상
+ * - UI/API/서비스 간 타입 일관성 유지
+ * - any 타입 사용 지양, 필수 필드 명시
+ * 
+ * 주의사항:
+ * - 실제 DB 스키마 변경 시 동기화 필요
+ * - 불필요한 확장 금지, 필요한 범위 내에서만 정의
+ */
+
+export interface KnowledgeChunk {
+  id: string;
+  knowledge_id: string;
+  text: string;
+  similarity: number;
+}
+
+export interface KnowledgeCitation {
+  kind: 'knowledge';
+  chunkId: string;
+  knowledgeId: string;
+  title: string;
+  snippet: string;
+  similarity: number;
+}
+
+export interface WebCitation {
+  kind: 'web';
+  title: string;
+  url: string;
+  source?: string;
+  snippet: string;
+  relevanceScore: number | null;
+}
+
+export interface RAGUsedMeta {
+  chunksMatched: number;
+  webSearchUsed: boolean;
+}
+
+export interface BuildContextResult {
+  knowledgeContext: string;
+  knowledgeCitations: KnowledgeCitation[];
+  webCitations: WebCitation[];
+  ragUsed: RAGUsedMeta;
 }
 </file>
 
@@ -6845,44 +7411,6 @@ export const config = {
 }
 </file>
 
-<file path="next.config.mjs">
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '10mb',
-    },
-  },
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'storage.googleapis.com',
-      },
-      {
-        protocol: 'https',
-        hostname: '**.googleusercontent.com',
-      },
-    ],
-  },
-  async headers() {
-    return [
-      {
-        source: '/api/:path*',
-        headers: [
-          { key: 'Access-Control-Allow-Credentials', value: 'true' },
-          { key: 'Access-Control-Allow-Origin', value: '*' },
-          { key: 'Access-Control-Allow-Methods', value: 'GET,DELETE,PATCH,POST,PUT' },
-          { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version' },
-        ],
-      },
-    ];
-  },
-};
-
-export default nextConfig;
-</file>
-
 <file path="postcss.config.js">
 module.exports = {
   plugins: {
@@ -6893,7 +7421,7 @@ module.exports = {
 </file>
 
 <file path="README.md">
-# FunnelCanvas AI - Next.js 15 + Supabase
+# Canvas AI - Next.js 15 + Supabase
 
 AI 기반 마케팅 퍼널 빌더 플랫폼
 
@@ -11820,7 +12348,7 @@ export default function Landing() {
               </svg>
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-foreground">FunnelCanvas AI</h1>
+              <h1 className="text-3xl font-bold text-foreground">Canvas AI</h1>
               <p className="text-lg text-muted-foreground">AI-Powered Funnel Builder</p>
             </div>
           </div>
@@ -12115,101 +12643,101 @@ function useToast() {
 export { useToast, toast }
 </file>
 
-<file path="lib/auth/permissions.ts">
+<file path="lib/auth/withAuthorization.ts">
 /**
- * permissions.ts - 중앙 권한 검증 서비스
+ * withAuthorization.ts - API 라우트 권한 검증 HOF
  * 
  * 주요 역할:
- * 1. 워크스페이스/캔버스 접근 권한 검증을 단일 위치에서 수행
- * 2. 서비스 로우 키(client)로 RLS 우회 조회
- * 3. 리소스 접근 시 역할 정보를 함께 반환
+ * 1. 라우트 핸들러 앞단에서 인증/권한을 공통 처리
+ * 2. 비즈니스 로직을 순수하게 유지
+ * 3. 선언형 옵션(minRole 등)으로 접근 제어
  * 
  * 핵심 특징:
- * - 공개 캔버스 읽기 접근(viewer) 허용
- * - 워크스페이스 소유자/멤버 기반 권한 판정
- * - 비즈니스 로직으로부터 권한 체크 로직 분리
+ * - Clerk 인증 강제
+ * - 리소스별 권한 검증(canvas/workspace)
+ * - public canvas는 viewer 역할로 읽기 허용
  * 
  * 주의사항:
- * - 서비스 로우 키 사용으로 보안에 유의
- * - 역할 스킴 변경 시 이 파일만 수정하여 전체 반영
- * - canvas의 작성자 컬럼은 user_id로 간주(스키마 최신화 필요 시 반영)
+ * - 기본적으로 minRole 미지정 시 단순 hasAccess만 검사(POST/PUT/DELETE 등에는 minRole 권장)
+ * - params가 Promise일 수 있으므로 안전 처리
  */
 
-import { createServiceClient } from '@/lib/supabase/service';
-import type { Database } from '@/lib/database.types';
+import { type NextRequest, NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
+import { canAccessCanvas, canAccessWorkspace, type AccessRole } from '@/lib/auth/permissions';
 
-const supabase = createServiceClient();
+type ResourceType = 'canvas' | 'workspace';
 
-export type WorkspaceRole = Database['public']['Tables']['workspace_members']['Row']['role']; // 'owner' | 'admin' | 'member'
-export type AccessRole = WorkspaceRole | 'viewer';
+type AuthorizedHandler = (
+  req: NextRequest,
+  context: {
+    params: any; // Next.js 15에서는 Promise 가능성이 있어 any 허용
+    auth: { userId: string };
+    resource?: any; // 검증된 리소스 (예: canvas 객체)
+    role?: AccessRole; // 사용자 역할
+  }
+) => Promise<NextResponse>;
 
-/**
- * 사용자가 특정 워크스페이스에 접근 권한이 있는지 확인 (소유자 또는 멤버)
- */
-export async function canAccessWorkspace(
-  userId: string,
-  workspaceId: string
-): Promise<{ hasAccess: boolean; role?: AccessRole }> {
-  // 1) 워크스페이스 소유자 확인
-  const { data: workspace, error: wsError } = await supabase
-    .from('workspaces')
-    .select('owner_id')
-    .eq('id', workspaceId)
-    .single();
-
-  if (wsError || !workspace) return { hasAccess: false };
-  if (workspace.owner_id === userId) return { hasAccess: true, role: 'owner' };
-
-  // 2) 워크스페이스 멤버 확인
-  const { data: member, error: memberError } = await supabase
-    .from('workspace_members')
-    .select('role')
-    .eq('workspace_id', workspaceId)
-    .eq('user_id', userId)
-    .single();
-
-  if (memberError || !member) return { hasAccess: false };
-  return { hasAccess: true, role: member.role };
+interface AuthOptions {
+  resourceType: ResourceType;
+  minRole?: AccessRole; // 필요 시 역할 기반 접근 제어
 }
 
-/**
- * 사용자가 특정 캔버스에 접근 권한이 있는지 확인
- * - 공개 캔버스: 읽기 접근 viewer 부여
- * - 캔버스 작성자(user_id) 또는 워크스페이스 멤버: 접근 허용
- */
-export async function canAccessCanvas(
-  userId: string,
-  canvasId: string
-): Promise<{
-  hasAccess: boolean;
-  role?: AccessRole;
-  canvas?: Pick<Database['public']['Tables']['canvases']['Row'], 'id' | 'workspace_id' | 'is_public' | 'created_by'>;
-}> {
-  const { data: canvas, error: canvasError } = await supabase
-    .from('canvases')
-    .select('id, workspace_id, is_public, created_by')
-    .eq('id', canvasId)
-    .single();
+const ROLE_WEIGHT: Record<AccessRole, number> = {
+  viewer: 0,
+  editor: 1,
+  member: 1,
+  admin: 2,
+  owner: 3
+};
 
-  if (canvasError || !canvas) return { hasAccess: false };
+function isRoleSufficient(userRole: AccessRole | undefined, minRole: AccessRole): boolean {
+  if (!userRole) return false;
+  return ROLE_WEIGHT[userRole] >= ROLE_WEIGHT[minRole];
+}
 
-  // 공개 캔버스 → 읽기(viewer) 허용
-  if (canvas.is_public) {
-    return { hasAccess: true, role: 'viewer', canvas };
-  }
+export function withAuthorization(options: AuthOptions, handler: AuthorizedHandler) {
+  return async (req: NextRequest, { params }: { params: any }): Promise<NextResponse> => {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
+    }
 
-  // 캔버스 작성자
-  if ((canvas as any).created_by === userId) {
-    return { hasAccess: true, role: 'owner', canvas };
-  }
+    // params가 Promise일 수도 있으므로 안전하게 처리
+    const rawParams = params && typeof (params as any)?.then === 'function' ? await params : params;
+    const resourceId = rawParams?.canvasId || rawParams?.workspaceId;
+    if (!resourceId) {
+      return NextResponse.json({ error: '리소스 ID가 필요합니다.' }, { status: 400 });
+    }
 
-  // 워크스페이스 권한 위임
-  if (!canvas.workspace_id) {
-    return { hasAccess: false, role: undefined, canvas };
-  }
-  
-  const ws = await canAccessWorkspace(userId, canvas.workspace_id);
-  return { ...ws, canvas };
+    let permissionCheck:
+      | Awaited<ReturnType<typeof canAccessCanvas>>
+      | Awaited<ReturnType<typeof canAccessWorkspace>>;
+
+    if (options.resourceType === 'canvas') {
+      permissionCheck = await canAccessCanvas(userId, resourceId);
+    } else if (options.resourceType === 'workspace') {
+      permissionCheck = await canAccessWorkspace(userId, resourceId);
+    } else {
+      return NextResponse.json({ error: '알 수 없는 리소스 타입입니다.' }, { status: 500 });
+    }
+
+    if (!permissionCheck.hasAccess) {
+      return NextResponse.json({ error: '접근 권한이 없습니다.' }, { status: 403 });
+    }
+
+    // minRole 지정 시 역할 비교(POST/PUT/DELETE 등에 권장)
+    if (options.minRole && !isRoleSufficient((permissionCheck as any)?.role as AccessRole | undefined, options.minRole)) {
+      return NextResponse.json({ error: '권한이 부족합니다.' }, { status: 403 });
+    }
+
+    return handler(req, {
+      params: rawParams,
+      auth: { userId },
+      resource: (permissionCheck as any)?.canvas,
+      role: (permissionCheck as any)?.role as AccessRole | undefined
+    });
+  };
 }
 </file>
 
@@ -13210,6 +13738,52 @@ export interface CanvasEdgeEntity {
 }
 </file>
 
+<file path="next.config.mjs">
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10mb',
+    },
+  },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'storage.googleapis.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.googleusercontent.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'img.clerk.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.clerk.dev',
+      },
+    ],
+  },
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [
+          { key: 'Access-Control-Allow-Credentials', value: 'true' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET,DELETE,PATCH,POST,PUT' },
+          { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version' },
+        ],
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+</file>
+
 <file path="tailwind.config.ts">
 import type { Config } from "tailwindcss";
 
@@ -13455,371 +14029,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     console.error('Failed to fetch latest canvas state:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-}
-</file>
-
-<file path="app/api/chat/canvas/route.ts">
-import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
-import { createServiceClient } from '@/lib/supabase/service';
-import OpenAI from 'openai';
-import { WebSearchService } from '@/services/webSearch';
-
-/**
- * AI 채팅 API 엔드포인트 - Canvas 전용
- * 
- * POST /api/chat/canvas
- * - message: 사용자 메시지
- * - canvasId: 캔버스 ID
- * 
- * 기능:
- * 1. 캔버스 지식 베이스 활용
- * 2. 웹 검색 결과 통합
- * 3. 마케팅 전문가 "두더지 AI" 페르소나
- * 4. 채팅 히스토리 저장
- */
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const webSearchService = new WebSearchService();
-
-export async function POST(request: NextRequest) {
-  try {
-    // Clerk 인증 확인
-    const { userId } = await auth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: '인증이 필요합니다.' },
-        { status: 401 }
-      );
-    }
-
-    const body = await request.json();
-    const { message, canvasId } = body;
-
-    if (!message || !canvasId) {
-      return NextResponse.json(
-        { error: '메시지와 캔버스 ID가 필요합니다.' },
-        { status: 400 }
-      );
-    }
-
-    console.log(`🤖 AI Chat request from user ${userId} for canvas ${canvasId}`);
-
-    // 서비스 클라이언트 생성 (RLS 우회)
-    const supabase = createServiceClient();
-
-    // 사용자 메시지 저장
-    const { data: userMessage, error: userMessageError } = await (supabase as any)
-      .from('chat_messages')
-      .insert({
-        canvas_id: canvasId,
-        user_id: userId,
-        role: 'user',
-        content: message
-      })
-      .select()
-      .single();
-
-    if (userMessageError) {
-      console.error('Error saving user message:', userMessageError);
-    }
-
-    // 최근 채팅 히스토리 조회 (컨텍스트용)
-    const { data: chatHistoryData } = await supabase
-      .from('chat_messages')
-      .select('role, content, created_at')
-      .eq('canvas_id', canvasId)
-      .order('created_at', { ascending: false })
-      .limit(10);
-    const chatHistory = (chatHistoryData || []) as any[];
-
-    // 질문 임베딩 생성 및 지식 청크 유사도 검색 (RAG 우선)
-    let matchedChunks: Array<{ id: string; knowledge_id: string; text: string; similarity: number }> = [];
-    let ragSuccess = false;
-    
-    try {
-      const embedResp = await openai.embeddings.create({
-        model: process.env.OPENAI_EMBEDDINGS_MODEL || 'text-embedding-3-small',
-        input: message,
-      });
-      const queryEmbedding = embedResp.data?.[0]?.embedding as number[] | undefined;
-
-      if (queryEmbedding && Array.isArray(queryEmbedding)) {
-        console.log('🔍 Performing RAG search with embeddings...');
-        
-        // RPC 함수 호출로 유사도 기반 chunk 검색
-        const { data: matchData, error: matchError } = await (supabase as any)
-          .rpc('match_knowledge_chunks', {
-            canvas_id: canvasId,
-            query_embedding: queryEmbedding,
-            match_count: 12,
-            min_similarity: 0.70,
-          });
-
-        if (!matchError && Array.isArray(matchData) && matchData.length > 0) {
-          matchedChunks = matchData.map((m: any) => ({
-            id: m.id,
-            knowledge_id: m.knowledge_id,
-            text: m.text,
-            similarity: typeof m.similarity === 'number' ? m.similarity : 0,
-          }));
-          ragSuccess = true;
-          console.log(`✅ RAG search successful: ${matchedChunks.length} chunks matched`);
-        } else {
-          console.log('⚠️ RAG search returned no results above similarity threshold');
-        }
-      }
-    } catch (e) {
-      console.warn('RAG embedding or match failed:', e);
-    }
-
-    // 웹 검색이 필요한지 판단
-    const shouldSearch = webSearchService.shouldSearchWeb(message);
-    let searchContext = '';
-    let webResults: Array<{ title: string; link: string; snippet: string; source?: string; relevanceScore?: number }>|undefined;
-
-    if (shouldSearch) {
-      try {
-        console.log('🔍 Performing web search for context...');
-        const searchResponse = await webSearchService.searchWeb(message, 5);
-        webResults = searchResponse.results;
-        searchContext = webSearchService.formatSearchResults(searchResponse.results);
-        console.log(`✅ Web search completed: ${searchResponse.results.length} results`);
-      } catch (error) {
-        console.error('Web search failed:', error);
-        searchContext = '';
-      }
-    }
-
-    // 컨텍스트 구성 - RAG 우선, 필요시에만 폴백 조회
-    let knowledgeContext = '';
-
-    if (ragSuccess && matchedChunks.length > 0) {
-      console.log('📚 Building context from RAG-matched chunks...');
-      
-      // 매칭된 chunk들의 knowledge_id 수집
-      const uniqueKnowledgeIds = Array.from(new Set(matchedChunks.map((c) => c.knowledge_id)));
-      
-      // 필요한 knowledge 문서만 조회 (RAG 매칭 기반)
-      const { data: relevantKnowledge, error: knowledgeError } = await supabase
-        .from('canvas_knowledge')
-        .select('id, title, type, content, metadata')
-        .in('id', uniqueKnowledgeIds);
-
-      if (knowledgeError) {
-        console.error('Error fetching RAG-matched knowledge:', knowledgeError);
-      } else if (relevantKnowledge && relevantKnowledge.length > 0) {
-        // 문서 단위로 스코어 집계 (가장 유사한 청크의 스코어 사용)
-        const docBestScore = new Map<string, number>();
-        for (const c of matchedChunks) {
-          const prev = docBestScore.get(c.knowledge_id) ?? 0;
-          if (c.similarity > prev) docBestScore.set(c.knowledge_id, c.similarity);
-        }
-
-        // knowledge 문서를 맵으로 구성
-        const knowledgeById = new Map<string, any>(
-          relevantKnowledge.map((k: any) => [k.id, k])
-        );
-
-        // 유사도 스코어 순으로 정렬
-        const rankedDocs = uniqueKnowledgeIds
-          .map((id) => ({ id, score: docBestScore.get(id) ?? 0 }))
-          .sort((a, b) => b.score - a.score)
-          .map(({ id }) => knowledgeById.get(id))
-          .filter(Boolean);
-
-        // RAG 기반 컨텍스트 구성 (chunk 텍스트와 원문 결합)
-        knowledgeContext += '\n\n🎯 질문과 관련된 지식:\n';
-        
-        // 상위 유사도 chunk들을 먼저 포함
-        const topChunks = matchedChunks
-          .sort((a, b) => b.similarity - a.similarity)
-          .slice(0, 8);
-        
-        knowledgeContext += topChunks
-          .map((chunk, idx) => {
-            const doc = knowledgeById.get(chunk.knowledge_id);
-            const docTitle = doc?.title || '지식 항목';
-            return `${idx + 1}. [${docTitle}] (유사도: ${(chunk.similarity * 100).toFixed(1)}%)\n${chunk.text}`;
-          })
-          .join('\n\n');
-
-        console.log(`✅ RAG context built with ${rankedDocs.length} documents, ${topChunks.length} chunks`);
-      }
-    } else {
-      // RAG 실패 시 폴백: 제한적 조회
-      console.log('⚠️ RAG failed, using fallback knowledge retrieval...');
-      
-      const { data: fallbackKnowledge, error: fallbackError } = await supabase
-        .from('canvas_knowledge')
-        .select('id, title, type, content, metadata')
-        .eq('canvas_id', canvasId)
-        .order('created_at', { ascending: false })
-        .limit(8); // 제한적 조회
-
-      if (fallbackError) {
-        console.error('Error in fallback knowledge retrieval:', fallbackError);
-      } else if (fallbackKnowledge && fallbackKnowledge.length > 0) {
-        knowledgeContext += '\n\n📋 캔버스 업로드 자료 (최신순):\n';
-        knowledgeContext += fallbackKnowledge
-          .map((k: any) => `- ${k.title}: ${(k.content || '').substring(0, 300)}...`)
-          .join('\n');
-        
-        console.log(`📋 Fallback context built with ${fallbackKnowledge.length} documents`);
-      }
-    }
-
-    // 글로벌 지식 베이스 (선택적 추가)
-    const { data: globalKnowledge, error: globalError } = await supabase
-      .from('global_ai_knowledge')
-      .select('*')
-      .limit(3);
-    
-    if (!globalError && globalKnowledge && globalKnowledge.length > 0) {
-      knowledgeContext += '\n\n🌐 글로벌 지식 베이스:\n';
-      knowledgeContext += globalKnowledge
-        .map((k: any) => `- ${k.title}: ${k.content?.substring(0, 200)}...`)
-        .join('\n');
-    }
-
-    if (searchContext) {
-      knowledgeContext += '\n\n최신 웹 검색 결과:\n' + searchContext;
-    }
-    console.log('🔍 Knowledge context:', knowledgeContext); 
-    // 채팅 히스토리 포맷
-    const historyText = chatHistory
-      ?.reverse()
-      .map(h => `${h.role === 'user' ? '사용자' : '두더지 AI'}: ${h.content}`)
-      .join('\n') || '';
-    // 시스템 프롬프트 (첨부된 코드에서 가져온 전문가 설정)
-    const systemPrompt = ` 사용자의 질문에 답변을 해주세요.
-
-
-현재 참고 가능한 정보:
-${knowledgeContext}
-
-최근 대화 맥락:
-${historyText}
-
-답변 형식 요구사항:
-- 한국어로 명확한 제목과 번호 목록 사용
-- 절대 마크다운 형식 사용 금지 (별표, 해시태그, 백틱, 대시 등 일체 사용 불가)
-`;
-
-    // OpenAI API 호출
-    const openaiResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: message }
-      ],
-      max_tokens: 2500,
-      temperature: 0.2,
-      presence_penalty: 0.1,
-      frequency_penalty: 0.1
-    });
-
-    const aiMessage = openaiResponse.choices[0].message.content || "죄송합니다. 응답을 생성할 수 없습니다.";
-
-    // AI 응답 저장
-    const { data: assistantMessage, error: assistantMessageError } = await (supabase as any)
-      .from('chat_messages')
-      .insert({
-        canvas_id: canvasId,
-        user_id: userId,
-        role: 'assistant',
-        content: aiMessage
-      })
-      .select()
-      .single();
-
-    if (assistantMessageError) {
-      console.error('Error saving assistant message:', assistantMessageError);
-    }
-
-    console.log(`✅ AI response generated and saved for canvas ${canvasId}`);
-
-    // RAG 인용 정보 생성 (NotebookLM 스타일 근거 표시)
-    let knowledgeCitations: Array<{
-      kind: 'knowledge';
-      chunkId: string;
-      knowledgeId: string;
-      title: string;
-      snippet: string;
-      similarity: number;
-    }> = [];
-
-    if (ragSuccess && matchedChunks.length > 0) {
-      // RAG 매칭된 knowledge의 제목 정보 조회
-      const uniqueKnowledgeIds = Array.from(new Set(matchedChunks.map((c) => c.knowledge_id)));
-      const { data: citationKnowledge } = await supabase
-        .from('canvas_knowledge')
-        .select('id, title')
-        .in('id', uniqueKnowledgeIds);
-
-      const knowledgeTitleMap = new Map<string, string>(
-        (citationKnowledge || []).map((k: any) => [k.id, k.title]) as [string, string][]
-      );
-
-      knowledgeCitations = matchedChunks
-        .slice(0, 8)
-        .map((c) => ({
-          kind: 'knowledge' as const,
-          chunkId: c.id,
-          knowledgeId: c.knowledge_id,
-          title: knowledgeTitleMap.get(c.knowledge_id) || '지식 항목',
-          snippet: (c.text || '').substring(0, 300),
-          similarity: typeof c.similarity === 'number' ? c.similarity : 0,
-        }));
-    }
-    const webCitations = (webResults || [])
-      .slice(0, 5)
-      .map((r) => ({
-        kind: 'web' as const,
-        title: r.title,
-        url: r.link,
-        source: r.source,
-        snippet: r.snippet,
-        relevanceScore: r.relevanceScore ?? null,
-      }));
-
-    return NextResponse.json({
-      message: aiMessage,
-      messageId: assistantMessage?.id,
-      citations: {
-        knowledge: knowledgeCitations,
-        web: webCitations,
-      },
-      ragUsed: {
-        chunksMatched: matchedChunks?.length || 0,
-        webSearchUsed: !!(shouldSearch && searchContext.length > 0),
-      },
-    });
-
-  } catch (error) {
-    console.error('Chat API error:', error);
-    
-    return NextResponse.json(
-      { 
-        error: '채팅 처리 중 오류가 발생했습니다.',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    );
-  }
-}
-
-export async function GET() {
-  return NextResponse.json(
-    { 
-      message: 'AI Chat API for Canvas',
-      usage: 'POST /api/chat/canvas with { message: string, canvasId: string }'
-    },
-    { status: 200 }
-  );
 }
 </file>
 
@@ -14225,7 +14434,7 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
                 </svg>
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">FunnelCanvas AI</h1>
+                <h1 className="text-xl font-bold text-gray-900">Canvas AI</h1>
                 <p className="text-sm text-gray-600">Workspaces</p>
               </div>
             </div>
@@ -14434,7 +14643,7 @@ export default function SidebarChat({
       return [{
         id: 'welcome',
         role: 'assistant',
-        content: '안녕하세요! 저는 두더지 AI입니다. 퍼널 설계와 마케팅에 대해 궁금한 점이 있으시면 언제든 물어보세요. 업로드하신 자료와 글로벌 지식을 바탕으로 도움드리겠습니다.',
+        content: '안녕하세요! 저는 Canvas AI입니다. 퍼널 설계와 마케팅에 대해 궁금한 점이 있으시면 언제든 물어보세요. 업로드하신 자료와 글로벌 지식을 바탕으로 도움드리겠습니다.',
         timestamp: new Date()
       }];
     });
@@ -14613,7 +14822,7 @@ export default function SidebarChat({
         <div className="flex items-center space-x-2">
           <Bot className="h-5 w-5" />
           <div>
-            <h3 className="font-medium">두더지 AI</h3>
+            <h3 className="font-medium">Canvas AI</h3>
             <p className="text-xs text-blue-100">퍼널 전문 어시스턴트</p>
           </div>
         </div>
@@ -15589,7 +15798,7 @@ export default function Sidebar({
               <Brain className="h-4 w-4 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="font-semibold text-foreground">두더지 AI</h1>
+              <h1 className="font-semibold text-foreground">Canvas AI</h1>
               <p className="text-xs text-muted-foreground">Creator Canvas</p>
             </div>
           </div>
@@ -15729,246 +15938,6 @@ export default function Sidebar({
         </Button>
       </div>
     </div>
-  );
-}
-</file>
-
-<file path="components/Modals/CanvasShareModal.tsx">
-import { useState } from "react";
-import Image from "next/image";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Ui/data-display";
-import { Button, Badge } from "@/components/Ui/buttons";
-import { Input } from "@/components/Ui/form-controls";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { Users, Share, Trash2, Eye, Edit } from "lucide-react";
-
-interface CanvasShareModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  canvasId: string;
-  canvasTitle: string;
-}
-
-interface CanvasShare {
-  id: string;
-  userId: string;
-  role: string;
-  createdAt: string;
-  user: {
-    id: string;
-    email: string;
-    firstName?: string;
-    lastName?: string;
-    profileImageUrl?: string;
-  };
-}
-
-const roleConfig = {
-  editor: { label: "편집자", icon: Edit, color: "secondary" },
-  viewer: { label: "뷰어", icon: Eye, color: "outline" }
-};
-
-export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: CanvasShareModalProps) {
-  const [shareEmail, setShareEmail] = useState("");
-  const [shareRole, setShareRole] = useState("editor");
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  // Fetch canvas shares
-  const { data: shares = [], isLoading } = useQuery({
-    queryKey: ['canvas-shares', canvasId],
-    queryFn: () => fetch(`/api/canvases/${canvasId}/shares`, { credentials: 'include' }).then(r => r.json()),
-    enabled: isOpen
-  });
-
-  // Share canvas mutation
-  const shareMutation = useMutation({
-    mutationFn: (data: { email: string; role: string }) =>
-      apiRequest('POST', `/api/canvases/${canvasId}/share`, data),
-    onSuccess: () => {
-      toast({ title: "캔버스 공유 성공", description: "캔버스가 성공적으로 공유되었습니다." });
-      setShareEmail("");
-      queryClient.invalidateQueries({ queryKey: ['canvas-shares', canvasId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/user/canvases'] });
-    },
-    onError: (error: any) => {
-      const errorMessage = error.message || "캔버스 공유에 실패했습니다.";
-      const isUserNotFound = errorMessage.includes("사용자를 찾을 수 없습니다");
-      
-      toast({ 
-        title: "공유 실패", 
-        description: isUserNotFound 
-          ? errorMessage + " 먼저 해당 사용자가 시스템에 가입하도록 안내해주세요."
-          : errorMessage,
-        variant: "destructive"
-      });
-    }
-  });
-
-  // Remove share mutation
-  const removeMutation = useMutation({
-    mutationFn: (userId: string) =>
-      apiRequest('DELETE', `/api/canvases/${canvasId}/shares/${userId}`),
-    onSuccess: () => {
-      toast({ title: "공유 해제 성공", description: "캔버스 공유가 해제되었습니다." });
-      queryClient.invalidateQueries({ queryKey: ['canvas-shares', canvasId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/user/canvases'] });
-    },
-    onError: (error: any) => {
-      toast({ 
-        title: "공유 해제 실패", 
-        description: error.message || "공유 해제에 실패했습니다.",
-        variant: "destructive"
-      });
-    }
-  });
-
-  const handleShare = () => {
-    if (!shareEmail.trim()) return;
-    shareMutation.mutate({ email: shareEmail, role: shareRole });
-  };
-
-  const handleRemoveShare = (userId: string) => {
-    removeMutation.mutate(userId);
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Share className="h-5 w-5" />
-            &ldquo;{canvasTitle}&rdquo; 캔버스 공유
-          </DialogTitle>
-          <DialogDescription>
-            특정 사용자와 개별 캔버스를 공유할 수 있습니다.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-6">
-          {/* 새 사용자 공유 섹션 */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold">새 사용자와 공유</h3>
-            <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-700">
-              <strong>참고:</strong> 공유하려는 사용자가 먼저 시스템에 가입되어 있어야 합니다.
-            </div>
-            <div className="flex gap-2">
-              <Input
-                placeholder="이메일 주소 (예: user@example.com)"
-                value={shareEmail}
-                onChange={(e) => setShareEmail(e.target.value)}
-                className="flex-1"
-                type="email"
-              />
-              <Select value={shareRole} onValueChange={setShareRole}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="editor">편집자</SelectItem>
-                  <SelectItem value="viewer">뷰어</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button 
-                onClick={handleShare}
-                disabled={!shareEmail.trim() || shareMutation.isPending}
-              >
-                {shareMutation.isPending ? "공유 중..." : "공유하기"}
-              </Button>
-            </div>
-          </div>
-
-          {/* 현재 공유된 사용자 목록 */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              공유된 사용자 ({shares.length}명)
-            </h3>
-            
-            {isLoading ? (
-              <div className="space-y-2">
-                {[...Array(2)].map((_, i) => (
-                  <div key={i} className="animate-pulse flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className="h-10 w-10 bg-gray-200 rounded-full"></div>
-                      <div className="space-y-1">
-                        <div className="h-4 bg-gray-200 rounded w-32"></div>
-                        <div className="h-3 bg-gray-200 rounded w-24"></div>
-                      </div>
-                    </div>
-                    <div className="h-6 bg-gray-200 rounded w-16"></div>
-                  </div>
-                ))}
-              </div>
-            ) : shares.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Share className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                <p>아직 공유된 사용자가 없습니다</p>
-                <p className="text-sm">위에서 이메일을 입력하여 캔버스를 공유해보세요</p>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {shares.map((share: CanvasShare) => {
-                  const roleInfo = roleConfig[share.role as keyof typeof roleConfig];
-                  const RoleIcon = roleInfo?.icon || Edit;
-                  
-                  return (
-                    <div key={share.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-                      <div className="flex items-center space-x-3">
-                        <div className="h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center">
-                          {share.user.profileImageUrl ? (
-                            <Image 
-                              src={share.user.profileImageUrl}
-                              alt="Profile"
-                              width={40}
-                              height={40}
-                              className="h-10 w-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <span className="text-sm font-medium text-gray-600">
-                              {(share.user.firstName?.[0] || share.user.email[0]).toUpperCase()}
-                            </span>
-                          )}
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {share.user.firstName && share.user.lastName 
-                              ? `${share.user.firstName} ${share.user.lastName}`
-                              : share.user.email
-                            }
-                          </p>
-                          <p className="text-sm text-gray-500">{share.user.email}</p>
-                          <p className="text-xs text-gray-400">
-                            공유일: {new Date(share.createdAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={roleInfo?.color as any} className="flex items-center gap-1">
-                          <RoleIcon className="h-3 w-3" />
-                          {roleInfo?.label || share.role}
-                        </Badge>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveShare(share.userId)}
-                          disabled={removeMutation.isPending}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 </file>
@@ -17090,6 +17059,120 @@ export function TodoStickerToggle({ canvasId, onShow }: { canvasId: string; onSh
       할일 {todos.length > 0 && `(${todos.length})`}
     </Button>
   );
+}
+</file>
+
+<file path="lib/auth/permissions.ts">
+/**
+ * permissions.ts - 중앙 권한 검증 서비스
+ * 
+ * 주요 역할:
+ * 1. 워크스페이스/캔버스 접근 권한 검증을 단일 위치에서 수행
+ * 2. 서비스 로우 키(client)로 RLS 우회 조회
+ * 3. 리소스 접근 시 역할 정보를 함께 반환
+ * 
+ * 핵심 특징:
+ * - 공개 캔버스 읽기 접근(viewer) 허용
+ * - 워크스페이스 소유자/멤버 기반 권한 판정
+ * - 비즈니스 로직으로부터 권한 체크 로직 분리
+ * 
+ * 주의사항:
+ * - 서비스 로우 키 사용으로 보안에 유의
+ * - 역할 스킴 변경 시 이 파일만 수정하여 전체 반영
+ * - canvas의 작성자 컬럼은 user_id로 간주(스키마 최신화 필요 시 반영)
+ */
+
+import { createServiceClient } from '@/lib/supabase/service';
+import type { Database } from '@/lib/database.types';
+
+const supabase = createServiceClient();
+
+export type WorkspaceRole = Database['public']['Tables']['workspace_members']['Row']['role']; // 'owner' | 'admin' | 'member'
+export type AccessRole = WorkspaceRole | 'viewer' | 'editor';
+
+/**
+ * 사용자가 특정 워크스페이스에 접근 권한이 있는지 확인 (소유자 또는 멤버)
+ */
+export async function canAccessWorkspace(
+  userId: string,
+  workspaceId: string
+): Promise<{ hasAccess: boolean; role?: AccessRole }> {
+  // 1) 워크스페이스 소유자 확인
+  const { data: workspace, error: wsError } = await supabase
+    .from('workspaces')
+    .select('owner_id')
+    .eq('id', workspaceId)
+    .single();
+
+  if (wsError || !workspace) return { hasAccess: false };
+  if (workspace.owner_id === userId) return { hasAccess: true, role: 'owner' };
+
+  // 2) 워크스페이스 멤버 확인
+  const { data: member, error: memberError } = await supabase
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .single();
+
+  if (memberError || !member) return { hasAccess: false };
+  return { hasAccess: true, role: member.role };
+}
+
+/**
+ * 사용자가 특정 캔버스에 접근 권한이 있는지 확인
+ * - 공개 캔버스: 읽기 접근 viewer 부여
+ * - 캔버스 작성자(user_id) 또는 워크스페이스 멤버: 접근 허용
+ */
+export async function canAccessCanvas(
+  userId: string,
+  canvasId: string
+): Promise<{
+  hasAccess: boolean;
+  role?: AccessRole;
+  canvas?: Pick<Database['public']['Tables']['canvases']['Row'], 'id' | 'workspace_id' | 'is_public' | 'created_by'>;
+}> {
+  const { data: canvas, error: canvasError } = await supabase
+    .from('canvases')
+    .select('id, workspace_id, is_public, created_by')
+    .eq('id', canvasId)
+    .single();
+
+  if (canvasError || !canvas) return { hasAccess: false };
+
+  // 0) Direct canvas share takes precedence
+  try {
+    const { data: share } = await (supabase as any)
+      .from('canvas_shares')
+      .select('role')
+      .eq('canvas_id', canvasId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (share && (share.role === 'editor' || share.role === 'viewer')) {
+      return { hasAccess: true, role: share.role as AccessRole, canvas };
+    }
+  } catch {
+    // ignore and continue
+  }
+
+  // 공개 캔버스 → 읽기(viewer) 허용
+  if (canvas.is_public) {
+    return { hasAccess: true, role: 'viewer', canvas };
+  }
+
+  // 캔버스 작성자
+  if ((canvas as any).created_by === userId) {
+    return { hasAccess: true, role: 'owner', canvas };
+  }
+
+  // 워크스페이스 권한 위임
+  if (!canvas.workspace_id) {
+    return { hasAccess: false, role: undefined, canvas };
+  }
+  
+  const ws = await canAccessWorkspace(userId, canvas.workspace_id);
+  return { ...ws, canvas };
 }
 </file>
 
@@ -18513,6 +18596,1542 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 }
 </file>
 
+<file path="app/api/chat/canvas/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
+import { createServiceClient } from '@/lib/supabase/service';
+import { OpenAIService } from '@/services/openai';
+import { CanvasRAGService } from '@/services/rag';
+import { buildSystemPrompt, formatChatHistory } from '@/services/rag';
+
+/**
+ * AI 채팅 API 엔드포인트 - Canvas 전용
+ * 
+ * POST /api/chat/canvas
+ * - message: 사용자 메시지
+ * - canvasId: 캔버스 ID
+ * 
+ * 기능:
+ * 1. 캔버스 지식 베이스 활용
+ * 2. 웹 검색 결과 통합
+ * 3. 마케팅 전문가 "Canvas AI" 페르소나
+ * 4. 채팅 히스토리 저장
+ */
+
+const openaiService = new OpenAIService();
+const canvasRAG = new CanvasRAGService(openaiService);
+
+export async function POST(request: NextRequest) {
+  try {
+    // Clerk 인증 확인
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json(
+        { error: '인증이 필요합니다.' },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+    const { message, canvasId } = body;
+
+    if (!message || !canvasId) {
+      return NextResponse.json(
+        { error: '메시지와 캔버스 ID가 필요합니다.' },
+        { status: 400 }
+      );
+    }
+
+    console.log(`🤖 AI Chat request from user ${userId} for canvas ${canvasId}`);
+
+    // 서비스 클라이언트 생성 (RLS 우회)
+    const supabase = createServiceClient();
+
+    // 사용자 메시지 저장
+    const { data: userMessage, error: userMessageError } = await (supabase as any)
+      .from('chat_messages')
+      .insert({
+        canvas_id: canvasId,
+        user_id: userId,
+        role: 'user',
+        content: message
+      })
+      .select()
+      .single();
+
+    if (userMessageError) {
+      console.error('Error saving user message:', userMessageError);
+    }
+
+    // 최근 채팅 히스토리 조회 (컨텍스트용)
+    const { data: chatHistoryData } = await supabase
+      .from('chat_messages')
+      .select('role, content, created_at')
+      .eq('canvas_id', canvasId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    const chatHistory = (chatHistoryData || []) as any[];
+
+    // 컨텍스트 구성 (지식 + 웹)
+    const { knowledgeContext, knowledgeCitations, webCitations, ragUsed } = await canvasRAG.buildContext({
+      supabase,
+      canvasId,
+      message,
+    });
+
+    // 시스템 프롬프트 구성
+    const historyText = formatChatHistory([...chatHistory].reverse());
+    const systemPrompt = buildSystemPrompt(knowledgeContext, historyText);
+
+    // OpenAI 챗 호출
+    const aiMessage = await openaiService.chat(systemPrompt, message, {
+      maxTokens: 2500,
+      temperature: 0.2,
+      presencePenalty: 0.1,
+      frequencyPenalty: 0.1,
+    });
+
+    // AI 응답 저장
+    const { data: assistantMessage, error: assistantMessageError } = await (supabase as any)
+      .from('chat_messages')
+      .insert({
+        canvas_id: canvasId,
+        user_id: userId,
+        role: 'assistant',
+        content: aiMessage
+      })
+      .select()
+      .single();
+
+    if (assistantMessageError) {
+      console.error('Error saving assistant message:', assistantMessageError);
+    }
+
+    console.log(`✅ AI response generated and saved for canvas ${canvasId}`);
+
+    // RAG에서 생성한 인용 정보 사용
+
+    return NextResponse.json({
+      message: aiMessage,
+      messageId: assistantMessage?.id,
+      citations: {
+        knowledge: knowledgeCitations,
+        web: webCitations,
+      },
+      ragUsed,
+    });
+
+  } catch (error) {
+    console.error('Chat API error:', error);
+    
+    return NextResponse.json(
+      { 
+        error: '채팅 처리 중 오류가 발생했습니다.',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET() {
+  return NextResponse.json(
+    { 
+      message: 'AI Chat API for Canvas',
+      usage: 'POST /api/chat/canvas with { message: string, canvasId: string }'
+    },
+    { status: 200 }
+  );
+}
+</file>
+
+<file path="components/Modals/CanvasShareModal.tsx">
+import { useState } from "react";
+import Image from "next/image";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Ui/data-display";
+import { Button, Badge } from "@/components/Ui/buttons";
+import { Input } from "@/components/Ui/form-controls";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { Users, Share, Trash2, Eye, Edit } from "lucide-react";
+
+interface CanvasShareModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  canvasId: string;
+  canvasTitle: string;
+}
+
+interface CanvasShare {
+  id: string;
+  userId: string;
+  role: string;
+  createdAt: string;
+  user: {
+    id: string;
+    email: string;
+    firstName?: string;
+    lastName?: string;
+    profileImageUrl?: string;
+  };
+}
+
+const roleConfig = {
+  editor: { label: "편집자", icon: Edit, color: "secondary" },
+  viewer: { label: "뷰어", icon: Eye, color: "outline" }
+};
+
+export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: CanvasShareModalProps) {
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareRole, setShareRole] = useState("editor");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // Fetch canvas shares
+  const { data: shares = [], isLoading } = useQuery({
+    queryKey: ['canvas-shares', canvasId],
+    queryFn: () => fetch(`/api/canvases/${canvasId}/shares`, { credentials: 'include' }).then(r => r.json()),
+    enabled: isOpen
+  });
+
+  // Share canvas mutation
+  const shareMutation = useMutation({
+    mutationFn: (data: { email: string; role: string }) =>
+      apiRequest('POST', `/api/canvases/${canvasId}/shares`, data),
+    onSuccess: () => {
+      toast({ title: "캔버스 공유 성공", description: "캔버스가 성공적으로 공유되었습니다." });
+      setShareEmail("");
+      queryClient.invalidateQueries({ queryKey: ['canvas-shares', canvasId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/user/canvases'] });
+    },
+    onError: (error: any) => {
+      const errorMessage = error.message || "캔버스 공유에 실패했습니다.";
+      const isUserNotFound = errorMessage.includes("사용자를 찾을 수 없습니다");
+      
+      toast({ 
+        title: "공유 실패", 
+        description: isUserNotFound 
+          ? errorMessage + " 먼저 해당 사용자가 시스템에 가입하도록 안내해주세요."
+          : errorMessage,
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Remove share mutation
+  const removeMutation = useMutation({
+    mutationFn: (userId: string) =>
+      apiRequest('DELETE', `/api/canvases/${canvasId}/shares/${userId}`),
+    onSuccess: () => {
+      toast({ title: "공유 해제 성공", description: "캔버스 공유가 해제되었습니다." });
+      queryClient.invalidateQueries({ queryKey: ['canvas-shares', canvasId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/user/canvases'] });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "공유 해제 실패", 
+        description: error.message || "공유 해제에 실패했습니다.",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const handleShare = () => {
+    if (!shareEmail.trim()) return;
+    shareMutation.mutate({ email: shareEmail, role: shareRole });
+  };
+
+  // Role change mutation
+  const changeRoleMutation = useMutation({
+    mutationFn: (payload: { userId: string; role: 'editor' | 'viewer' }) =>
+      apiRequest('PATCH', `/api/canvases/${canvasId}/shares/${payload.userId}`, { role: payload.role }),
+    onSuccess: () => {
+      toast({ title: '역할 변경 완료', description: '공유된 사용자의 역할이 변경되었습니다.' });
+      queryClient.invalidateQueries({ queryKey: ['canvas-shares', canvasId] });
+    },
+    onError: (error: any) => {
+      toast({ title: '역할 변경 실패', description: error.message || '역할 변경에 실패했습니다.', variant: 'destructive' });
+    }
+  });
+
+  const handleChangeRole = (userId: string, role: 'editor' | 'viewer') => {
+    changeRoleMutation.mutate({ userId, role });
+  };
+
+  const handleRemoveShare = (userId: string) => {
+    removeMutation.mutate(userId);
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Share className="h-5 w-5" />
+            &ldquo;{canvasTitle}&rdquo; 캔버스 공유
+          </DialogTitle>
+          <DialogDescription>
+            특정 사용자와 개별 캔버스를 공유할 수 있습니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-6">
+          {/* 새 사용자 공유 섹션 */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">새 사용자와 공유</h3>
+            <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-700">
+              <strong>참고:</strong> 공유하려는 사용자가 먼저 시스템에 가입되어 있어야 합니다.
+            </div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="이메일 주소 (예: user@example.com)"
+                value={shareEmail}
+                onChange={(e) => setShareEmail(e.target.value)}
+                className="flex-1"
+                type="email"
+              />
+              <Select value={shareRole} onValueChange={setShareRole}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="editor">편집자</SelectItem>
+                  <SelectItem value="viewer">뷰어</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button 
+                onClick={handleShare}
+                disabled={!shareEmail.trim() || shareMutation.isPending}
+              >
+                {shareMutation.isPending ? "공유 중..." : "공유하기"}
+              </Button>
+            </div>
+          </div>
+
+          {/* 현재 공유된 사용자 목록 */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              공유된 사용자 ({shares.length}명)
+            </h3>
+            
+            {isLoading ? (
+              <div className="space-y-2">
+                {[...Array(2)].map((_, i) => (
+                  <div key={i} className="animate-pulse flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="h-10 w-10 bg-gray-200 rounded-full"></div>
+                      <div className="space-y-1">
+                        <div className="h-4 bg-gray-200 rounded w-32"></div>
+                        <div className="h-3 bg-gray-200 rounded w-24"></div>
+                      </div>
+                    </div>
+                    <div className="h-6 bg-gray-200 rounded w-16"></div>
+                  </div>
+                ))}
+              </div>
+            ) : shares.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Share className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                <p>아직 공유된 사용자가 없습니다</p>
+                <p className="text-sm">위에서 이메일을 입력하여 캔버스를 공유해보세요</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {shares.map((share: CanvasShare) => {
+                  const roleInfo = roleConfig[share.role as keyof typeof roleConfig];
+                  const RoleIcon = roleInfo?.icon || Edit;
+                  
+                  return (
+                    <div key={share.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
+                      <div className="flex items-center space-x-3">
+                        <div className="h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center">
+                          {share.user.profileImageUrl ? (
+                            <Image 
+                              src={share.user.profileImageUrl}
+                              alt="Profile"
+                              width={40}
+                              height={40}
+                              className="h-10 w-10 rounded-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-sm font-medium text-gray-600">
+                              {(share.user.firstName?.[0] || share.user.email[0]).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">
+                            {share.user.firstName && share.user.lastName 
+                              ? `${share.user.firstName} ${share.user.lastName}`
+                              : share.user.email
+                            }
+                          </p>
+                          <p className="text-sm text-gray-500">{share.user.email}</p>
+                          <p className="text-xs text-gray-400">
+                            공유일: {new Date(share.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Select value={share.role} onValueChange={(v) => handleChangeRole(share.userId, v as 'editor' | 'viewer')}>
+                          <SelectTrigger className="w-28">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="editor">편집자</SelectItem>
+                            <SelectItem value="viewer">뷰어</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveShare(share.userId)}
+                          disabled={removeMutation.isPending}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+</file>
+
+<file path="lib/database.types.ts">
+/**
+ * database.types.ts - Supabase 데이터베이스 타입 정의
+ * 
+ * 주요 역할:
+ * 1. Supabase 데이터베이스 스키마의 TypeScript 타입 정의
+ * 2. 타입 안전성을 위한 데이터베이스 인터페이스 제공
+ * 3. 자동 완성 및 컴파일 타임 에러 방지
+ * 
+ * 핵심 특징:
+ * - 모든 테이블과 뷰에 대한 타입 정의
+ * - Insert, Update, Select 작업을 위한 별도 타입
+ * - 관계형 데이터를 위한 조인 타입 지원
+ * 
+ * 주의사항:
+ * - 데이터베이스 스키마 변경 시 수동으로 업데이트 필요
+ * - Supabase CLI를 통한 자동 생성 권장
+ */
+
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export interface Database {
+  public: {
+    Tables: {
+      text_memos: {
+        Row: {
+          id: string
+          canvas_id: string
+          content: string
+          position: Json
+          size: Json | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          content: string
+          position: Json
+          size?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          content?: string
+          position?: Json
+          size?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          id: string
+          email: string
+          name: string | null
+          avatar_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          email: string
+          name?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          name?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      workspace_members: {
+        Row: {
+          id: string
+          workspace_id: string
+          user_id: string
+          role: 'owner' | 'admin' | 'member'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          user_id: string
+          role: 'owner' | 'admin' | 'member'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          user_id?: string
+          role?: 'owner' | 'admin' | 'member'
+          created_at?: string
+        }
+        Relationships: []
+      }
+      canvas_states: {
+        Row: {
+          id: string
+          canvas_id: string
+          state: Json
+          user_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          state: Json
+          user_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          state?: Json
+          user_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      canvas_knowledge: {
+        Row: {
+          id: string
+          canvas_id: string
+          type: 'pdf' | 'youtube' | 'url' | 'text'
+          title: string
+          content: string | null
+          metadata: Json | null
+          embedding: unknown | null
+          extracted_text?: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          type: 'pdf' | 'youtube' | 'url' | 'text'
+          title: string
+          content?: string | null
+          metadata?: Json | null
+          embedding?: unknown | null
+          extracted_text?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          type?: 'pdf' | 'youtube' | 'url' | 'text'
+          title?: string
+          content?: string | null
+          metadata?: Json | null
+          embedding?: unknown | null
+          extracted_text?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      canvases: {
+        Row: {
+          id: string
+          title: string
+          description: string | null
+          user_id: string
+          created_by: string
+          workspace_id: string | null
+          is_public: boolean
+          created_at: string
+          updated_at: string
+          data: Json | null
+          nodes: Json | null
+          edges: Json | null
+        }
+        Insert: {
+          id?: string
+          title: string
+          description?: string | null
+          user_id: string
+          created_by: string
+          workspace_id?: string | null
+          is_public?: boolean
+          created_at?: string
+          updated_at?: string
+          data?: Json | null
+          nodes?: Json | null
+          edges?: Json | null
+        }
+        Update: {
+          id?: string
+          title?: string
+          description?: string | null
+          user_id?: string
+          created_by?: string
+          workspace_id?: string | null
+          is_public?: boolean
+          created_at?: string
+          updated_at?: string
+          data?: Json | null
+          nodes?: Json | null
+          edges?: Json | null
+        }
+        Relationships: []
+      }
+      chat_messages: {
+        Row: {
+          id: string
+          canvas_id: string
+          user_id: string
+          role: 'user' | 'assistant'
+          content: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          user_id: string
+          role: 'user' | 'assistant'
+          content: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          user_id?: string
+          role?: 'user' | 'assistant'
+          content?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      canvas_chat_messages: {
+        Row: {
+          id: string
+          canvas_id: string
+          user_id: string
+          message: string
+          role: 'user' | 'assistant'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          user_id: string
+          message: string
+          role: 'user' | 'assistant'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          user_id?: string
+          message?: string
+          role?: 'user' | 'assistant'
+          created_at?: string
+        }
+        Relationships: []
+      }
+      canvas_text_memos: {
+        Row: {
+          id: string
+          canvas_id: string
+          user_id: string
+          content: string
+          position_x: number
+          position_y: number
+          width: number
+          height: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          user_id: string
+          content: string
+          position_x: number
+          position_y: number
+          width: number
+          height: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          user_id?: string
+          content?: string
+          position_x?: number
+          position_y?: number
+          width?: number
+          height?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      canvas_nodes: {
+        Row: {
+          id: string
+          canvas_id: string
+          node_id: string
+          type: string
+          data: Json
+          position: Json
+          metadata: Json | null
+          created_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          node_id: string
+          type: string
+          data: Json
+          position: Json
+          metadata?: Json | null
+          created_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          node_id?: string
+          type?: string
+          data?: Json
+          position?: Json
+          metadata?: Json | null
+          created_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      canvas_edges: {
+        Row: {
+          id: string
+          canvas_id: string
+          edge_id: string
+          source_node_id: string
+          target_node_id: string
+          type: string | null
+          data: Json | null
+          metadata: Json | null
+          created_by: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          edge_id: string
+          source_node_id: string
+          target_node_id: string
+          type?: string | null
+          data?: Json | null
+          metadata?: Json | null
+          created_by: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          edge_id?: string
+          source_node_id?: string
+          target_node_id?: string
+          type?: string | null
+          data?: Json | null
+          metadata?: Json | null
+          created_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      canvas_todos: {
+        Row: {
+          id: string
+          canvas_id: string
+          user_id: string
+          title: string
+          description: string | null
+          status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+          priority: 'low' | 'medium' | 'high'
+          position_x: number
+          position_y: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          user_id: string
+          title: string
+          description?: string | null
+          status?: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+          priority?: 'low' | 'medium' | 'high'
+          position_x: number
+          position_y: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          user_id?: string
+          title?: string
+          description?: string | null
+          status?: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+          priority?: 'low' | 'medium' | 'high'
+          position_x?: number
+          position_y?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      workspaces: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          owner_id: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string | null
+          owner_id: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+          owner_id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      assets: {
+        Row: {
+          id: string
+          workspace_id: string
+          canvas_id: string
+          type: string
+          url: string | null
+          file_ref: string | null
+          content_sha256: string | null
+          title: string
+          meta_json: Json | null
+          status: 'pending' | 'processing' | 'completed' | 'failed'
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          canvas_id: string
+          type: string
+          url?: string | null
+          file_ref?: string | null
+          content_sha256?: string | null
+          title: string
+          meta_json?: Json | null
+          status?: 'pending' | 'processing' | 'completed' | 'failed'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          canvas_id?: string
+          type?: string
+          url?: string | null
+          file_ref?: string | null
+          content_sha256?: string | null
+          title?: string
+          meta_json?: Json | null
+          status?: 'pending' | 'processing' | 'completed' | 'failed'
+          created_at?: string
+        }
+        Relationships: []
+      }
+      asset_chunks: {
+        Row: {
+          id: string
+          asset_id: string
+          seq: number
+          text: string
+          embedding: string | null
+          tokens: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          asset_id: string
+          seq: number
+          text: string
+          embedding?: string | null
+          tokens?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          asset_id?: string
+          seq?: number
+          text?: string
+          embedding?: string | null
+          tokens?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      feedback_runs: {
+        Row: {
+          id: string
+          canvas_id: string
+          state_version: number | null
+          flow_hash: string | null
+          kb_hash: string | null
+          prompt_version: string | null
+          bp_version: string | null
+          model: string | null
+          latency_ms: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          canvas_id: string
+          state_version?: number | null
+          flow_hash?: string | null
+          kb_hash?: string | null
+          prompt_version?: string | null
+          bp_version?: string | null
+          model?: string | null
+          latency_ms?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          canvas_id?: string
+          state_version?: number | null
+          flow_hash?: string | null
+          kb_hash?: string | null
+          prompt_version?: string | null
+          bp_version?: string | null
+          model?: string | null
+          latency_ms?: number | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      feedback_items: {
+        Row: {
+          id: string
+          run_id: string
+          node_id: string | null
+          severity: string
+          suggestion: string
+          rationale: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          run_id: string
+          node_id?: string | null
+          severity: string
+          suggestion: string
+          rationale?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          run_id?: string
+          node_id?: string | null
+          severity?: string
+          suggestion?: string
+          rationale?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      global_ai_knowledge: {
+        Row: {
+          id: string
+          title: string
+          content: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          title: string
+          content: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          content?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+}
+</file>
+
+<file path="services/aiFeedback.ts">
+/**
+ * aiFeedback.ts - 캔버스 퍼널 AI 피드백 서비스
+ * 
+ * 주요 역할:
+ * 1. 캔버스 상태와 지식 베이스를 결합해 피드백 생성
+ * 2. 동일 입력(flow/kb) 중복 호출 방지를 위한 해시 캐싱
+ * 3. 피드백 실행 이력/아이템을 DB에 저장 및 재활용
+ * 
+ * 핵심 특징:
+ * - Supabase 서비스 클라이언트를 사용해 서버 측 안전 접근
+ * - 해시/정규화 로직을 유틸로 분리해 재사용성 향상
+ * - 일관된 에러 처리(throw)로 상위에서 통합 핸들링
+ * 
+ * 주의사항:
+ * - 프론트 스토리지 의존 금지(브라우저 localStorage 미사용)
+ * - 모델/버전 등 하드코딩 지양(환경 변수/상수화)
+ */
+import { storage } from "./storageService";
+import { OpenAIService, type FeedbackItem } from "./openai";
+const openaiService = new OpenAIService();
+import { generateFlowHash, generateKnowledgeHash } from "@/lib/hashUtils";
+const FEEDBACK_PROMPT_VERSION = process.env.FEEDBACK_PROMPT_VERSION || "1.0";
+const FEEDBACK_BP_VERSION = process.env.FEEDBACK_BP_VERSION || "1.0";
+
+export interface FeedbackRequest {
+  canvasId: string;
+  stateVersion?: number;
+  userId: string;
+}
+
+export interface FeedbackResponse {
+  run: {
+    id: string;
+    canvasId: string;
+    flowHash: string;
+    kbHash: string;
+    createdAt: Date;
+  };
+  items: FeedbackItem[];
+}
+
+export class AIFeedbackService {
+  async generateFeedback(canvasId: string, stateVersion?: number, userId?: string): Promise<FeedbackResponse> {
+    // Get canvas state
+    const state = stateVersion 
+      ? await storage.getCanvasState(canvasId, stateVersion)
+      : await storage.getLatestCanvasState(canvasId);
+
+    if (!state) {
+      throw new Error("Canvas state not found");
+    }
+
+    const canvas = await storage.getCanvas(canvasId);
+    if (!canvas) {
+      throw new Error("Canvas not found");
+    }
+
+    // Generate flow and knowledge base hashes
+    const flowHash = generateFlowHash(state.state);
+    const kbData = await this.getKnowledgeBase(canvas.workspaceId, userId);
+    const kbHash = generateKnowledgeHash(kbData);
+
+    // Check for cached feedback
+    const existingRun = await storage.getFeedbackRun(canvasId, flowHash, kbHash);
+    if (existingRun) {
+      const items = await storage.getFeedbackItems(existingRun.id);
+      return {
+        run: {
+          id: existingRun.id,
+          canvasId: existingRun.canvasId,
+          flowHash: existingRun.flowHash!,
+          kbHash: existingRun.kbHash!,
+          createdAt: existingRun.createdAt!,
+        },
+        items: items.map((item: any) => ({
+          nodeId: item.nodeId!,
+          suggestion: item.suggestion,
+          severity: item.severity as "low" | "medium" | "high",
+          rationale: item.rationale!,
+        })),
+      };
+    }
+
+    // Generate new feedback
+    const startTime = Date.now();
+    
+    const feedbackItems = await openaiService.generateFunnelFeedback({
+      flowJson: state.state,
+      knowledgeBase: kbData,
+    });
+
+    const latencyMs = Date.now() - startTime;
+
+    // Save feedback run
+    const feedbackRun = await storage.createFeedbackRun({
+      canvasId,
+      stateVersion: 1, // 기본값 사용
+      flowHash,
+      kbHash,
+      promptVersion: FEEDBACK_PROMPT_VERSION,
+      bpVersion: FEEDBACK_BP_VERSION,
+      model: (openaiService as any).chatModel ?? "gpt-4o",
+      latencyMs,
+    });
+
+    // Save feedback items
+    for (const item of feedbackItems) {
+      await storage.createFeedbackItem({
+        runId: feedbackRun.id,
+        nodeId: item.nodeId,
+        severity: item.severity,
+        suggestion: item.suggestion,
+        rationale: item.rationale,
+      });
+    }
+
+    return {
+      run: {
+        id: feedbackRun.id,
+        canvasId: feedbackRun.canvasId,
+        flowHash: feedbackRun.flowHash!,
+        kbHash: feedbackRun.kbHash!,
+        createdAt: feedbackRun.createdAt!,
+      },
+      items: feedbackItems,
+    };
+  }
+
+  private async getKnowledgeBase(workspaceId: string, userId?: string): Promise<Array<{
+    title: string;
+    content: string;
+    source: string;
+  }>> {
+    const knowledgeBase: Array<{ title: string; content: string; source: string; }> = [];
+
+    // Get global knowledge
+    const globalKnowledge = await storage.getGlobalKnowledge();
+    for (const item of globalKnowledge) {
+      knowledgeBase.push({
+        title: item.title,
+        content: item.content,
+        source: "Global Knowledge Base",
+      });
+    }
+
+    // Canvas knowledge is handled at the canvas level, not user level
+    // Individual canvas knowledge is passed separately via canvasId
+
+    // Get asset chunks from workspace assets
+    const assetChunks = await storage.getTopKKnowledge(workspaceId, userId || "", undefined, 10);
+    for (const chunk of assetChunks) {
+      knowledgeBase.push({
+        title: `Asset Chunk ${chunk.seq}`,
+        content: chunk.text,
+        source: "Workspace Assets",
+      });
+    }
+
+    return knowledgeBase;
+  }
+
+  // 하위 호환: 기존 퍼블릭 메서드는 필요 시 hashUtils를 re-export하거나 별도 유틸에서 사용하세요.
+}
+
+export const aiFeedbackService = new AIFeedbackService();
+</file>
+
+<file path="services/assetProcessor.ts">
+import { storage } from "./storageService";
+import { OpenAIService } from "./openai";
+const openaiService = new OpenAIService();
+import type { Asset } from "@shared/schema";
+
+export interface ProcessingJob {
+  assetId: string;
+  type: 'youtube' | 'url' | 'text';
+  url?: string;
+  content?: string;
+}
+
+/**
+ * AssetProcessor - YouTube 및 웹 URL 자산 처리 서비스
+ * 
+ * 주요 역할:
+ * 1. YouTube 비디오 트랜스크립트 추출 및 처리
+ * 2. 웹 URL 콘텐츠 크롤링 및 텍스트 추출
+ * 3. 텍스트 노트 처리
+ * 
+ * 핵심 특징:
+ * - 청크 단위 텍스트 분할 및 임베딩 생성
+ * - 비동기 처리로 대용량 콘텐츠 안정적 처리
+ * 
+ * 주의사항:
+ * - PDF 처리는 upload-pdf 엔드포인트에서 별도 처리
+ * - OpenAI 임베딩 API 사용량 제한 고려
+ */
+export class AssetProcessor {
+
+  async processAsset(asset: Asset): Promise<void> {
+    try {
+      await storage.updateAsset(asset.id, { status: "processing" });
+
+      let textContent = "";
+      
+      switch (asset.type) {
+        case "pdf":
+          // PDF processing is now handled by upload-pdf route
+          throw new Error("PDF processing should be handled by upload-pdf endpoint");
+          break;
+        case "youtube":
+          textContent = await this.processYouTube(asset);
+          break;
+        case "url":
+          textContent = await this.processURL(asset);
+          break;
+        case "note":
+          textContent = (asset.metaJson as any)?.content || "";
+          break;
+        default:
+          throw new Error(`Unsupported asset type: ${asset.type}`);
+      }
+
+      if (!textContent) {
+        throw new Error("No content extracted from asset");
+      }
+
+      // Chunk the content
+      const chunks = this.chunkText(textContent);
+      
+      // Generate embeddings and store chunks
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const embedding = await openaiService.generateEmbedding(chunk);
+        
+        await storage.createAssetChunk({
+          assetId: asset.id,
+          seq: i,
+          text: chunk,
+          embedding: JSON.stringify(embedding),
+          tokens: this.estimateTokens(chunk),
+        });
+      }
+
+      await storage.updateAsset(asset.id, { 
+        status: "completed",
+        metaJson: {
+          ...(asset.metaJson as any || {}),
+          chunks: chunks.length,
+          processedAt: new Date().toISOString(),
+        }
+      });
+
+    } catch (error) {
+      console.error(`Error processing asset ${asset.id}:`, error);
+      await storage.updateAsset(asset.id, { 
+        status: "failed",
+        metaJson: {
+          ...(asset.metaJson as any || {}),
+          error: (error as Error).message,
+        }
+      });
+    }
+  }
+
+
+  private async processYouTube(asset: Asset): Promise<string> {
+    if (!asset.url) {
+      throw new Error("No YouTube URL provided");
+    }
+
+    // Extract video ID from URL
+    const videoId = this.extractYouTubeId(asset.url);
+    if (!videoId) {
+      throw new Error("Invalid YouTube URL");
+    }
+
+    // In a real implementation, you would:
+    // 1. Use YouTube API to get video details
+    // 2. Extract captions/subtitles if available
+    // 3. Use Apify or similar service to scrape additional data
+    // 4. Combine title, description, and captions
+
+    // For this implementation, we'll simulate YouTube processing
+    return `YouTube video content: ${asset.title}. This would include captions, description, and metadata in a real implementation.`;
+  }
+
+  private async processURL(asset: Asset): Promise<string> {
+    if (!asset.url) {
+      throw new Error("No URL provided");
+    }
+
+    try {
+      // In a real implementation, you would:
+      // 1. Use Apify web scraping service
+      // 2. Extract clean text content from HTML
+      // 3. Handle different website structures
+      // 4. Respect robots.txt and rate limits
+
+      // For this implementation, we'll simulate URL processing
+      const response = await fetch(asset.url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; FunnelBot/1.0)',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const html = await response.text();
+      
+      // Basic HTML text extraction (in production, use a proper HTML parser)
+      const textContent = html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!textContent) {
+        throw new Error("No text content extracted from URL");
+      }
+
+      return textContent;
+    } catch (error) {
+      console.error(`Error processing URL ${asset.url}:`, error);
+      throw new Error(`Failed to process URL: ${(error as Error).message}`);
+    }
+  }
+
+  private chunkText(text: string, maxChunkSize = 1000): string[] {
+    const chunks: string[] = [];
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    
+    let currentChunk = "";
+    
+    for (const sentence of sentences) {
+      const trimmedSentence = sentence.trim();
+      if (trimmedSentence.length === 0) continue;
+      
+      if (currentChunk.length + trimmedSentence.length > maxChunkSize && currentChunk.length > 0) {
+        chunks.push(currentChunk.trim());
+        currentChunk = trimmedSentence;
+      } else {
+        currentChunk += (currentChunk.length > 0 ? ". " : "") + trimmedSentence;
+      }
+    }
+    
+    if (currentChunk.trim().length > 0) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    return chunks.length > 0 ? chunks : [text];
+  }
+
+  private estimateTokens(text: string): number {
+    // Rough estimation: 1 token ≈ 4 characters for English text
+    return Math.ceil(text.length / 4);
+  }
+
+  private extractYouTubeId(url: string): string | null {
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([^&\n?#]+)/,
+      /^([a-zA-Z0-9_-]{11})$/
+    ];
+
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match) {
+        return match[1];
+      }
+    }
+
+    return null;
+  }
+}
+
+export const assetProcessor = new AssetProcessor();
+</file>
+
+<file path="package.json">
+{
+  "name": "funnelcanvasai",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > lib/database.types.ts"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^6.31.6",
+    "@clerk/themes": "^2.4.15",
+    "@hookform/resolvers": "^3.10.0",
+    "@radix-ui/react-accordion": "^1.2.4",
+    "@radix-ui/react-alert-dialog": "^1.1.7",
+    "@radix-ui/react-aspect-ratio": "^1.1.3",
+    "@radix-ui/react-avatar": "^1.1.4",
+    "@radix-ui/react-checkbox": "^1.1.5",
+    "@radix-ui/react-collapsible": "^1.1.4",
+    "@radix-ui/react-context-menu": "^2.2.7",
+    "@radix-ui/react-dialog": "^1.1.7",
+    "@radix-ui/react-dropdown-menu": "^2.1.7",
+    "@radix-ui/react-hover-card": "^1.1.7",
+    "@radix-ui/react-label": "^2.1.3",
+    "@radix-ui/react-menubar": "^1.1.7",
+    "@radix-ui/react-navigation-menu": "^1.2.6",
+    "@radix-ui/react-popover": "^1.1.7",
+    "@radix-ui/react-progress": "^1.1.3",
+    "@radix-ui/react-radio-group": "^1.2.4",
+    "@radix-ui/react-scroll-area": "^1.2.4",
+    "@radix-ui/react-select": "^2.1.7",
+    "@radix-ui/react-separator": "^1.1.3",
+    "@radix-ui/react-slider": "^1.2.4",
+    "@radix-ui/react-slot": "^1.2.0",
+    "@radix-ui/react-switch": "^1.1.4",
+    "@radix-ui/react-tabs": "^1.1.4",
+    "@radix-ui/react-toast": "^1.2.7",
+    "@radix-ui/react-toggle": "^1.1.3",
+    "@radix-ui/react-toggle-group": "^1.1.3",
+    "@radix-ui/react-tooltip": "^1.2.0",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.56.1",
+    "@tanstack/react-query": "^5.60.5",
+    "@uppy/core": "^4.5.2",
+    "@uppy/dashboard": "^4.4.3",
+    "@uppy/drag-drop": "^4.2.2",
+    "@uppy/react": "^4.5.2",
+    "apify-client": "^2.15.0",
+    "cheerio": "^1.1.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "date-fns": "^3.6.0",
+    "drizzle-orm": "^0.44.5",
+    "drizzle-zod": "^0.8.3",
+    "embla-carousel-react": "^8.6.0",
+    "framer-motion": "^11.13.1",
+    "google-search-results-nodejs": "^2.1.0",
+    "input-otp": "^1.4.2",
+    "langchain": "^0.3.33",
+    "lucide-react": "^0.453.0",
+    "next": "^15.5.2",
+    "next-themes": "^0.4.6",
+    "openai": "^5.12.2",
+    "pdf-lib": "^1.17.1",
+    "pdf-poppler": "^0.2.1",
+    "pdf2json": "^3.2.0",
+    "pdf2pic": "^3.2.0",
+    "react": "^18.3.1",
+    "react-day-picker": "^8.10.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.55.0",
+    "react-icons": "^5.4.0",
+    "react-resizable-panels": "^2.1.7",
+    "recharts": "^2.15.2",
+    "serpapi": "^2.2.1",
+    "svix": "^1.75.0",
+    "tailwind-merge": "^2.6.0",
+    "tailwindcss-animate": "^1.0.7",
+    "vaul": "^1.1.2",
+    "zod": "^3.24.2",
+    "zustand": "^4.5.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.15",
+    "@types/node": "^22.0.0",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^15.5.2",
+    "postcss": "^8.4.47",
+    "supabase": "^1.200.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.0"
+  }
+}
+</file>
+
 <file path="components/Layout/CanvasArea.tsx">
 import { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18551,6 +20170,8 @@ interface CanvasAreaProps {
   onAddNode?: (nodeType: string) => void;
   isReadOnly?: boolean;
   externalMemos?: TextMemoData[];
+  canShare?: boolean;
+  onOpenShareModal?: () => void;
 }
 
 // Node 타입은 types/canvas.ts의 FlowNode를 사용
@@ -18572,7 +20193,9 @@ export default function CanvasArea({
   onNodeDoubleClick,
   onAddNode,
   isReadOnly = false,
-  externalMemos
+  externalMemos,
+  canShare,
+  onOpenShareModal
 }: CanvasAreaProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -19682,30 +21305,12 @@ export default function CanvasArea({
                 <Save className="h-4 w-4" />
               </Button>
             )}
-            {!isReadOnly && (
+            {(typeof canShare === 'boolean' ? canShare : !isReadOnly) && (
               <Button 
                 variant="ghost" 
                 size="sm"
-                onClick={async () => {
-                  try {
-                    const shareUrl = `${window.location.origin}/share/${canvas.id}`;
-                    await navigator.clipboard.writeText(shareUrl);
-                    toast({
-                      title: "공유 링크 복사 완료!",
-                      description: "캔버스 공유 링크가 클립보드에 복사되었습니다. 이제 다른 사람들과 공유할 수 있어요.",
-                      duration: 3000,
-                    });
-                  } catch (error) {
-                    console.error('클립보드 복사 실패:', error);
-                    toast({
-                      title: "클립보드 복사 실패",
-                      description: "공유 링크를 클립보드에 복사할 수 없습니다. 수동으로 복사해주세요.",
-                      variant: "destructive",
-                      duration: 5000,
-                    });
-                  }
-                }}
-                title="읽기 전용 공유 링크 복사"
+                onClick={() => onOpenShareModal?.()}
+                title="캔버스 사용자 공유"
               >
                 <Share className="h-4 w-4" />
               </Button>
@@ -20220,1449 +21825,6 @@ export default function CanvasArea({
 }
 </file>
 
-<file path="lib/database.types.ts">
-/**
- * database.types.ts - Supabase 데이터베이스 타입 정의
- * 
- * 주요 역할:
- * 1. Supabase 데이터베이스 스키마의 TypeScript 타입 정의
- * 2. 타입 안전성을 위한 데이터베이스 인터페이스 제공
- * 3. 자동 완성 및 컴파일 타임 에러 방지
- * 
- * 핵심 특징:
- * - 모든 테이블과 뷰에 대한 타입 정의
- * - Insert, Update, Select 작업을 위한 별도 타입
- * - 관계형 데이터를 위한 조인 타입 지원
- * 
- * 주의사항:
- * - 데이터베이스 스키마 변경 시 수동으로 업데이트 필요
- * - Supabase CLI를 통한 자동 생성 권장
- */
-
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[]
-
-export interface Database {
-  public: {
-    Tables: {
-      text_memos: {
-        Row: {
-          id: string
-          canvas_id: string
-          content: string
-          position: Json
-          size: Json | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          canvas_id: string
-          content: string
-          position: Json
-          size?: Json | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          canvas_id?: string
-          content?: string
-          position?: Json
-          size?: Json | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      profiles: {
-        Row: {
-          id: string
-          email: string
-          name: string | null
-          avatar_url: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          email: string
-          name?: string | null
-          avatar_url?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          email?: string
-          name?: string | null
-          avatar_url?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      workspace_members: {
-        Row: {
-          id: string
-          workspace_id: string
-          user_id: string
-          role: 'owner' | 'admin' | 'member'
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          workspace_id: string
-          user_id: string
-          role: 'owner' | 'admin' | 'member'
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          workspace_id?: string
-          user_id?: string
-          role?: 'owner' | 'admin' | 'member'
-          created_at?: string
-        }
-        Relationships: []
-      }
-      canvas_states: {
-        Row: {
-          id: string
-          canvas_id: string
-          state: Json
-          user_id: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          canvas_id: string
-          state: Json
-          user_id: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          canvas_id?: string
-          state?: Json
-          user_id?: string
-          created_at?: string
-        }
-        Relationships: []
-      }
-      canvas_knowledge: {
-        Row: {
-          id: string
-          canvas_id: string
-          type: 'pdf' | 'youtube' | 'url' | 'text'
-          title: string
-          content: string | null
-          metadata: Json | null
-          embedding: unknown | null
-          extracted_text?: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          canvas_id: string
-          type: 'pdf' | 'youtube' | 'url' | 'text'
-          title: string
-          content?: string | null
-          metadata?: Json | null
-          embedding?: unknown | null
-          extracted_text?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          canvas_id?: string
-          type?: 'pdf' | 'youtube' | 'url' | 'text'
-          title?: string
-          content?: string | null
-          metadata?: Json | null
-          embedding?: unknown | null
-          extracted_text?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      canvases: {
-        Row: {
-          id: string
-          title: string
-          description: string | null
-          user_id: string
-          created_by: string
-          workspace_id: string | null
-          is_public: boolean
-          created_at: string
-          updated_at: string
-          data: Json | null
-          nodes: Json | null
-          edges: Json | null
-        }
-        Insert: {
-          id?: string
-          title: string
-          description?: string | null
-          user_id: string
-          created_by: string
-          workspace_id?: string | null
-          is_public?: boolean
-          created_at?: string
-          updated_at?: string
-          data?: Json | null
-          nodes?: Json | null
-          edges?: Json | null
-        }
-        Update: {
-          id?: string
-          title?: string
-          description?: string | null
-          user_id?: string
-          created_by?: string
-          workspace_id?: string | null
-          is_public?: boolean
-          created_at?: string
-          updated_at?: string
-          data?: Json | null
-          nodes?: Json | null
-          edges?: Json | null
-        }
-        Relationships: []
-      }
-      chat_messages: {
-        Row: {
-          id: string
-          canvas_id: string
-          user_id: string
-          role: 'user' | 'assistant'
-          content: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          canvas_id: string
-          user_id: string
-          role: 'user' | 'assistant'
-          content: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          canvas_id?: string
-          user_id?: string
-          role?: 'user' | 'assistant'
-          content?: string
-          created_at?: string
-        }
-        Relationships: []
-      }
-      canvas_chat_messages: {
-        Row: {
-          id: string
-          canvas_id: string
-          user_id: string
-          message: string
-          role: 'user' | 'assistant'
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          canvas_id: string
-          user_id: string
-          message: string
-          role: 'user' | 'assistant'
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          canvas_id?: string
-          user_id?: string
-          message?: string
-          role?: 'user' | 'assistant'
-          created_at?: string
-        }
-        Relationships: []
-      }
-      canvas_text_memos: {
-        Row: {
-          id: string
-          canvas_id: string
-          user_id: string
-          content: string
-          position_x: number
-          position_y: number
-          width: number
-          height: number
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          canvas_id: string
-          user_id: string
-          content: string
-          position_x: number
-          position_y: number
-          width: number
-          height: number
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          canvas_id?: string
-          user_id?: string
-          content?: string
-          position_x?: number
-          position_y?: number
-          width?: number
-          height?: number
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      canvas_nodes: {
-        Row: {
-          id: string
-          canvas_id: string
-          node_id: string
-          type: string
-          data: Json
-          position: Json
-          metadata: Json | null
-          created_by: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          canvas_id: string
-          node_id: string
-          type: string
-          data: Json
-          position: Json
-          metadata?: Json | null
-          created_by: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          canvas_id?: string
-          node_id?: string
-          type?: string
-          data?: Json
-          position?: Json
-          metadata?: Json | null
-          created_by?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      canvas_edges: {
-        Row: {
-          id: string
-          canvas_id: string
-          edge_id: string
-          source_node_id: string
-          target_node_id: string
-          type: string | null
-          data: Json | null
-          metadata: Json | null
-          created_by: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          canvas_id: string
-          edge_id: string
-          source_node_id: string
-          target_node_id: string
-          type?: string | null
-          data?: Json | null
-          metadata?: Json | null
-          created_by: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          canvas_id?: string
-          edge_id?: string
-          source_node_id?: string
-          target_node_id?: string
-          type?: string | null
-          data?: Json | null
-          metadata?: Json | null
-          created_by?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      canvas_todos: {
-        Row: {
-          id: string
-          canvas_id: string
-          user_id: string
-          title: string
-          description: string | null
-          status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
-          priority: 'low' | 'medium' | 'high'
-          position_x: number
-          position_y: number
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          canvas_id: string
-          user_id: string
-          title: string
-          description?: string | null
-          status?: 'pending' | 'in_progress' | 'completed' | 'cancelled'
-          priority?: 'low' | 'medium' | 'high'
-          position_x: number
-          position_y: number
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          canvas_id?: string
-          user_id?: string
-          title?: string
-          description?: string | null
-          status?: 'pending' | 'in_progress' | 'completed' | 'cancelled'
-          priority?: 'low' | 'medium' | 'high'
-          position_x?: number
-          position_y?: number
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      workspaces: {
-        Row: {
-          id: string
-          name: string
-          description: string | null
-          owner_id: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          description?: string | null
-          owner_id: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          description?: string | null
-          owner_id?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      assets: {
-        Row: {
-          id: string
-          workspace_id: string
-          canvas_id: string
-          type: string
-          url: string | null
-          file_ref: string | null
-          content_sha256: string | null
-          title: string
-          meta_json: Json | null
-          status: 'pending' | 'processing' | 'completed' | 'failed'
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          workspace_id: string
-          canvas_id: string
-          type: string
-          url?: string | null
-          file_ref?: string | null
-          content_sha256?: string | null
-          title: string
-          meta_json?: Json | null
-          status?: 'pending' | 'processing' | 'completed' | 'failed'
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          workspace_id?: string
-          canvas_id?: string
-          type?: string
-          url?: string | null
-          file_ref?: string | null
-          content_sha256?: string | null
-          title?: string
-          meta_json?: Json | null
-          status?: 'pending' | 'processing' | 'completed' | 'failed'
-          created_at?: string
-        }
-        Relationships: []
-      }
-      asset_chunks: {
-        Row: {
-          id: string
-          asset_id: string
-          seq: number
-          text: string
-          embedding: string | null
-          tokens: number | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          asset_id: string
-          seq: number
-          text: string
-          embedding?: string | null
-          tokens?: number | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          asset_id?: string
-          seq?: number
-          text?: string
-          embedding?: string | null
-          tokens?: number | null
-          created_at?: string
-        }
-        Relationships: []
-      }
-      feedback_runs: {
-        Row: {
-          id: string
-          canvas_id: string
-          state_version: number | null
-          flow_hash: string | null
-          kb_hash: string | null
-          prompt_version: string | null
-          bp_version: string | null
-          model: string | null
-          latency_ms: number | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          canvas_id: string
-          state_version?: number | null
-          flow_hash?: string | null
-          kb_hash?: string | null
-          prompt_version?: string | null
-          bp_version?: string | null
-          model?: string | null
-          latency_ms?: number | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          canvas_id?: string
-          state_version?: number | null
-          flow_hash?: string | null
-          kb_hash?: string | null
-          prompt_version?: string | null
-          bp_version?: string | null
-          model?: string | null
-          latency_ms?: number | null
-          created_at?: string
-        }
-        Relationships: []
-      }
-      feedback_items: {
-        Row: {
-          id: string
-          run_id: string
-          node_id: string | null
-          severity: string
-          suggestion: string
-          rationale: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          run_id: string
-          node_id?: string | null
-          severity: string
-          suggestion: string
-          rationale?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          run_id?: string
-          node_id?: string | null
-          severity?: string
-          suggestion?: string
-          rationale?: string | null
-          created_at?: string
-        }
-        Relationships: []
-      }
-      global_ai_knowledge: {
-        Row: {
-          id: string
-          title: string
-          content: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          title: string
-          content: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          title?: string
-          content?: string
-          created_at?: string
-        }
-        Relationships: []
-      }
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      [_ in never]: never
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
-}
-</file>
-
-<file path="services/aiFeedback.ts">
-/**
- * aiFeedback.ts - 캔버스 퍼널 AI 피드백 서비스
- * 
- * 주요 역할:
- * 1. 캔버스 상태와 지식 베이스를 결합해 피드백 생성
- * 2. 동일 입력(flow/kb) 중복 호출 방지를 위한 해시 캐싱
- * 3. 피드백 실행 이력/아이템을 DB에 저장 및 재활용
- * 
- * 핵심 특징:
- * - Supabase 서비스 클라이언트를 사용해 서버 측 안전 접근
- * - 해시/정규화 로직을 유틸로 분리해 재사용성 향상
- * - 일관된 에러 처리(throw)로 상위에서 통합 핸들링
- * 
- * 주의사항:
- * - 프론트 스토리지 의존 금지(브라우저 localStorage 미사용)
- * - 모델/버전 등 하드코딩 지양(환경 변수/상수화)
- */
-import { storage } from "./storageService";
-import { OpenAIService, type FeedbackItem } from "./openai";
-const openaiService = new OpenAIService();
-import { generateFlowHash, generateKnowledgeHash } from "@/lib/hashUtils";
-const FEEDBACK_PROMPT_VERSION = process.env.FEEDBACK_PROMPT_VERSION || "1.0";
-const FEEDBACK_BP_VERSION = process.env.FEEDBACK_BP_VERSION || "1.0";
-
-export interface FeedbackRequest {
-  canvasId: string;
-  stateVersion?: number;
-  userId: string;
-}
-
-export interface FeedbackResponse {
-  run: {
-    id: string;
-    canvasId: string;
-    flowHash: string;
-    kbHash: string;
-    createdAt: Date;
-  };
-  items: FeedbackItem[];
-}
-
-export class AIFeedbackService {
-  async generateFeedback(canvasId: string, stateVersion?: number, userId?: string): Promise<FeedbackResponse> {
-    // Get canvas state
-    const state = stateVersion 
-      ? await storage.getCanvasState(canvasId, stateVersion)
-      : await storage.getLatestCanvasState(canvasId);
-
-    if (!state) {
-      throw new Error("Canvas state not found");
-    }
-
-    const canvas = await storage.getCanvas(canvasId);
-    if (!canvas) {
-      throw new Error("Canvas not found");
-    }
-
-    // Generate flow and knowledge base hashes
-    const flowHash = generateFlowHash(state.state);
-    const kbData = await this.getKnowledgeBase(canvas.workspaceId, userId);
-    const kbHash = generateKnowledgeHash(kbData);
-
-    // Check for cached feedback
-    const existingRun = await storage.getFeedbackRun(canvasId, flowHash, kbHash);
-    if (existingRun) {
-      const items = await storage.getFeedbackItems(existingRun.id);
-      return {
-        run: {
-          id: existingRun.id,
-          canvasId: existingRun.canvasId,
-          flowHash: existingRun.flowHash!,
-          kbHash: existingRun.kbHash!,
-          createdAt: existingRun.createdAt!,
-        },
-        items: items.map((item: any) => ({
-          nodeId: item.nodeId!,
-          suggestion: item.suggestion,
-          severity: item.severity as "low" | "medium" | "high",
-          rationale: item.rationale!,
-        })),
-      };
-    }
-
-    // Generate new feedback
-    const startTime = Date.now();
-    
-    const feedbackItems = await openaiService.generateFunnelFeedback({
-      flowJson: state.state,
-      knowledgeBase: kbData,
-    });
-
-    const latencyMs = Date.now() - startTime;
-
-    // Save feedback run
-    const feedbackRun = await storage.createFeedbackRun({
-      canvasId,
-      stateVersion: 1, // 기본값 사용
-      flowHash,
-      kbHash,
-      promptVersion: FEEDBACK_PROMPT_VERSION,
-      bpVersion: FEEDBACK_BP_VERSION,
-      model: (openaiService as any).chatModel ?? "gpt-4o",
-      latencyMs,
-    });
-
-    // Save feedback items
-    for (const item of feedbackItems) {
-      await storage.createFeedbackItem({
-        runId: feedbackRun.id,
-        nodeId: item.nodeId,
-        severity: item.severity,
-        suggestion: item.suggestion,
-        rationale: item.rationale,
-      });
-    }
-
-    return {
-      run: {
-        id: feedbackRun.id,
-        canvasId: feedbackRun.canvasId,
-        flowHash: feedbackRun.flowHash!,
-        kbHash: feedbackRun.kbHash!,
-        createdAt: feedbackRun.createdAt!,
-      },
-      items: feedbackItems,
-    };
-  }
-
-  private async getKnowledgeBase(workspaceId: string, userId?: string): Promise<Array<{
-    title: string;
-    content: string;
-    source: string;
-  }>> {
-    const knowledgeBase: Array<{ title: string; content: string; source: string; }> = [];
-
-    // Get global knowledge
-    const globalKnowledge = await storage.getGlobalKnowledge();
-    for (const item of globalKnowledge) {
-      knowledgeBase.push({
-        title: item.title,
-        content: item.content,
-        source: "Global Knowledge Base",
-      });
-    }
-
-    // Canvas knowledge is handled at the canvas level, not user level
-    // Individual canvas knowledge is passed separately via canvasId
-
-    // Get asset chunks from workspace assets
-    const assetChunks = await storage.getTopKKnowledge(workspaceId, userId || "", undefined, 10);
-    for (const chunk of assetChunks) {
-      knowledgeBase.push({
-        title: `Asset Chunk ${chunk.seq}`,
-        content: chunk.text,
-        source: "Workspace Assets",
-      });
-    }
-
-    return knowledgeBase;
-  }
-
-  // 하위 호환: 기존 퍼블릭 메서드는 필요 시 hashUtils를 re-export하거나 별도 유틸에서 사용하세요.
-}
-
-export const aiFeedbackService = new AIFeedbackService();
-</file>
-
-<file path="services/assetProcessor.ts">
-import { storage } from "./storageService";
-import { OpenAIService } from "./openai";
-const openaiService = new OpenAIService();
-import type { Asset } from "@shared/schema";
-
-export interface ProcessingJob {
-  assetId: string;
-  type: 'youtube' | 'url' | 'text';
-  url?: string;
-  content?: string;
-}
-
-/**
- * AssetProcessor - YouTube 및 웹 URL 자산 처리 서비스
- * 
- * 주요 역할:
- * 1. YouTube 비디오 트랜스크립트 추출 및 처리
- * 2. 웹 URL 콘텐츠 크롤링 및 텍스트 추출
- * 3. 텍스트 노트 처리
- * 
- * 핵심 특징:
- * - 청크 단위 텍스트 분할 및 임베딩 생성
- * - 비동기 처리로 대용량 콘텐츠 안정적 처리
- * 
- * 주의사항:
- * - PDF 처리는 upload-pdf 엔드포인트에서 별도 처리
- * - OpenAI 임베딩 API 사용량 제한 고려
- */
-export class AssetProcessor {
-
-  async processAsset(asset: Asset): Promise<void> {
-    try {
-      await storage.updateAsset(asset.id, { status: "processing" });
-
-      let textContent = "";
-      
-      switch (asset.type) {
-        case "pdf":
-          // PDF processing is now handled by upload-pdf route
-          throw new Error("PDF processing should be handled by upload-pdf endpoint");
-          break;
-        case "youtube":
-          textContent = await this.processYouTube(asset);
-          break;
-        case "url":
-          textContent = await this.processURL(asset);
-          break;
-        case "note":
-          textContent = (asset.metaJson as any)?.content || "";
-          break;
-        default:
-          throw new Error(`Unsupported asset type: ${asset.type}`);
-      }
-
-      if (!textContent) {
-        throw new Error("No content extracted from asset");
-      }
-
-      // Chunk the content
-      const chunks = this.chunkText(textContent);
-      
-      // Generate embeddings and store chunks
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        const embedding = await openaiService.generateEmbedding(chunk);
-        
-        await storage.createAssetChunk({
-          assetId: asset.id,
-          seq: i,
-          text: chunk,
-          embedding: JSON.stringify(embedding),
-          tokens: this.estimateTokens(chunk),
-        });
-      }
-
-      await storage.updateAsset(asset.id, { 
-        status: "completed",
-        metaJson: {
-          ...(asset.metaJson as any || {}),
-          chunks: chunks.length,
-          processedAt: new Date().toISOString(),
-        }
-      });
-
-    } catch (error) {
-      console.error(`Error processing asset ${asset.id}:`, error);
-      await storage.updateAsset(asset.id, { 
-        status: "failed",
-        metaJson: {
-          ...(asset.metaJson as any || {}),
-          error: (error as Error).message,
-        }
-      });
-    }
-  }
-
-
-  private async processYouTube(asset: Asset): Promise<string> {
-    if (!asset.url) {
-      throw new Error("No YouTube URL provided");
-    }
-
-    // Extract video ID from URL
-    const videoId = this.extractYouTubeId(asset.url);
-    if (!videoId) {
-      throw new Error("Invalid YouTube URL");
-    }
-
-    // In a real implementation, you would:
-    // 1. Use YouTube API to get video details
-    // 2. Extract captions/subtitles if available
-    // 3. Use Apify or similar service to scrape additional data
-    // 4. Combine title, description, and captions
-
-    // For this implementation, we'll simulate YouTube processing
-    return `YouTube video content: ${asset.title}. This would include captions, description, and metadata in a real implementation.`;
-  }
-
-  private async processURL(asset: Asset): Promise<string> {
-    if (!asset.url) {
-      throw new Error("No URL provided");
-    }
-
-    try {
-      // In a real implementation, you would:
-      // 1. Use Apify web scraping service
-      // 2. Extract clean text content from HTML
-      // 3. Handle different website structures
-      // 4. Respect robots.txt and rate limits
-
-      // For this implementation, we'll simulate URL processing
-      const response = await fetch(asset.url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; FunnelBot/1.0)',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const html = await response.text();
-      
-      // Basic HTML text extraction (in production, use a proper HTML parser)
-      const textContent = html
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      if (!textContent) {
-        throw new Error("No text content extracted from URL");
-      }
-
-      return textContent;
-    } catch (error) {
-      console.error(`Error processing URL ${asset.url}:`, error);
-      throw new Error(`Failed to process URL: ${(error as Error).message}`);
-    }
-  }
-
-  private chunkText(text: string, maxChunkSize = 1000): string[] {
-    const chunks: string[] = [];
-    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    
-    let currentChunk = "";
-    
-    for (const sentence of sentences) {
-      const trimmedSentence = sentence.trim();
-      if (trimmedSentence.length === 0) continue;
-      
-      if (currentChunk.length + trimmedSentence.length > maxChunkSize && currentChunk.length > 0) {
-        chunks.push(currentChunk.trim());
-        currentChunk = trimmedSentence;
-      } else {
-        currentChunk += (currentChunk.length > 0 ? ". " : "") + trimmedSentence;
-      }
-    }
-    
-    if (currentChunk.trim().length > 0) {
-      chunks.push(currentChunk.trim());
-    }
-    
-    return chunks.length > 0 ? chunks : [text];
-  }
-
-  private estimateTokens(text: string): number {
-    // Rough estimation: 1 token ≈ 4 characters for English text
-    return Math.ceil(text.length / 4);
-  }
-
-  private extractYouTubeId(url: string): string | null {
-    const patterns = [
-      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([^&\n?#]+)/,
-      /^([a-zA-Z0-9_-]{11})$/
-    ];
-
-    for (const pattern of patterns) {
-      const match = url.match(pattern);
-      if (match) {
-        return match[1];
-      }
-    }
-
-    return null;
-  }
-}
-
-export const assetProcessor = new AssetProcessor();
-</file>
-
-<file path="services/openai.ts">
-/**
- * openai.ts - OpenAI 연동 서비스 (챗/비전/임베딩)
- * 
- * 주요 역할:
- * 1. 퍼널 피드백 생성, 요약/키워드 추출 등 챗 기반 기능 제공
- * 2. 비전 모델을 통한 이미지/페이지 OCR 텍스트 추출
- * 3. 텍스트 임베딩 생성
- * 
- * 핵심 특징:
- * - 모델명을 환경 변수로 분리하여 유연한 교체 지원
- * - JSON 응답 강제(response_format)로 파싱 안정성 향상
- * - 오류 로깅 일관화 및 상위 레이어로 예외 전파
- * 
- * 주의사항:
- * - OPENAI_DEFAULT_MODEL/OPENAI_VISION_MODEL/OPENAI_EMBEDDINGS_MODEL 환경 변수 사용
- * - 서버 환경에서만 사용
- */
-import OpenAI from "openai";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-interface FunnelAnalysisRequest {
-  flowJson: any;
-  knowledgeBase: { source: string; title: string; content: string }[];
-  userGoals?: string;
-  industry?: string;
-}
-
-export interface FeedbackItem {
-  nodeId: string;
-  suggestion: string;
-  severity: "low" | "medium" | "high";
-  rationale: string;
-}
-
-export class OpenAIService {
-  // 기본/비전/임베딩 모델은 환경 변수로 제어
-  private readonly chatModel = process.env.OPENAI_DEFAULT_MODEL || "gpt-4o";
-  private readonly visionModel = process.env.OPENAI_VISION_MODEL || "gpt-4o";
-  // Unify on GPT embeddings v3 (small): 1536 dims, cost-effective
-  private readonly embeddingsModel = process.env.OPENAI_EMBEDDINGS_MODEL || "text-embedding-3-small";
-
-  public getChatModelName(): string {
-    return this.chatModel;
-  }
-
-  public getVisionModelName(): string {
-    return this.visionModel;
-  }
-
-  public getEmbeddingsModelName(): string {
-    return this.embeddingsModel;
-  }
-
-  async generateFunnelFeedback(request: FunnelAnalysisRequest): Promise<FeedbackItem[]> {
-    try {
-      const prompt = this.buildFeedbackPrompt(request);
-
-      const response = await openai.chat.completions.create({
-        model: this.chatModel,
-        messages: [
-          {
-            role: "system",
-            content: "You are a funnel optimization expert. Analyze the provided funnel and give specific, actionable feedback. Respond with valid JSON only."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.3,
-      });
-
-      const result = JSON.parse(response.choices[0].message.content || "{}");
-      return result.feedback || [];
-    } catch (error) {
-      console.error("Error generating funnel feedback:", error);
-      throw new Error("Failed to generate AI feedback");
-    }
-  }
-
-  async generateContentSummary(content: string, maxLength: number = 50): Promise<string> {
-    try {
-      const prompt = `다음 내용을 ${maxLength}자 이내로 핵심만 간단히 요약해주세요. 제목처럼 사용할 수 있는 한 문장으로 만들어주세요.
-
-내용: ${content}
-
-응답은 요약된 제목만 제공하세요.`;
-
-      const response = await openai.chat.completions.create({
-        model: this.chatModel,
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert content summarizer. Create concise, meaningful titles from content."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 100,
-      });
-
-      return response.choices[0].message.content?.trim() || "요약된 내용";
-    } catch (error) {
-      console.error("Error generating content summary:", error);
-      return "AI 분석 내용";
-    }
-  }
-
-  async extractKeyTopics(content: string, maxTopics: number = 3): Promise<string[]> {
-    try {
-      const prompt = `다음 내용에서 핵심 주제나 키워드를 정확히 ${maxTopics}개만 추출해주세요. 가장 중요하고 구체적인 마케팅/비즈니스 관련 용어를 선택하세요.
-
-내용: ${content.substring(0, 2000)} ${content.length > 2000 ? '...' : ''}
-
-응답은 JSON 형식으로 제공하고, 정확히 ${maxTopics}개의 키워드만 포함하세요:
-{"topics": ["키워드1", "키워드2", "키워드3"]}`;
-
-      const response = await openai.chat.completions.create({
-        model: this.chatModel,
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert at extracting key topics and keywords from content. Return only valid JSON with exactly the requested number of topics."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.2,
-      });
-
-      const result = JSON.parse(response.choices[0].message.content || "{}");
-      const topics = result.topics || [];
-      return topics.slice(0, maxTopics); // 정확히 maxTopics 개수만큼만 반환
-    } catch (error) {
-      console.error("Error extracting key topics:", error);
-      return ["마케팅", "비즈니스", "전략"];
-    }
-  }
-
-  async processImageWithVision(base64Image: string, prompt: string): Promise<string> {
-    try {
-      const response = await openai.chat.completions.create({
-        model: this.visionModel,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: prompt },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/png;base64,${base64Image}`,
-                  detail: "high"
-                },
-              },
-            ],
-          },
-        ],
-        max_tokens: 4000,
-        temperature: 0.1,
-      });
-
-      return response.choices[0].message.content || "";
-    } catch (error) {
-      console.error("Error processing image with Vision API:", error);
-      throw new Error(`Vision API processing failed: ${(error as Error).message}`);
-    }
-  }
-
-  async enhanceContent(content: string, contentType: string, context?: string): Promise<string> {
-    try {
-      const prompt = context || `다음 ${contentType} 내용을 마케팅 퍼널 전문가 관점에서 분석하고 구조화해주세요:
-
-${content}
-
-깨진 텍스트나 불완전한 정보가 있다면 맥락을 파악해서 의미있는 내용으로 해석해주세요.`;
-
-      const response = await openai.chat.completions.create({
-        model: this.chatModel,
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert business analyst and marketing funnel strategist. You can interpret fragmented or poorly extracted text and transform it into actionable business insights. Focus on practical applications and real-world value."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        temperature: 0.4,
-        max_tokens: 2000,
-      });
-
-      return response.choices[0].message.content || content;
-    } catch (error) {
-      console.error("Error enhancing content:", error);
-      throw new Error("Failed to enhance content");
-    }
-  }
-
-  async generateEmbedding(text: string): Promise<number[]> {
-    try {
-      const response = await openai.embeddings.create({
-        model: this.embeddingsModel,
-        input: text,
-      });
-
-      return response.data[0].embedding;
-    } catch (error) {
-      console.error("Error generating embedding:", error);
-      throw new Error("Failed to generate embedding");
-    }
-  }
-
-  async generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-    if (texts.length === 0) return [];
-    try {
-      const response = await openai.embeddings.create({
-        model: this.embeddingsModel,
-        input: texts,
-      });
-      return response.data.map(d => d.embedding);
-    } catch (error) {
-      console.error("Error generating batch embeddings:", error);
-      throw new Error("Failed to generate batch embeddings");
-    }
-  }
-
-  async extractTextFromImage(base64Image: string): Promise<string> {
-    try {
-      const response = await openai.chat.completions.create({
-        model: this.visionModel,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Extract all text from this image. Preserve formatting and structure as much as possible."
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${base64Image}`
-                }
-              }
-            ],
-          },
-        ],
-        max_tokens: 1000,
-      });
-
-      return response.choices[0].message.content || "";
-    } catch (error) {
-      console.error("Error extracting text from image:", error);
-      throw new Error("Failed to extract text from image");
-    }
-  }
-
-
-
-
-  private buildFeedbackPrompt(request: FunnelAnalysisRequest): string {
-    const { flowJson, knowledgeBase, userGoals, industry } = request;
-
-    const kbSummary = knowledgeBase
-      .map(kb => `Source: ${kb.source}\nTitle: ${kb.title}\nContent: ${kb.content.substring(0, 500)}...`)
-      .join('\n\n');
-
-    return `Analyze this marketing funnel and provide specific feedback:
-
-FUNNEL STRUCTURE:
-${JSON.stringify(flowJson, null, 2)}
-
-KNOWLEDGE BASE:
-${kbSummary}
-
-${userGoals ? `USER GOALS: ${userGoals}` : ''}
-${industry ? `INDUSTRY: ${industry}` : ''}
-
-Please analyze the funnel based on best practices and the provided knowledge base. For each issue or recommendation, provide:
-
-1. The specific node ID that needs attention
-2. A clear, actionable suggestion
-3. Severity level (low/medium/high) 
-4. Rationale explaining why this is important
-
-Focus on:
-- Conversion optimization
-- User experience flow
-- Content effectiveness  
-- Technical implementation
-- Industry best practices
-
-Respond with JSON in this exact format:
-{
-  "feedback": [
-    {
-      "nodeId": "string",
-      "suggestion": "string", 
-      "severity": "low|medium|high",
-      "rationale": "string"
-    }
-  ]
-}`;
-  }
-}
-</file>
-
-<file path="package.json">
-{
-  "name": "funnelcanvasai",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "db:generate": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > lib/database.types.ts"
-  },
-  "dependencies": {
-    "@clerk/nextjs": "^6.31.6",
-    "@clerk/themes": "^2.4.15",
-    "@hookform/resolvers": "^3.10.0",
-    "@radix-ui/react-accordion": "^1.2.4",
-    "@radix-ui/react-alert-dialog": "^1.1.7",
-    "@radix-ui/react-aspect-ratio": "^1.1.3",
-    "@radix-ui/react-avatar": "^1.1.4",
-    "@radix-ui/react-checkbox": "^1.1.5",
-    "@radix-ui/react-collapsible": "^1.1.4",
-    "@radix-ui/react-context-menu": "^2.2.7",
-    "@radix-ui/react-dialog": "^1.1.7",
-    "@radix-ui/react-dropdown-menu": "^2.1.7",
-    "@radix-ui/react-hover-card": "^1.1.7",
-    "@radix-ui/react-label": "^2.1.3",
-    "@radix-ui/react-menubar": "^1.1.7",
-    "@radix-ui/react-navigation-menu": "^1.2.6",
-    "@radix-ui/react-popover": "^1.1.7",
-    "@radix-ui/react-progress": "^1.1.3",
-    "@radix-ui/react-radio-group": "^1.2.4",
-    "@radix-ui/react-scroll-area": "^1.2.4",
-    "@radix-ui/react-select": "^2.1.7",
-    "@radix-ui/react-separator": "^1.1.3",
-    "@radix-ui/react-slider": "^1.2.4",
-    "@radix-ui/react-slot": "^1.2.0",
-    "@radix-ui/react-switch": "^1.1.4",
-    "@radix-ui/react-tabs": "^1.1.4",
-    "@radix-ui/react-toast": "^1.2.7",
-    "@radix-ui/react-toggle": "^1.1.3",
-    "@radix-ui/react-toggle-group": "^1.1.3",
-    "@radix-ui/react-tooltip": "^1.2.0",
-    "@supabase/ssr": "^0.5.2",
-    "@supabase/supabase-js": "^2.56.1",
-    "@tanstack/react-query": "^5.60.5",
-    "@uppy/core": "^4.5.2",
-    "@uppy/dashboard": "^4.4.3",
-    "@uppy/drag-drop": "^4.2.2",
-    "@uppy/react": "^4.5.2",
-    "apify-client": "^2.15.0",
-    "cheerio": "^1.1.2",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "cmdk": "^1.1.1",
-    "date-fns": "^3.6.0",
-    "drizzle-orm": "^0.44.5",
-    "drizzle-zod": "^0.8.3",
-    "embla-carousel-react": "^8.6.0",
-    "framer-motion": "^11.13.1",
-    "google-search-results-nodejs": "^2.1.0",
-    "input-otp": "^1.4.2",
-    "langchain": "^0.3.33",
-    "lucide-react": "^0.453.0",
-    "next": "^15.5.2",
-    "next-themes": "^0.4.6",
-    "openai": "^5.12.2",
-    "pdf-lib": "^1.17.1",
-    "pdf-poppler": "^0.2.1",
-    "pdf2json": "^3.2.0",
-    "pdf2pic": "^3.2.0",
-    "react": "^18.3.1",
-    "react-day-picker": "^8.10.1",
-    "react-dom": "^18.3.1",
-    "react-hook-form": "^7.55.0",
-    "react-icons": "^5.4.0",
-    "react-resizable-panels": "^2.1.7",
-    "recharts": "^2.15.2",
-    "serpapi": "^2.2.1",
-    "svix": "^1.75.0",
-    "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7",
-    "vaul": "^1.1.2",
-    "zod": "^3.24.2",
-    "zustand": "^4.5.7"
-  },
-  "devDependencies": {
-    "@tailwindcss/typography": "^0.5.15",
-    "@types/node": "^22.0.0",
-    "@types/pdf-parse": "^1.1.5",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "autoprefixer": "^10.4.20",
-    "eslint": "^9.0.0",
-    "eslint-config-next": "^15.5.2",
-    "postcss": "^8.4.47",
-    "supabase": "^1.200.3",
-    "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.0"
-  }
-}
-</file>
-
 <file path="components/Modals/TemplateModal.tsx">
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -21907,6 +22069,352 @@ export default function TemplateModal({
 }
 </file>
 
+<file path="services/openai.ts">
+/**
+ * openai.ts - OpenAI 연동 서비스 (챗/비전/임베딩)
+ * 
+ * 주요 역할:
+ * 1. 퍼널 피드백 생성, 요약/키워드 추출 등 챗 기반 기능 제공
+ * 2. 비전 모델을 통한 이미지/페이지 OCR 텍스트 추출
+ * 3. 텍스트 임베딩 생성
+ * 
+ * 핵심 특징:
+ * - 모델명을 환경 변수로 분리하여 유연한 교체 지원
+ * - JSON 응답 강제(response_format)로 파싱 안정성 향상
+ * - 오류 로깅 일관화 및 상위 레이어로 예외 전파
+ * 
+ * 주의사항:
+ * - OPENAI_DEFAULT_MODEL/OPENAI_VISION_MODEL/OPENAI_EMBEDDINGS_MODEL 환경 변수 사용
+ * - 서버 환경에서만 사용
+ */
+import OpenAI from "openai";
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+interface FunnelAnalysisRequest {
+  flowJson: any;
+  knowledgeBase: { source: string; title: string; content: string }[];
+  userGoals?: string;
+  industry?: string;
+}
+
+export interface FeedbackItem {
+  nodeId: string;
+  suggestion: string;
+  severity: "low" | "medium" | "high";
+  rationale: string;
+}
+
+export class OpenAIService {
+  // 기본/비전/임베딩 모델은 환경 변수로 제어
+  private readonly chatModel = process.env.OPENAI_DEFAULT_MODEL || "gpt-4o";
+  private readonly visionModel = process.env.OPENAI_VISION_MODEL || "gpt-4o";
+  // Unify on GPT embeddings v3 (small): 1536 dims, cost-effective
+  private readonly embeddingsModel = process.env.OPENAI_EMBEDDINGS_MODEL || "text-embedding-3-small";
+
+  public getChatModelName(): string {
+    return this.chatModel;
+  }
+
+  public getVisionModelName(): string {
+    return this.visionModel;
+  }
+
+  public getEmbeddingsModelName(): string {
+    return this.embeddingsModel;
+  }
+
+  async generateFunnelFeedback(request: FunnelAnalysisRequest): Promise<FeedbackItem[]> {
+    try {
+      const prompt = this.buildFeedbackPrompt(request);
+
+      const response = await openai.chat.completions.create({
+        model: this.chatModel,
+        messages: [
+          {
+            role: "system",
+            content: "You are a funnel optimization expert. Analyze the provided funnel and give specific, actionable feedback. Respond with valid JSON only."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+      });
+
+      const result = JSON.parse(response.choices[0].message.content || "{}");
+      return result.feedback || [];
+    } catch (error) {
+      console.error("Error generating funnel feedback:", error);
+      throw new Error("Failed to generate AI feedback");
+    }
+  }
+
+  async generateContentSummary(content: string, maxLength: number = 50): Promise<string> {
+    try {
+      const prompt = `다음 내용을 ${maxLength}자 이내로 핵심만 간단히 요약해주세요. 제목처럼 사용할 수 있는 한 문장으로 만들어주세요.
+
+내용: ${content}
+
+응답은 요약된 제목만 제공하세요.`;
+
+      const response = await openai.chat.completions.create({
+        model: this.chatModel,
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert content summarizer. Create concise, meaningful titles from content."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 100,
+      });
+
+      return response.choices[0].message.content?.trim() || "요약된 내용";
+    } catch (error) {
+      console.error("Error generating content summary:", error);
+      return "AI 분석 내용";
+    }
+  }
+
+  async extractKeyTopics(content: string, maxTopics: number = 3): Promise<string[]> {
+    try {
+      const prompt = `다음 내용에서 핵심 주제나 키워드를 정확히 ${maxTopics}개만 추출해주세요. 가장 중요하고 구체적인 마케팅/비즈니스 관련 용어를 선택하세요.
+
+내용: ${content.substring(0, 2000)} ${content.length > 2000 ? '...' : ''}
+
+응답은 JSON 형식으로 제공하고, 정확히 ${maxTopics}개의 키워드만 포함하세요:
+{"topics": ["키워드1", "키워드2", "키워드3"]}`;
+
+      const response = await openai.chat.completions.create({
+        model: this.chatModel,
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert at extracting key topics and keywords from content. Return only valid JSON with exactly the requested number of topics."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+      });
+
+      const result = JSON.parse(response.choices[0].message.content || "{}");
+      const topics = result.topics || [];
+      return topics.slice(0, maxTopics); // 정확히 maxTopics 개수만큼만 반환
+    } catch (error) {
+      console.error("Error extracting key topics:", error);
+      return ["마케팅", "비즈니스", "전략"];
+    }
+  }
+
+  async processImageWithVision(base64Image: string, prompt: string): Promise<string> {
+    try {
+      const response = await openai.chat.completions.create({
+        model: this.visionModel,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/png;base64,${base64Image}`,
+                  detail: "high"
+                },
+              },
+            ],
+          },
+        ],
+        max_tokens: 4000,
+        temperature: 0.1,
+      });
+
+      return response.choices[0].message.content || "";
+    } catch (error) {
+      console.error("Error processing image with Vision API:", error);
+      throw new Error(`Vision API processing failed: ${(error as Error).message}`);
+    }
+  }
+
+  async enhanceContent(content: string, contentType: string, context?: string): Promise<string> {
+    try {
+      const prompt = context || `다음 ${contentType} 내용을 마케팅 퍼널 전문가 관점에서 분석하고 구조화해주세요:
+
+${content}
+
+깨진 텍스트나 불완전한 정보가 있다면 맥락을 파악해서 의미있는 내용으로 해석해주세요.`;
+
+      const response = await openai.chat.completions.create({
+        model: this.chatModel,
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert business analyst and marketing funnel strategist. You can interpret fragmented or poorly extracted text and transform it into actionable business insights. Focus on practical applications and real-world value."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.4,
+        max_tokens: 2000,
+      });
+
+      return response.choices[0].message.content || content;
+    } catch (error) {
+      console.error("Error enhancing content:", error);
+      throw new Error("Failed to enhance content");
+    }
+  }
+
+  async generateEmbedding(text: string): Promise<number[]> {
+    try {
+      const response = await openai.embeddings.create({
+        model: this.embeddingsModel,
+        input: text,
+      });
+
+      return response.data[0].embedding;
+    } catch (error) {
+      console.error("Error generating embedding:", error);
+      throw new Error("Failed to generate embedding");
+    }
+  }
+
+  async generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+    try {
+      const response = await openai.embeddings.create({
+        model: this.embeddingsModel,
+        input: texts,
+      });
+      return response.data.map(d => d.embedding);
+    } catch (error) {
+      console.error("Error generating batch embeddings:", error);
+      throw new Error("Failed to generate batch embeddings");
+    }
+  }
+
+  /**
+   * 범용 챗 응답 생성 (시스템/유저 프롬프트 전달)
+   */
+  async chat(systemPrompt: string, userPrompt: string, options?: { maxTokens?: number; temperature?: number; presencePenalty?: number; frequencyPenalty?: number; }): Promise<string> {
+    const max_tokens = options?.maxTokens ?? 2500;
+    const temperature = options?.temperature ?? 0.2;
+    const presence_penalty = options?.presencePenalty ?? 0.1;
+    const frequency_penalty = options?.frequencyPenalty ?? 0.1;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: this.chatModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens,
+        temperature,
+        presence_penalty,
+        frequency_penalty,
+      });
+      return response.choices[0].message.content || '';
+    } catch (error) {
+      console.error('Error generating chat completion:', error);
+      throw new Error('Failed to generate chat completion');
+    }
+  }
+
+  async extractTextFromImage(base64Image: string): Promise<string> {
+    try {
+      const response = await openai.chat.completions.create({
+        model: this.visionModel,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Extract all text from this image. Preserve formatting and structure as much as possible."
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64Image}`
+                }
+              }
+            ],
+          },
+        ],
+        max_tokens: 1000,
+      });
+
+      return response.choices[0].message.content || "";
+    } catch (error) {
+      console.error("Error extracting text from image:", error);
+      throw new Error("Failed to extract text from image");
+    }
+  }
+
+
+
+
+  private buildFeedbackPrompt(request: FunnelAnalysisRequest): string {
+    const { flowJson, knowledgeBase, userGoals, industry } = request;
+
+    const kbSummary = knowledgeBase
+      .map(kb => `Source: ${kb.source}\nTitle: ${kb.title}\nContent: ${kb.content.substring(0, 500)}...`)
+      .join('\n\n');
+
+    return `Analyze this marketing funnel and provide specific feedback:
+
+FUNNEL STRUCTURE:
+${JSON.stringify(flowJson, null, 2)}
+
+KNOWLEDGE BASE:
+${kbSummary}
+
+${userGoals ? `USER GOALS: ${userGoals}` : ''}
+${industry ? `INDUSTRY: ${industry}` : ''}
+
+Please analyze the funnel based on best practices and the provided knowledge base. For each issue or recommendation, provide:
+
+1. The specific node ID that needs attention
+2. A clear, actionable suggestion
+3. Severity level (low/medium/high) 
+4. Rationale explaining why this is important
+
+Focus on:
+- Conversion optimization
+- User experience flow
+- Content effectiveness  
+- Technical implementation
+- Industry best practices
+
+Respond with JSON in this exact format:
+{
+  "feedback": [
+    {
+      "nodeId": "string",
+      "suggestion": "string", 
+      "severity": "low|medium|high",
+      "rationale": "string"
+    }
+  ]
+}`;
+  }
+}
+</file>
+
 <file path="components/Canvas/CanvasView.tsx">
 "use client";
 
@@ -21917,13 +22425,14 @@ import { useToast } from "@/hooks/use-toast";
 import Sidebar from "@/components/Layout/Sidebar";
 import CanvasArea from "@/components/Layout/CanvasArea";
 import RightPanel from "@/components/Layout/RightPanel";
-import { AIFeedbackButton } from "@/components/Ui/buttons";
 import SidebarChat from "@/components/Chat/SidebarChat";
 import TodoSticker, { TodoStickerToggle } from "@/components/TodoSticker/TodoSticker";
 import UploadModal from "@/components/Modals/UploadModal";
 import TemplateModal from "@/components/Modals/TemplateModal";
 import AIFeedbackModal from "@/components/Modals/AIFeedbackModal";
 import { WorkspaceMembersModal } from "@/components/Modals/WorkspaceMembersModal";
+import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
+import { useCanvasRole } from "@/hooks/useCanvasRole";
 import type { CanvasViewProps, CanvasAreaCanvas, FlowNode, UploadType } from "@/types/canvas";
 import type { Asset } from "@shared/schema";
 import { toCanvasAreaCanvas } from "@/types/canvas";
@@ -21951,6 +22460,7 @@ import { toCanvasAreaCanvas } from "@/types/canvas";
 
 export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = false }: CanvasViewProps) {
   const { toast } = useToast();
+  const { canShare, canEdit } = useCanvasRole(canvas.id);
   
   // UI State - Canvas.tsx와 동일한 구조
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -21961,6 +22471,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showAIModal, setShowAIModal] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
+  const [showCanvasShareModal, setShowCanvasShareModal] = useState(false);
   const [uploadType, setUploadType] = useState<UploadType>("pdf");
   
   // Node details state for right panel
@@ -22010,6 +22521,10 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
 
   const handleToggleChatSidebar = () => {
     setChatCollapsed(!chatCollapsed);
+  };
+
+  const handleOpenCanvasShareModal = () => {
+    setShowCanvasShareModal(true);
   };
 
 
@@ -22094,7 +22609,9 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         selectedNodeId={selectedNodeId}
         onNodeSelect={handleNodeSelect}
         onNodeDoubleClick={handleNodeDoubleClick}
-        isReadOnly={isPublic}
+        isReadOnly={isPublic || !canEdit}
+        canShare={canShare}
+        onOpenShareModal={handleOpenCanvasShareModal}
       />
 
       {/* Right Panel - 노드가 선택된 경우 우선 표시 */}
@@ -22156,6 +22673,13 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         onClose={() => setShowMembersModal(false)}
         workspaceId={canvas.workspaceId || canvas.workspace_id || ''}
         workspaceName={canvas.title}
+      />
+
+      <CanvasShareModal
+        isOpen={showCanvasShareModal}
+        onClose={() => setShowCanvasShareModal(false)}
+        canvasId={canvas.id}
+        canvasTitle={canvas.title}
       />
     </div>
   );
