@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/U
 import { Button } from "@/components/Ui/buttons";
 import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, invalidateCanvasQueries } from "@/lib/queryClient";
 import { createToastMessage, ErrorDetectors } from "@/lib/messages/toast-utils";
 
 /**
@@ -77,8 +77,8 @@ export default function PdfUploadModal({ open, onOpenChange, workspaceId, canvas
 
       return await response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/workspaces", workspaceId, "assets"] });
+    onSuccess: async () => {
+      await invalidateCanvasQueries({ canvasId, workspaceId, client: queryClient, targets: ["assets", "knowledge"] });
       const successMessage = createToastMessage.uploadSuccess('PDF');
       toast(successMessage);
       onOpenChange(false);

@@ -3,7 +3,7 @@ import { X, Plus, Check, Trash2, ChevronDown, ChevronUp, Circle } from 'lucide-r
 import { Button } from '@/components/Ui/buttons';
 import { Input } from '@/components/Ui/form-controls';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, invalidateCanvasQueries } from '@/lib/queryClient';
 import { createClient } from '@/lib/supabase/client';
 
 interface TodoItem {
@@ -228,11 +228,8 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
         break;
     }
     
-    // 캐시 무효화 (부분적으로만)
-    queryClient.invalidateQueries({ 
-      queryKey: [`/api/canvases/${canvasId}/todos`],
-      exact: false 
-    });
+    // 캔버스 단위 캐시 무효화 (todos 관련 모든 키)
+    invalidateCanvasQueries({ canvasId, client: queryClient, targets: ["todos"] });
   }, [canvasId, pendingOperations, queryClient]);
 
   // Supabase Realtime 구독 설정 - 스티커가 보일 때만 활성화
@@ -322,6 +319,8 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       });
       
       // 노드 동기화는 제거됨
+      // todos 캐시 무효화
+      await invalidateCanvasQueries({ canvasId, client: queryClient, targets: ["todos"] });
     },
     onError: (error, text, context) => {
       // 실패 시 낙관적 업데이트 롤백
@@ -389,6 +388,8 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       });
       
       // 노드 동기화 제거됨
+      // todos 캐시 무효화
+      await invalidateCanvasQueries({ canvasId, client: queryClient, targets: ["todos"] });
     },
     onError: (error, { id }, context) => {
       // 실패 시 이전 상태로 롤백
@@ -423,6 +424,8 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       
       // 낙관적 상태에서도 제거
       setOptimisticTodos(prev => prev.filter(t => t.id !== id));
+      // todos 캐시 무효화
+      await invalidateCanvasQueries({ canvasId, client: queryClient, targets: ["todos"] });
     },
     onError: (error, id, context) => {
       // 실패 시 이전 상태로 롤백

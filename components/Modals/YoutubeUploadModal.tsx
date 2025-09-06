@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/U
 import { Button } from "@/components/Ui/buttons";
 import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, invalidateCanvasQueries } from "@/lib/queryClient";
 import { createToastMessage, ErrorDetectors } from "@/lib/messages/toast-utils";
 import { createClient as createSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -109,8 +109,8 @@ export default function YoutubeUploadModal({ open, onOpenChange, workspaceId, ca
 
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/workspaces", workspaceId, "assets"] });
+    onSuccess: async () => {
+      await invalidateCanvasQueries({ canvasId, workspaceId, client: queryClient, targets: ["assets", "knowledge"] });
       const successMessage = createToastMessage.uploadSuccess('YOUTUBE');
       toast(successMessage);
       onOpenChange(false);

@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Se
 import { Button, Badge } from "@/components/Ui/buttons";
 import { Input } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, invalidateCanvasQueries } from "@/lib/queryClient";
 import { Users, Share, Trash2, Eye, Edit } from "lucide-react";
 
 interface CanvasShareModalProps {
@@ -51,11 +51,10 @@ export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: Can
   const shareMutation = useMutation({
     mutationFn: (data: { email: string; role: string }) =>
       apiRequest('POST', `/api/canvases/${canvasId}/shares`, data),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "캔버스 공유 성공", description: "캔버스가 성공적으로 공유되었습니다." });
       setShareEmail("");
-      queryClient.invalidateQueries({ queryKey: ['canvas-shares', canvasId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/user/canvases'] });
+      await invalidateCanvasQueries({ canvasId, client: queryClient, targets: ["shares"] });
     },
     onError: (error: any) => {
       const errorMessage = error.message || "캔버스 공유에 실패했습니다.";
@@ -75,10 +74,9 @@ export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: Can
   const removeMutation = useMutation({
     mutationFn: (userId: string) =>
       apiRequest('DELETE', `/api/canvases/${canvasId}/shares/${userId}`),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: "공유 해제 성공", description: "캔버스 공유가 해제되었습니다." });
-      queryClient.invalidateQueries({ queryKey: ['canvas-shares', canvasId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/user/canvases'] });
+      await invalidateCanvasQueries({ canvasId, client: queryClient, targets: ["shares"] });
     },
     onError: (error: any) => {
       toast({ 
@@ -98,9 +96,9 @@ export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: Can
   const changeRoleMutation = useMutation({
     mutationFn: (payload: { userId: string; role: 'editor' | 'viewer' }) =>
       apiRequest('PATCH', `/api/canvases/${canvasId}/shares/${payload.userId}`, { role: payload.role }),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({ title: '역할 변경 완료', description: '공유된 사용자의 역할이 변경되었습니다.' });
-      queryClient.invalidateQueries({ queryKey: ['canvas-shares', canvasId] });
+      await invalidateCanvasQueries({ canvasId, client: queryClient, targets: ["shares"] });
     },
     onError: (error: any) => {
       toast({ title: '역할 변경 실패', description: error.message || '역할 변경에 실패했습니다.', variant: 'destructive' });

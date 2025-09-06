@@ -10,6 +10,7 @@ import { useCanvasStore } from "@/hooks/useCanvasStore";
 import { useCanvasInteractions } from "@/hooks/use-canvas-interactions";
 import { useCanvasSync } from "@/hooks/useCanvasSync";
 import { createToastMessage } from "@/lib/messages/toast-utils";
+import { invalidateCanvasQueries } from "@/lib/queryClient";
 import { Mail, Monitor, Share, MessageSquare } from "lucide-react";
 import type { Canvas, CanvasState } from "@shared/schema";
 import type { FlowNode, FlowEdge, TextMemoData } from "@/types/canvas";
@@ -267,7 +268,7 @@ export default function CanvasArea({
     debounceMs: 1000,
     onSuccess: () => {
       // 최신 상태 쿼리 무효화
-      queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id, "state", "latest"] });
+      invalidateCanvasQueries({ canvasId: canvas.id, client: queryClient, targets: ["state"] });
       if (manualSavePendingRef.current) {
         const successMessage = createToastMessage.canvasSuccess('SAVE');
         toast(successMessage);
@@ -620,74 +621,164 @@ export default function CanvasArea({
     }
   }, [canvas.id, selectedMemoId]);
 
+  // 메모 위치 업데이트 디바운싱을 위한 ref 저장소
+  const memoUpdateTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const pendingMemoUpdatesRef = useRef<Record<string, { position: { x: number; y: number }; originalMemo: any }>>({});
+
   const updateMemoPosition = useCallback(async (memoId: string, position: { x: number; y: number }) => {
     try {
       const memo = memos.find(m => m.id === memoId);
       if (!memo) return;
 
-      // Update local state immediately
+      // 로컬 상태 즉시 업데이트 (드래그 중 UI 반응성 보장)
       setMemos(prev => prev.map(m => m.id === memoId ? { ...m, position } : m));
 
-      // Update server
-      const response = await fetch(`/api/canvases/${canvas.id}/memos/${memoId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          content: memo.content,
-          position
-        })
-      });
-      
-      if (!response.ok) {
-        // Revert local state if server update failed
-        setMemos(prev => prev.map(m => m.id === memoId ? memo : m));
+      // 기존 타이머 취소
+      if (memoUpdateTimeoutsRef.current[memoId]) {
+        clearTimeout(memoUpdateTimeoutsRef.current[memoId]);
       }
+
+      // 원본 메모 정보와 새 위치 저장 (첫 번째 업데이트 시에만)
+      if (!pendingMemoUpdatesRef.current[memoId]) {
+        pendingMemoUpdatesRef.current[memoId] = {
+          position,
+          originalMemo: memo
+        };
+      } else {
+        // 위치만 업데이트
+        pendingMemoUpdatesRef.current[memoId].position = position;
+      }
+
+      // 500ms 디바운싱으로 서버 업데이트 지연
+      memoUpdateTimeoutsRef.current[memoId] = setTimeout(async () => {
+        const pendingUpdate = pendingMemoUpdatesRef.current[memoId];
+        if (!pendingUpdate) return;
+
+        try {
+          const response = await fetch(`/api/canvases/${canvas.id}/memos/${memoId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              content: pendingUpdate.originalMemo.content,
+              position: pendingUpdate.position
+            })
+          });
+          
+          if (!response.ok) {
+            // 서버 업데이트 실패 시 원본 위치로 복원
+            setMemos(prev => prev.map(m => 
+              m.id === memoId ? { ...m, position: pendingUpdate.originalMemo.position } : m
+            ));
+          }
+        } catch (error) {
+          console.error("Error updating memo position:", error);
+          // 에러 발생 시 원본 위치로 복원
+          setMemos(prev => prev.map(m => 
+            m.id === memoId ? { ...m, position: pendingUpdate.originalMemo.position } : m
+          ));
+        } finally {
+          // 정리 작업
+          delete memoUpdateTimeoutsRef.current[memoId];
+          delete pendingMemoUpdatesRef.current[memoId];
+        }
+      }, 500); // 500ms 디바운싱
+
     } catch (error) {
-      console.error("Error updating memo position:", error);
-      // Revert local state
-      const memo = memos.find(m => m.id === memoId);
-      if (memo) {
-        setMemos(prev => prev.map(m => m.id === memoId ? memo : m));
-      }
+      console.error("Error in updateMemoPosition:", error);
     }
   }, [canvas.id, memos]);
+
+  // 메모 크기 업데이트 디바운싱을 위한 ref 저장소
+  const memoSizeUpdateTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const pendingMemoSizeUpdatesRef = useRef<Record<string, { size: { width: number; height: number }; originalMemo: any }>>({});
 
   // Handle memo size change
   const handleMemoSizeChange = useCallback(async (memoId: string, newSize: { width: number; height: number }) => {
-    // Optimistic update
-    setMemos(prev => prev.map(m => 
-      m.id === memoId ? { ...m, size: newSize } : m
-    ));
-
     try {
-      const response = await fetch(`/api/canvases/${canvas.id}/memos/${memoId}`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ size: newSize })
-      });
-      
-      if (!response.ok) {
-        // Revert local state if server update failed
-        const memo = memos.find(m => m.id === memoId);
-        if (memo) {
-          setMemos(prev => prev.map(m => m.id === memoId ? memo : m));
-        }
-      }
-    } catch (error) {
-      console.error("Error updating memo size:", error);
-      // Revert local state
       const memo = memos.find(m => m.id === memoId);
-      if (memo) {
-        setMemos(prev => prev.map(m => m.id === memoId ? memo : m));
+      if (!memo) return;
+
+      // 로컬 상태 즉시 업데이트 (리사이즈 중 UI 반응성 보장)
+      setMemos(prev => prev.map(m => 
+        m.id === memoId ? { ...m, size: newSize } : m
+      ));
+
+      // 기존 타이머 취소
+      if (memoSizeUpdateTimeoutsRef.current[memoId]) {
+        clearTimeout(memoSizeUpdateTimeoutsRef.current[memoId]);
       }
+
+      // 원본 메모 정보와 새 크기 저장 (첫 번째 업데이트 시에만)
+      if (!pendingMemoSizeUpdatesRef.current[memoId]) {
+        pendingMemoSizeUpdatesRef.current[memoId] = {
+          size: newSize,
+          originalMemo: memo
+        };
+      } else {
+        // 크기만 업데이트
+        pendingMemoSizeUpdatesRef.current[memoId].size = newSize;
+      }
+
+      // 300ms 디바운싱으로 서버 업데이트 지연 (크기 조절은 위치보다 빠르게)
+      memoSizeUpdateTimeoutsRef.current[memoId] = setTimeout(async () => {
+        const pendingUpdate = pendingMemoSizeUpdatesRef.current[memoId];
+        if (!pendingUpdate) return;
+
+        try {
+          const response = await fetch(`/api/canvases/${canvas.id}/memos/${memoId}`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ size: pendingUpdate.size })
+          });
+          
+          if (!response.ok) {
+            // 서버 업데이트 실패 시 원본 크기로 복원
+            setMemos(prev => prev.map(m => 
+              m.id === memoId ? { ...m, size: pendingUpdate.originalMemo.size } : m
+            ));
+          }
+        } catch (error) {
+          console.error("Error updating memo size:", error);
+          // 에러 발생 시 원본 크기로 복원
+          setMemos(prev => prev.map(m => 
+            m.id === memoId ? { ...m, size: pendingUpdate.originalMemo.size } : m
+          ));
+        } finally {
+          // 정리 작업
+          delete memoSizeUpdateTimeoutsRef.current[memoId];
+          delete pendingMemoSizeUpdatesRef.current[memoId];
+        }
+      }, 300); // 300ms 디바운싱
+
+    } catch (error) {
+      console.error("Error in handleMemoSizeChange:", error);
     }
   }, [canvas.id, memos]);
+
+  // 컴포넌트 언마운트 시 모든 타이머 정리
+  useEffect(() => {
+    return () => {
+      // 메모 위치 업데이트 타이머 정리
+      Object.values(memoUpdateTimeoutsRef.current).forEach(timeout => {
+        if (timeout) clearTimeout(timeout);
+      });
+      memoUpdateTimeoutsRef.current = {};
+      pendingMemoUpdatesRef.current = {};
+
+      // 메모 크기 업데이트 타이머 정리
+      Object.values(memoSizeUpdateTimeoutsRef.current).forEach(timeout => {
+        if (timeout) clearTimeout(timeout);
+      });
+      memoSizeUpdateTimeoutsRef.current = {};
+      pendingMemoSizeUpdatesRef.current = {};
+    };
+  }, []);
 
   // Create memo from modal
   const createMemoFromModal = useCallback(async (position: { x: number; y: number }, content: string) => {

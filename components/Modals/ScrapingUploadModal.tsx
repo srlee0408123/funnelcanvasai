@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/U
 import { Button } from "@/components/Ui/buttons";
 import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, invalidateCanvasQueries } from "@/lib/queryClient";
 import { createToastMessage, ErrorDetectors } from "@/lib/messages/toast-utils";
 
 /**
@@ -69,8 +69,8 @@ export default function ScrapingUploadModal({ open, onOpenChange, workspaceId, c
         return null;
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/workspaces", workspaceId, "assets"] });
+    onSuccess: async () => {
+      await invalidateCanvasQueries({ canvasId, workspaceId, client: queryClient, targets: ["assets", "knowledge"] });
       const successMessage = createToastMessage.uploadSuccess('WEBSITE');
       toast(successMessage);
       onOpenChange(false);
