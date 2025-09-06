@@ -2,7 +2,7 @@
  * WebSearchService - 고급 웹 검색 및 컨텍스트 기반 결과 생성 서비스
  * 
  * 주요 역할:
- * 1. SerpAPI를 통한 실시간 웹 검색 수행
+ * 1. Perplexity를 통한 검색 결과 생성
  * 2. 검색 결과 콘텐츠 향상 및 요약
  * 3. 컨텍스트 기반 대체 결과 생성
  * 
@@ -12,15 +12,15 @@
  * - 마케팅 특화 컨텍스트 결과 제공
  * 
  * 주의사항:
- * - SERPAPI_KEY 환경변수 설정 시 실제 검색 활성화
+ * - PERPLEXITY_API_KEY 환경변수 설정 시 실제 검색 활성화
  * - 검색 API 호출 제한 고려 필요
  * - 대체 결과는 정적 데이터 기반
  */
 
-// Enhanced Web search service with real search capabilities
-import { getJson } from 'serpapi';
+// Enhanced Web search service with Perplexity-based search capabilities
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
+import { PerplexityService } from '@/services/perplexity';
 
 interface SearchResult {
   title: string;
@@ -38,16 +38,15 @@ interface SearchResponse {
 }
 
 export class WebSearchService {
-  private serpApiKey: string;
+  private readonly perplexity: PerplexityService;
   
   constructor() {
-    this.serpApiKey = process.env.SERPAPI_KEY || '';
-    console.log('WebSearchService initialized with SerpAPI:', !!this.serpApiKey);
+    this.perplexity = new PerplexityService();
   }
 
   /**
    * 웹 검색 실행 - 실제 검색 API 우선, 컨텍스트 결과 백업
-   * SerpAPI 사용 가능 시 실시간 검색, 불가능 시 컨텍스트 기반 결과 제공
+   * Perplexity 사용 가능 시 실시간 검색, 불가능 시 컨텍스트 기반 결과 제공
    */
   async searchWeb(query: string, numResults: number = 8): Promise<SearchResponse> {
     const startTime = Date.now();
@@ -55,19 +54,20 @@ export class WebSearchService {
     try {
       console.log(`🔍 Starting web search for: "${query}"`);
       
-      // Try real web search first if API key is available
-      if (this.serpApiKey) {
-        console.log('Using SerpAPI for real web search');
-        const realResults = await this.performRealSearch(query, numResults);
-        if (realResults && realResults.length > 0) {
-          console.log(`✅ Found ${realResults.length} real search results`);
+      // Try Perplexity-based search first
+      try {
+        const ppxResults = await this.performPerplexitySearch(query, numResults);
+        if (ppxResults.length > 0) {
+          console.log(`✅ Found ${ppxResults.length} results from Perplexity`);
           return {
-            results: realResults,
+            results: ppxResults,
             searchTime: Date.now() - startTime,
-            totalResults: realResults.length,
+            totalResults: ppxResults.length,
             searchTerm: query
           };
         }
+      } catch (e) {
+        console.log('Perplexity search failed, using contextual fallback');
       }
       
       // Fallback to enhanced contextual results with better matching
@@ -94,38 +94,19 @@ export class WebSearchService {
   }
 
   /**
-   * SerpAPI를 통한 실제 웹 검색 수행
-   * 상위 3개 결과에 대해 콘텐츠 추출 및 요약 제공
+   * Perplexity를 통한 검색 결과 생성
+   * 상위 3개 결과에 대해 콘텐츠 추출 및 요약 보강
    */
-  private async performRealSearch(query: string, numResults: number): Promise<SearchResult[]> {
+  private async performPerplexitySearch(query: string, numResults: number): Promise<SearchResult[]> {
     try {
-      console.log('🔍 SerpAPI Key available:', !!this.serpApiKey);
-      console.log('🔍 Starting SerpAPI search for:', query);
-      
-      const searchParams = {
-        q: query,
-        hl: 'ko',
-        gl: 'kr',
-        num: numResults,
-        api_key: this.serpApiKey
-      };
-
-      const response = await getJson(searchParams);
-      
-      if (!response || !response.organic_results) {
-        console.log('No organic results from SerpAPI');
-        return [];
-      }
-
-      const results: SearchResult[] = response.organic_results
-        .slice(0, numResults)
-        .map((result: any, index: number) => ({
-          title: result.title || 'No title',
-          link: result.link || '',
-          snippet: result.snippet || 'No description available',
-          source: this.extractDomain(result.link || ''),
-          relevanceScore: 1 - (index * 0.1) // Higher score for higher ranking
-        }));
+      const items = await this.perplexity.searchToResults(query, numResults);
+      const results: SearchResult[] = items.map((it, index) => ({
+        title: it.title || 'No title',
+        link: it.link || '',
+        snippet: it.snippet || 'No description available',
+        source: this.extractDomain(it.link || ''),
+        relevanceScore: 1 - (index * 0.1)
+      }));
 
       // Enhanced content extraction for top results
       for (let i = 0; i < Math.min(3, results.length); i++) {
@@ -141,7 +122,7 @@ export class WebSearchService {
 
       return results;
     } catch (error) {
-      console.error('SerpAPI search error:', error);
+      console.error('Perplexity search error:', error);
       return [];
     }
   }

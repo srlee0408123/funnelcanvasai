@@ -81,7 +81,7 @@ export default function SidebarChat({
       return [{
         id: 'welcome',
         role: 'assistant',
-        content: '안녕하세요! 저는 Canvas AI입니다. 퍼널 설계와 마케팅에 대해 궁금한 점이 있으시면 언제든 물어보세요. 업로드하신 자료와 글로벌 지식을 바탕으로 도움드리겠습니다.',
+        content: '안녕하세요! 저는 Canvas AI입니다. 궁금한 점이 있으시면 언제든 물어보세요. 업로드하신 자료와 글로벌 지식을 바탕으로 도움드리겠습니다.',
         timestamp: new Date()
       }];
     });
@@ -297,40 +297,6 @@ export default function SidebarChat({
                   minute: '2-digit' 
                 })}
               </p>
-              {message.role === 'assistant' && message.citations && (
-                <div className="mt-2 border-t border-gray-200 pt-2 text-xs">
-                  <p className="font-medium text-gray-700 mb-1">출처 및 근거</p>
-                  {message.citations.knowledge && message.citations.knowledge.length > 0 && (
-                    <div className="space-y-1 mb-2">
-                      {message.citations.knowledge.slice(0, 4).map((c) => (
-                        <div key={`k-${c.chunkId}`} className="text-gray-700">
-                          <span className="font-semibold">{c.title}</span>
-                          <span className="ml-2 text-gray-500">({Math.round(c.similarity * 100)}%)</span>
-                          <div className="text-gray-600 line-clamp-2">{c.snippet}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {message.citations.web && message.citations.web.length > 0 && (
-                    <div className="space-y-1">
-                      {message.citations.web.slice(0, 4).map((w, idx) => (
-                        <div key={`w-${idx}`} className="text-gray-700">
-                          <a
-                            href={w.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline text-blue-700 hover:text-blue-800"
-                          >
-                            {w.title}
-                          </a>
-                          {w.source && <span className="ml-2 text-gray-500">({w.source})</span>}
-                          <div className="text-gray-600 line-clamp-2">{w.snippet}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         ))}
@@ -384,20 +350,6 @@ export default function SidebarChat({
             </Button>
           </div>
         )}
-        
-        {/* 컨텍스트 정보 */}
-        <div className="text-xs text-gray-500 mt-2 space-y-1">
-          {Array.isArray(canvasKnowledge) && canvasKnowledge.length > 0 && (
-            <p>업로드된 자료 {canvasKnowledge.length}개</p>
-          )}
-          {Array.isArray(canvasTodos) && canvasTodos.length > 0 && (
-            <p>할일 체크리스트 {canvasTodos.length}개 (완료: {canvasTodos.filter((todo: any) => todo.completed).length}개)</p>
-          )}
-          {(Array.isArray(canvasKnowledge) && canvasKnowledge.length > 0) || 
-           (Array.isArray(canvasTodos) && canvasTodos.length > 0) ? (
-            <p>위 정보들을 참고하여 맞춤형 답변을 드립니다.</p>
-          ) : null}
-        </div>
       </div>
     </div>
   );

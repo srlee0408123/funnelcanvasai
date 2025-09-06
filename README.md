@@ -60,7 +60,7 @@ OPENAI_API_KEY=your-openai-api-key
 # Optional APIs
 APIFY_TOKEN=your-apify-token
 YOUTUBE_API_KEY=your-youtube-api-key
-SERPAPI_API_KEY=your-serpapi-key
+PERPLEXITY_API_KEY=your-perplexity-api-key
 ```
 
 ### 4. 데이터베이스 마이그레이션

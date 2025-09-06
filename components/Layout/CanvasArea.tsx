@@ -418,7 +418,6 @@ export default function CanvasArea({
   }, [nodes, viewport.x, viewport.y, viewport.zoom, setIsConnecting, setConnectionStart, setTemporaryConnection, setConnectionStartAnchor]);
 
   const handleNodeMouseUp = useCallback((nodeId: string) => {
-    console.log('🎯 Node mouse up:', nodeId, 'IsConnecting:', isConnecting, 'ConnectionStart:', connectionStart);
     
     if (isConnecting && connectionStart && connectionStart !== nodeId) {
       // Check if connection already exists
@@ -1103,19 +1102,8 @@ export default function CanvasArea({
           }}
         >
           {(() => {
-            console.log('🎯 Rendering nodes container:', {
-              renderNodesLength: renderNodes.length,
-              isReadOnly,
-              viewport,
-              transform: isReadOnly ? 'translate(0px, 0px) scale(1)' : `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`
-            });
             
             return renderNodes.map((node: FlowNode, index: number) => {
-              console.log(`🎯 Rendering node ${index}:`, {
-                id: node.id,
-                position: node.position,
-                title: node.data?.title
-              });
               
               return (
                 <div key={node.id} style={{ pointerEvents: 'auto' }}>
