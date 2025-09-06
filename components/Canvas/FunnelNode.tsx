@@ -1,4 +1,3 @@
-import { Badge } from "@/components/Ui/buttons";
 import { X, AlertTriangle, Check } from "lucide-react";
 
 interface Node {
