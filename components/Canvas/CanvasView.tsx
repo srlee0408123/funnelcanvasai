@@ -10,7 +10,6 @@ import NodeDetailsPanel from "@/components/Node/NodeDetailsPanel";
 import SidebarChat from "@/components/Chat/SidebarChat";
 import TodoSticker, { TodoStickerToggle } from "@/components/TodoSticker/TodoSticker";
 import UploadModal from "@/components/Modals/UploadModal";
-import TemplateModal from "@/components/Modals/TemplateModal";
 import { WorkspaceMembersModal } from "@/components/Modals/WorkspaceMembersModal";
 import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
 import { useCanvasRole } from "@/hooks/useCanvasRole";
@@ -49,7 +48,6 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   
   const [showRightPanel, setShowRightPanel] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showCanvasShareModal, setShowCanvasShareModal] = useState(false);
   const [uploadType, setUploadType] = useState<UploadType>("pdf");
@@ -168,7 +166,6 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         onOpenUploadModal={handleOpenUploadModal}
-        onOpenTemplateModal={() => setShowTemplateModal(true)}
         onOpenMembersModal={handleOpenMembersModal}
         assets={assets}
         workspaceId={canvas.workspaceId || canvas.workspace_id || ''}
@@ -231,11 +228,6 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         canvasId={canvas.id}
       />
 
-      <TemplateModal
-        open={showTemplateModal}
-        onOpenChange={setShowTemplateModal}
-        canvasId={canvas.id}
-      />
 
 
       <WorkspaceMembersModal

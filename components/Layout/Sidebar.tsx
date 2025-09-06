@@ -45,7 +45,6 @@ interface SidebarProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
   onOpenUploadModal: (type: "pdf" | "youtube" | "url") => void;
-  onOpenTemplateModal: () => void;
   onOpenMembersModal?: () => void;
   onAddNode?: (nodeType: string) => void;
   assets: Asset[];
@@ -61,7 +60,6 @@ export default function Sidebar({
   collapsed,
   onToggleCollapse,
   onOpenUploadModal,
-  onOpenTemplateModal,
   onOpenMembersModal,
   onAddNode,
   assets,
@@ -406,16 +404,6 @@ export default function Sidebar({
             ))}
           </div>
         )}
-      </div>
-      {/* Templates Section */}
-      <div className="p-4 border-t border-gray-100">
-        <Button
-          onClick={onOpenTemplateModal}
-          className="w-full"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          템플릿 불러오기
-        </Button>
       </div>
     </div>
   );
