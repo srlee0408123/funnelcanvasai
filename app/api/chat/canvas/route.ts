@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (userMessageError) {
-      console.error('Error saving user message:', userMessageError);
+      // 사용자 메시지 저장 실패 - 조용히 처리
     }
 
     // 최근 채팅 히스토리 조회 (컨텍스트용)
@@ -80,9 +80,6 @@ export async function POST(request: NextRequest) {
     });
 
     // 시스템 프롬프트 구성 및 이중 단계 의사결정 (KB 우선 / KB+웹)
-    console.log('🎯 [채팅 라우트] 사용자 메시지:', message);
-    console.log('📊 [채팅 라우트] 지식 인용 수:', knowledgeCitations.length, '개, 웹 인용 수:', webCitations.length, '개');
-    
     const historyText = formatChatHistory([...chatHistory].reverse());
     let aiMessage = '';
     let webCitationsFinal = webCitations;
@@ -91,16 +88,12 @@ export async function POST(request: NextRequest) {
     const kbEnough = await canvasRAG.decideUseKnowledgeFirst(knowledgeContext, message);
 
     if (kbEnough) {
-      console.log('🔄 [라우팅] KB 전용 경로 선택');
       aiMessage = await canvasRAG.answerFromKnowledgeOnly({ knowledgeContext, historyText, message });
     } else {
-      console.log('🔄 [라우팅] KB+웹 검색 경로 선택');
       const result = await canvasRAG.answerFromKnowledgeAndWeb({ knowledgeContext, historyText, message });
       aiMessage = result.content;
       webCitationsFinal = result.webCitations;
     }
-    
-    console.log('🏁 [최종 결과] 답변 길이:', aiMessage.length, '자, 최종 웹 인용 수:', webCitationsFinal.length, '개');
 
     // AI 응답 저장
     const { data: assistantMessage, error: assistantMessageError } = await (supabase as any)
@@ -115,7 +108,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (assistantMessageError) {
-      console.error('Error saving assistant message:', assistantMessageError);
+      // AI 응답 저장 실패 - 조용히 처리
     }
 
 
@@ -132,8 +125,6 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Chat API error:', error);
-    
     return NextResponse.json(
       { 
         error: '채팅 처리 중 오류가 발생했습니다.',
