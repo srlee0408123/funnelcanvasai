@@ -96,7 +96,8 @@ const postAsset = async (
 
         // 요구사항: knowledge.content에는 markdown 저장
         extractedContent = scraped.markdown || scraped.text;
-        processedTitle = scraped.title || title;
+        // 사용자가 입력한 제목을 우선 사용, 없으면 스크래핑된 제목 사용
+        processedTitle = title || scraped.title || url;
 
         // 1) 청킹은 순수 텍스트 기준으로 수행
         const splitter = new RecursiveCharacterTextSplitter({
@@ -115,6 +116,8 @@ const postAsset = async (
           source: 'url',
           provider: 'firecrawl',
           originalUrl: url,
+          userProvidedTitle: title, // 사용자가 입력한 제목
+          scrapedTitle: scraped.title, // 웹페이지에서 추출한 제목
           contentFormat: 'markdown',
           contentLength: extractedContent.length,
           processedAt: new Date().toISOString(),

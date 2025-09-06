@@ -123,6 +123,23 @@ export default function Sidebar({
       window.open(asset.url, "_blank", "noopener,noreferrer");
     }
   };
+
+  /**
+   * 시스템 내부 자료(Todo, Memo, Node) 식별
+   * localIngest.ts에서 생성되는 내부 시스템 데이터는 UI에서 숨김 처리
+   */
+  const isSystemAsset = (asset: Asset): boolean => {
+    // metaJson에서 system: 'internal' 또는 kind 속성이 있는 경우
+    const meta = asset.metaJson as any;
+    if (meta?.system === 'internal') return true;
+    if (meta?.kind && ['nodes', 'memos', 'todos'].includes(meta.kind)) return true;
+    
+    // 제목으로 시스템 자료 식별 (fallback)
+    const systemTitles = ['Nodes Data', 'Memos Data', 'Todos Data'];
+    if (systemTitles.includes(asset.title)) return true;
+    
+    return false;
+  };
   const getAssetIcon = (type: string) => {
     switch (type) {
       case "pdf":
@@ -346,11 +363,11 @@ export default function Sidebar({
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-medium text-foreground">업로드된 자료</h3>
           <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">
-            {assets.length}개
+            {assets.filter(asset => !isSystemAsset(asset)).length}개
           </span>
         </div>
         
-        {assets.length === 0 ? (
+        {assets.filter(asset => !isSystemAsset(asset)).length === 0 ? (
           <div className="text-center py-8">
             <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
               <Upload className="h-4 w-4 text-gray-400" />
@@ -359,7 +376,7 @@ export default function Sidebar({
           </div>
         ) : (
           <div className="space-y-2">
-            {assets.map((asset) => (
+            {assets.filter(asset => !isSystemAsset(asset)).map((asset) => (
               <div
                 key={asset.id}
                 onClick={() => handleAssetClick(asset)}
