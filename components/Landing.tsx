@@ -128,7 +128,7 @@ export default function Landing() {
       <div className="py-16 sm:py-24 bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12 sm:mb-16">
-            <h2 className="text-2xl sm:text-3xl font-bold text-navy-900 mb-4 sm:mb-6 px-4">캔버스AI는 '구조'를 만듭니다</h2>
+            <h2 className="text-2xl sm:text-3xl font-bold text-navy-900 mb-4 sm:mb-6 px-4">캔버스AI는 &apos;구조&apos;를 만듭니다</h2>
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
@@ -210,7 +210,7 @@ export default function Landing() {
                       <span className="text-green-600 font-bold text-xs sm:text-sm">A</span>
                     </div>
                     <div className="text-slate-700 leading-relaxed text-sm sm:text-base">
-                      <p><strong>콘텐츠 → 팬덤 형성 → 사업화까지 한 눈에 보이는 퍼널로 '구조'를 설계하세요</strong></p>
+                      <p><strong>콘텐츠 → 팬덤 형성 → 사업화까지 한 눈에 보이는 퍼널로 &apos;구조&apos;를 설계하세요</strong></p>
                     </div>
                   </div>
                 </div>
