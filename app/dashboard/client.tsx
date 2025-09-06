@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
+import { createToastMessage } from "@/lib/messages/toast-utils";
 import { FolderOpen, Users, Calendar } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/database.types";
@@ -129,14 +130,12 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
       setShowWorkspaceDialog(false);
       setNewWorkspaceName("");
-      toast({ title: "워크스페이스가 생성되었습니다." });
+      const successMessage = createToastMessage.custom("워크스페이스 생성 완료", "새 워크스페이스가 생성되었습니다.", "default");
+      toast(successMessage);
     },
-    onError: () => {
-      toast({ 
-        title: "오류", 
-        description: "워크스페이스 생성에 실패했습니다.", 
-        variant: "destructive" 
-      });
+    onError: (error) => {
+      const errorMessage = createToastMessage.custom("워크스페이스 생성 실패", "워크스페이스 생성에 실패했습니다.", "destructive", "다시 시도해주세요");
+      toast(errorMessage);
     },
   });
 

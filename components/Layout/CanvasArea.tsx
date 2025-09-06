@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useCanvasStore } from "@/hooks/useCanvasStore";
 import { useCanvasInteractions } from "@/hooks/use-canvas-interactions";
 import { useCanvasSync } from "@/hooks/useCanvasSync";
+import { createToastMessage } from "@/lib/messages/toast-utils";
 import { Mail, Monitor, Share, MessageSquare } from "lucide-react";
 import type { Canvas, CanvasState } from "@shared/schema";
 import type { FlowNode, FlowEdge, TextMemoData } from "@/types/canvas";
@@ -125,10 +126,12 @@ export default function CanvasArea({
       // 최종적으로 상세 재조회 트리거(있다면)
       await queryClient.refetchQueries({ queryKey: ["/api/canvases", canvas.id] });
       // 사용자 피드백
-      toast({ title: "제목 저장 완료", description: `\"${trimmed}\" 으로 저장되었습니다.` });
+      const successMessage = createToastMessage.canvasSuccess('TITLE_UPDATE', trimmed);
+      toast(successMessage);
     } catch (error) {
       console.error("Failed to update canvas title:", error);
-      toast({ title: "제목 저장 실패", description: error instanceof Error ? error.message : "저장 중 문제가 발생했습니다.", variant: "destructive" });
+      const errorMessage = createToastMessage.canvasError(error, 'UPDATE');
+      toast(errorMessage);
       // 상위 컴포넌트가 편집 상태를 유지하도록 에러 전파
       throw error;
     }
@@ -266,13 +269,15 @@ export default function CanvasArea({
       // 최신 상태 쿼리 무효화
       queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id, "state", "latest"] });
       if (manualSavePendingRef.current) {
-        toast({ title: "저장 완료", description: "캔버스가 성공적으로 저장되었습니다." });
+        const successMessage = createToastMessage.canvasSuccess('SAVE');
+        toast(successMessage);
         manualSavePendingRef.current = false;
       }
     },
     onError: (error) => {
       if (manualSavePendingRef.current) {
-        toast({ title: "저장 실패", description: error instanceof Error ? error.message : "저장 중 문제가 발생했습니다.", variant: "destructive" });
+        const errorMessage = createToastMessage.canvasError(error, 'SAVE');
+        toast(errorMessage);
         manualSavePendingRef.current = false;
       }
     }
@@ -359,10 +364,8 @@ export default function CanvasArea({
     // 디바운스 저장
     triggerSave("add-node");
 
-    toast({
-      title: "노드 추가됨",
-      description: `${config.title} 노드가 캔버스에 추가되었습니다.`,
-    });
+    const successMessage = createToastMessage.canvasSuccess('NODE_ADD', config.title);
+    toast(successMessage);
   }, [isReadOnly, addNode, triggerSave, toast]);
 
   // onAddNode prop이 있으면 실제 노드 추가 함수로 연결

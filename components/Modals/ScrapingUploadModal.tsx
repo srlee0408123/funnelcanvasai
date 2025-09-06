@@ -5,7 +5,7 @@ import { Button } from "@/components/Ui/buttons";
 import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { isUnauthorizedError } from "@/lib/authUtils";
+import { createToastMessage, ErrorDetectors } from "@/lib/messages/toast-utils";
 
 /**
  * ScrapingUploadModal - 웹사이트 URL 스크래핑 업로드 전용 모달
@@ -71,20 +71,23 @@ export default function ScrapingUploadModal({ open, onOpenChange, workspaceId, c
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/workspaces", workspaceId, "assets"] });
-      toast({ title: "업로드 완료", description: "자료가 성공적으로 업로드되어 처리되었습니다." });
+      const successMessage = createToastMessage.uploadSuccess('WEBSITE');
+      toast(successMessage);
       onOpenChange(false);
       resetForm();
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
-        toast({ title: "Unauthorized", description: "You are logged out. Logging in again...", variant: "destructive" });
+      if (ErrorDetectors.isUnauthorizedError(error)) {
+        const authMessage = createToastMessage.authError(error);
+        toast(authMessage);
         setTimeout(() => {
           window.location.href = "/api/login";
         }, 500);
         return;
       }
-      // 스크래핑 업로드는 일반화된 메시지 사용 (YouTube 에러와 분리)
-      toast({ title: "업로드 실패", description: "자료 업로드에 실패했습니다. 다시 시도해주세요.", variant: "destructive" });
+      
+      const errorMessage = createToastMessage.uploadError(error, 'website');
+      toast(errorMessage);
     },
   });
 
