@@ -34,6 +34,14 @@ export const TextMemo: React.FC<TextMemoProps> = ({
   const [editContent, setEditContent] = useState(content);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  // RAF 기반 드래그 제어용 ref들
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+  const isDragStartedRef = useRef(false);
+  const dragStartMouseRef = useRef({ x: 0, y: 0 });
+  const originalPosRef = useRef({ x: 0, y: 0 });
+  const rafIdRef = useRef<number | null>(null);
+  const latestMouseRef = useRef({ x: 0, y: 0 });
   const [isResizing, setIsResizing] = useState(false);
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -58,6 +66,7 @@ export const TextMemo: React.FC<TextMemoProps> = ({
     onSelect(id);
     
     setIsDragging(true);
+    isDraggingRef.current = true;
     // 뷰포트 변환을 고려한 드래그 시작점 계산
     const canvasX = (e.clientX - viewport.x) / viewport.zoom;
     const canvasY = (e.clientY - viewport.y) / viewport.zoom;
@@ -65,7 +74,35 @@ export const TextMemo: React.FC<TextMemoProps> = ({
       x: canvasX - position.x,
       y: canvasY - position.y
     });
+    // RAF 드래그 준비
+    isDragStartedRef.current = false;
+    dragStartMouseRef.current = { x: e.clientX, y: e.clientY };
+    latestMouseRef.current = { x: e.clientX, y: e.clientY };
+    originalPosRef.current = { x: position.x, y: position.y };
+    const el = containerRef.current;
+    if (el) {
+      el.style.willChange = 'transform';
+      el.style.transition = 'none';
+    }
   };
+
+  const DRAG_THRESHOLD = 4;
+
+  // RAF 루프: 드래그 중 transform으로만 이동(리렌더 방지)
+  const runDragLoop = React.useCallback(() => {
+    if (!isDraggingRef.current || !isDragStartedRef.current) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const dx = latestMouseRef.current.x - dragStartMouseRef.current.x;
+    const dy = latestMouseRef.current.y - dragStartMouseRef.current.y;
+    const absX = originalPosRef.current.x + dx / (viewport.zoom || 1);
+    const absY = originalPosRef.current.y + dy / (viewport.zoom || 1);
+    // relative offset vs left/top
+    const relX = absX - position.x;
+    const relY = absY - position.y;
+    el.style.transform = `translate3d(${relX}px, ${relY}px, 0)`;
+    rafIdRef.current = window.requestAnimationFrame(runDragLoop);
+  }, [viewport.zoom, position.x, position.y]);
 
   const handleResizeMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -110,18 +147,19 @@ export const TextMemo: React.FC<TextMemoProps> = ({
     }
   };
 
-  // Global mouse events for dragging and resizing
+  // Global mouse/pointer events for dragging and resizing
   useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        // 뷰포트 변환을 고려한 새 위치 계산
-        const canvasX = (e.clientX - viewport.x) / viewport.zoom;
-        const canvasY = (e.clientY - viewport.y) / viewport.zoom;
-        const newPosition = {
-          x: canvasX - dragStart.x,
-          y: canvasY - dragStart.y
-        };
-        onPositionChange(id, newPosition);
+      if (isDraggingRef.current) {
+        latestMouseRef.current = { x: e.clientX, y: e.clientY };
+        if (!isDragStartedRef.current) {
+          const dx = Math.abs(e.clientX - dragStartMouseRef.current.x);
+          const dy = Math.abs(e.clientY - dragStartMouseRef.current.y);
+          if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+            isDragStartedRef.current = true;
+            if (rafIdRef.current === null) rafIdRef.current = window.requestAnimationFrame(runDragLoop);
+          }
+        }
       } else if (isResizing) {
         // 뷰포트 줌을 고려한 리사이즈 계산
         const deltaX = (e.clientX - resizeStart.x) / viewport.zoom;
@@ -137,7 +175,27 @@ export const TextMemo: React.FC<TextMemoProps> = ({
     };
 
     const handleGlobalMouseUp = () => {
+      if (isDraggingRef.current) {
+        // 최종 위치 커밋
+        const dx = latestMouseRef.current.x - dragStartMouseRef.current.x;
+        const dy = latestMouseRef.current.y - dragStartMouseRef.current.y;
+        const absX = originalPosRef.current.x + dx / (viewport.zoom || 1);
+        const absY = originalPosRef.current.y + dy / (viewport.zoom || 1);
+        onPositionChange(id, { x: absX, y: absY });
+        const el = containerRef.current;
+        if (el) {
+          el.style.transform = '';
+          el.style.willChange = '';
+          el.style.transition = '';
+        }
+      }
       setIsDragging(false);
+      isDraggingRef.current = false;
+      isDragStartedRef.current = false;
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
       setIsResizing(false);
     };
 
@@ -150,10 +208,11 @@ export const TextMemo: React.FC<TextMemoProps> = ({
         document.removeEventListener('mouseup', handleGlobalMouseUp);
       };
     }
-  }, [isDragging, isResizing, dragStart, resizeStart, id, onPositionChange, onSizeChange, viewport.x, viewport.y, viewport.zoom]);
+  }, [isDragging, isResizing, dragStart, resizeStart, id, onPositionChange, onSizeChange, viewport.x, viewport.y, viewport.zoom, runDragLoop]);
 
   return (
     <div
+      ref={containerRef}
       className={`absolute bg-gradient-to-br from-yellow-50 to-amber-100 border-2 shadow-lg rounded-xl p-4 cursor-move select-none transition-all duration-200 hover:shadow-xl ${
         isSelected ? 'border-blue-400 shadow-blue-200/50' : 'border-amber-300'
       } ${(isDragging || isResizing) ? 'z-50 shadow-2xl' : 'z-10'} ${

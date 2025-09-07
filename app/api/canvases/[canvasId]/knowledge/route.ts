@@ -41,8 +41,10 @@ const getKnowledge = async (
       );
     }
 
-
-    return NextResponse.json(knowledge || []);
+    const res = NextResponse.json(knowledge || []);
+    // 지식은 상대적으로 정적: 강한 캐싱 + SWR로 효율적 폴링
+    res.headers.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=300');
+    return res;
 
   } catch (error) {
     console.error('Canvas knowledge API error:', error);

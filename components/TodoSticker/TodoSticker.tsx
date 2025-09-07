@@ -47,6 +47,15 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
   // Dragging state
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  // RAF 드래그용 참조들 (노드와 동일한 패턴)
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+  const isDragStartedRef = useRef(false);
+  const dragStartMouseRef = useRef({ x: 0, y: 0 });
+  const originalPosRef = useRef({ x: 0, y: 0 });
+  const latestMouseRef = useRef({ x: 0, y: 0 });
+  const rafIdRef = useRef<number | null>(null);
+  const DRAG_THRESHOLD = 4;
   const [position, setPosition] = useState(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -525,28 +534,48 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
+    isDraggingRef.current = true;
     setDragOffset({
       x: e.clientX - position.x,
       y: e.clientY - position.y
     });
+    isDragStartedRef.current = false;
+    dragStartMouseRef.current = { x: e.clientX, y: e.clientY };
+    latestMouseRef.current = { x: e.clientX, y: e.clientY };
+    originalPosRef.current = { x: position.x, y: position.y };
+    const el = containerRef.current;
+    if (el) {
+      el.style.willChange = 'transform';
+      el.style.transition = 'none';
+    }
   };
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (isDragging) {
-      const newX = e.clientX - dragOffset.x;
-      const newY = e.clientY - dragOffset.y;
-      
-      // Keep within viewport bounds
-      const maxX = window.innerWidth - size.width;
-      const maxY = window.innerHeight - 200;
-      
-      const finalPosition = {
-        x: Math.max(0, Math.min(newX, maxX)),
-        y: Math.max(0, Math.min(newY, maxY))
-      };
-      
-      console.log('Dragging to:', finalPosition);
-      setPosition(finalPosition);
+    if (isDraggingRef.current) {
+      latestMouseRef.current = { x: e.clientX, y: e.clientY };
+      if (!isDragStartedRef.current) {
+        const dx = Math.abs(e.clientX - dragStartMouseRef.current.x);
+        const dy = Math.abs(e.clientY - dragStartMouseRef.current.y);
+        if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+          isDragStartedRef.current = true;
+          if (rafIdRef.current === null) {
+            rafIdRef.current = window.requestAnimationFrame(function run() {
+              if (!isDraggingRef.current || !isDragStartedRef.current) { rafIdRef.current = null; return; }
+              const el = containerRef.current;
+              if (el) {
+                const dx2 = latestMouseRef.current.x - dragStartMouseRef.current.x;
+                const dy2 = latestMouseRef.current.y - dragStartMouseRef.current.y;
+                const absX = originalPosRef.current.x + dx2;
+                const absY = originalPosRef.current.y + dy2;
+                const relX = absX - position.x;
+                const relY = absY - position.y;
+                el.style.transform = `translate3d(${relX}px, ${relY}px, 0)`;
+              }
+              rafIdRef.current = window.requestAnimationFrame(run);
+            });
+          }
+        }
+      }
     } else if (isResizing) {
       const newWidth = Math.max(200, e.clientX - position.x + resizeOffset.x);
       const newHeight = Math.max(150, e.clientY - position.y + resizeOffset.y);
@@ -555,13 +584,44 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
         height: newHeight
       });
     }
-  }, [isDragging, dragOffset.x, dragOffset.y, size.width, position.x, position.y, isResizing, resizeOffset.x, resizeOffset.y]);
+  }, [position.x, position.y, isResizing, resizeOffset.x, resizeOffset.y]);
 
   const handleMouseUp = useCallback(() => {
     console.log('Mouse up - ending drag/resize');
+    if (isDraggingRef.current) {
+      const dx = latestMouseRef.current.x - dragStartMouseRef.current.x;
+      const dy = latestMouseRef.current.y - dragStartMouseRef.current.y;
+      const absX = originalPosRef.current.x + dx;
+      const absY = originalPosRef.current.y + dy;
+      setPosition({ x: absX, y: absY });
+      const el = containerRef.current;
+      if (el) {
+        el.style.transform = '';
+        el.style.willChange = '';
+        el.style.transition = '';
+      }
+    }
     setIsDragging(false);
+    isDraggingRef.current = false;
+    isDragStartedRef.current = false;
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
     setIsResizing(false);
   }, []);
+
+  // Stable refs to avoid effect churn for global listeners
+  const handleMouseMoveRef = useRef<(e: MouseEvent) => void>(() => {});
+  const handleMouseUpRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    handleMouseMoveRef.current = (e: MouseEvent) => handleMouseMove(e);
+  }, [handleMouseMove]);
+
+  useEffect(() => {
+    handleMouseUpRef.current = () => handleMouseUp();
+  }, [handleMouseUp]);
 
   // Resize handler
   const handleResizeMouseDown = (e: React.MouseEvent) => {
@@ -578,8 +638,8 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
   // Global mouse event listeners for dragging and resizing
   useEffect(() => {
     if (!isResizing) return;
-    const mm = (e: MouseEvent) => handleMouseMove(e);
-    const mu = () => handleMouseUp();
+    const mm = (e: MouseEvent) => handleMouseMoveRef.current(e);
+    const mu = () => handleMouseUpRef.current();
     document.addEventListener('mousemove', mm);
     document.addEventListener('mouseup', mu);
     document.body.style.userSelect = 'none';
@@ -590,13 +650,13 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isResizing, handleMouseMove, handleMouseUp]);
+  }, [isResizing]);
 
   // Global mouse event listeners for dragging
   useEffect(() => {
     if (!isDragging) return;
-    const mm = (e: MouseEvent) => handleMouseMove(e);
-    const mu = () => handleMouseUp();
+    const mm = (e: MouseEvent) => handleMouseMoveRef.current(e);
+    const mu = () => handleMouseUpRef.current();
     document.addEventListener('mousemove', mm);
     document.addEventListener('mouseup', mu);
     document.body.style.userSelect = 'none';
@@ -607,12 +667,13 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isDragging, handleMouseMove, handleMouseUp]);
+  }, [isDragging]);
 
   if (!isVisible) return null;
 
   return (
     <div 
+      ref={containerRef}
       className={`fixed z-50 todo-sticker-modern transition-all duration-200 ${
         isDragging ? 'shadow-2xl scale-105' : isResizing ? 'shadow-xl' : 'shadow-xl'
       }`}
@@ -916,6 +977,16 @@ export function TodoStickerToggle({ canvasId, onShow }: { canvasId: string; onSh
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [clickPrevented, setClickPrevented] = useState(false);
 
+  // RAF 기반 드래그 제어(토글 버튼)
+  const containerRef = useRef<HTMLButtonElement | null>(null);
+  const isDraggingRef = useRef(false);
+  const isDragStartedRef = useRef(false);
+  const dragStartMouseRef = useRef({ x: 0, y: 0 });
+  const originalPosRef = useRef({ x: 0, y: 0 });
+  const latestMouseRef = useRef({ x: 0, y: 0 });
+  const rafIdRef = useRef<number | null>(null);
+  const DRAG_THRESHOLD = 4;
+
   // Fetch todos from API for count
   const { data: todos = [] } = useQuery<TodoItem[]>({
     queryKey: [`/api/canvases/${canvasId}/todos`],
@@ -934,35 +1005,87 @@ export function TodoStickerToggle({ canvasId, onShow }: { canvasId: string; onSh
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
+    isDraggingRef.current = true;
     setClickPrevented(false);
     setDragOffset({
       x: e.clientX - position.x,
       y: e.clientY - position.y
     });
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (isDragging) {
-      setClickPrevented(true);
-      const newX = e.clientX - dragOffset.x;
-      const newY = e.clientY - dragOffset.y;
-      
-      // Keep within viewport bounds
-      const maxX = window.innerWidth - 200; // Button width
-      const maxY = window.innerHeight - 40; // Button height
-      
-      const finalPosition = {
-        x: Math.max(0, Math.min(newX, maxX)),
-        y: Math.max(0, Math.min(newY, maxY))
-      };
-      
-      setPosition(finalPosition);
+    isDragStartedRef.current = false;
+    dragStartMouseRef.current = { x: e.clientX, y: e.clientY };
+    latestMouseRef.current = { x: e.clientX, y: e.clientY };
+    originalPosRef.current = { x: position.x, y: position.y };
+    if (containerRef.current) {
+      containerRef.current.style.willChange = 'transform';
+      containerRef.current.style.transition = 'none';
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDraggingRef.current) return;
+    latestMouseRef.current = { x: e.clientX, y: e.clientY };
+    if (!isDragStartedRef.current) {
+      const dx = Math.abs(e.clientX - dragStartMouseRef.current.x);
+      const dy = Math.abs(e.clientY - dragStartMouseRef.current.y);
+      if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+        isDragStartedRef.current = true;
+        if (rafIdRef.current === null) {
+          const run = () => {
+            if (!isDraggingRef.current || !isDragStartedRef.current) { rafIdRef.current = null; return; }
+            setClickPrevented(true);
+            const el = containerRef.current;
+            if (el) {
+              const dx2 = latestMouseRef.current.x - dragStartMouseRef.current.x;
+              const dy2 = latestMouseRef.current.y - dragStartMouseRef.current.y;
+              // Translate by delta relative to original position to avoid stale state deps
+              el.style.transform = `translate3d(${dx2}px, ${dy2}px, 0)`;
+            }
+            rafIdRef.current = window.requestAnimationFrame(run);
+          };
+          rafIdRef.current = window.requestAnimationFrame(run);
+        }
+      }
+    }
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    if (isDraggingRef.current) {
+      const dx = latestMouseRef.current.x - dragStartMouseRef.current.x;
+      const dy = latestMouseRef.current.y - dragStartMouseRef.current.y;
+      let absX = originalPosRef.current.x + dx;
+      let absY = originalPosRef.current.y + dy;
+      // Bounds clamping (roughly button size 200x40)
+      const maxX = window.innerWidth - 200;
+      const maxY = window.innerHeight - 40;
+      absX = Math.max(0, Math.min(absX, maxX));
+      absY = Math.max(0, Math.min(absY, maxY));
+      setPosition({ x: absX, y: absY });
+      if (containerRef.current) {
+        containerRef.current.style.transform = '';
+        containerRef.current.style.willChange = '';
+        containerRef.current.style.transition = '';
+      }
+    }
     setIsDragging(false);
-  };
+    isDraggingRef.current = false;
+    isDragStartedRef.current = false;
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+  }, []);
+
+  // Stable refs to avoid effect churn
+  const toggleHandleMouseMoveRef = useRef<(e: MouseEvent) => void>(() => {});
+  const toggleHandleMouseUpRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    toggleHandleMouseMoveRef.current = (e: MouseEvent) => handleMouseMove(e);
+  }, [handleMouseMove]);
+
+  useEffect(() => {
+    toggleHandleMouseUpRef.current = () => handleMouseUp();
+  }, [handleMouseUp]);
 
   const handleClick = (e: React.MouseEvent) => {
     if (clickPrevented) {
@@ -976,8 +1099,8 @@ export function TodoStickerToggle({ canvasId, onShow }: { canvasId: string; onSh
   // Global mouse event listeners for dragging
   useEffect(() => {
     if (!isDragging) return;
-    const mm = (e: MouseEvent) => handleMouseMove(e);
-    const mu = () => handleMouseUp();
+    const mm = (e: MouseEvent) => toggleHandleMouseMoveRef.current(e);
+    const mu = () => toggleHandleMouseUpRef.current();
     document.addEventListener('mousemove', mm);
     document.addEventListener('mouseup', mu);
     document.body.style.userSelect = 'none';
@@ -988,10 +1111,11 @@ export function TodoStickerToggle({ canvasId, onShow }: { canvasId: string; onSh
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isDragging, handleMouseMove, handleMouseUp]);
+  }, [isDragging]);
 
   return (
     <Button
+      ref={containerRef}
       onClick={handleClick}
       onMouseDown={handleMouseDown}
       size="sm"

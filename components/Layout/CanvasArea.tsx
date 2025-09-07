@@ -97,6 +97,10 @@ export default function CanvasArea({
   
 
   
+  // 임시 메모 처리용 큐/플래그
+  const tempMemoPendingRef = useRef<Record<string, { position?: { x: number; y: number }; size?: { width: number; height: number }; content?: string }>>({});
+  const tempDeletedIdsRef = useRef<Set<string>>(new Set());
+  const isTempId = useCallback((id: string) => id.startsWith('temp-'), []);
   // Title 업데이트 콜백 (헤더에 전달)
   const updateCanvasTitle = useCallback(async (newTitle: string) => {
     const trimmed = newTitle.trim();
@@ -380,7 +384,7 @@ export default function CanvasArea({
 
 
   // 캔버스 인터랙션 훅 사용 (패닝/줌/드래그 성능 최적화)
-  const { handleCanvasMouseDown, handleNodeMouseDown, handleWheel } = useCanvasInteractions({
+  const { handleCanvasMouseDown, handleCanvasPointerDown, handleNodeMouseDown, handleNodePointerDown, handleWheel, livePositionsRef } = useCanvasInteractions({
     canvasRef,
     viewport,
     setViewport,
@@ -559,6 +563,17 @@ export default function CanvasArea({
   // Memo management functions
   const createNewMemo = useCallback(async (x: number, y: number) => {
     try {
+      // 낙관적 추가: 임시 메모를 즉시 UI에 표시
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const tempMemo: Memo = {
+        id: tempId,
+        content: "새 메모",
+        position: { x, y },
+        size: { width: 280, height: 180 }
+      };
+      setMemos(prev => [...prev, tempMemo]);
+      setSelectedMemoId(tempId);
+
       const response = await fetch(`/api/canvases/${canvas.id}/memos`, {
         method: 'POST',
         headers: {
@@ -570,14 +585,50 @@ export default function CanvasArea({
           position: { x, y }
         })
       });
-      
+
       if (response.ok) {
         const newMemo = await response.json();
-        setMemos(prev => [...prev, newMemo]);
-        setSelectedMemoId(newMemo.id);
+        // 임시 메모가 생성 완료 전에 삭제되었는지 확인
+        const wasDeleted = tempDeletedIdsRef.current.has(tempId);
+        if (wasDeleted) {
+          // 서버에 즉시 삭제 요청 전송
+          await fetch(`/api/canvases/${canvas.id}/memos/${newMemo.id}`, {
+            method: 'DELETE',
+            credentials: 'include'
+          });
+          tempDeletedIdsRef.current.delete(tempId);
+          // UI에서는 이미 제거됨
+          return;
+        }
+
+        // 큐잉된 변경사항 적용(내용/위치/크기)
+        const pending = tempMemoPendingRef.current[tempId];
+        let merged = newMemo as Memo;
+        if (pending?.content) {
+          try { await fetch(`/api/canvases/${canvas.id}/memos/${newMemo.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: pending.content, position: pending.position || newMemo.position }) }); } catch {}
+          merged = { ...merged, content: pending.content };
+        }
+        if (pending?.position) {
+          try { await fetch(`/api/canvases/${canvas.id}/memos/${newMemo.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: pending.position, content: pending.content || newMemo.content }) }); } catch {}
+          merged = { ...merged, position: pending.position } as Memo;
+        }
+        if (pending?.size) {
+          try { await fetch(`/api/canvases/${canvas.id}/memos/${newMemo.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ size: pending.size }) }); } catch {}
+          merged = { ...merged, size: pending.size } as Memo;
+        }
+        delete tempMemoPendingRef.current[tempId];
+
+        // 임시 메모를 실제 서버 응답 메모로 교체 + 병합된 변경 반영
+        setMemos(prev => prev.map(m => m.id === tempId ? merged : m));
+        setSelectedMemoId(merged.id);
+      } else {
+        // 실패 시 임시 메모 제거
+        setMemos(prev => prev.filter(m => m.id !== tempId));
       }
     } catch (error) {
       console.error("Error creating memo:", error);
+      // 에러 시 임시 메모 제거 (실패 복구)
+      setMemos(prev => prev.filter(m => !m.id.startsWith('temp-')));
     }
   }, [canvas.id]);
 
@@ -585,6 +636,16 @@ export default function CanvasArea({
     try {
       const memo = memos.find(m => m.id === memoId);
       if (!memo) return;
+
+      // 임시 메모는 서버 호출 대신 로컬 업데이트 + 큐잉
+      if (isTempId(memoId)) {
+        setMemos(prev => prev.map(m => m.id === memoId ? { ...m, content } : m));
+        tempMemoPendingRef.current[memoId] = {
+          ...(tempMemoPendingRef.current[memoId] || {}),
+          content
+        };
+        return;
+      }
 
       const response = await fetch(`/api/canvases/${canvas.id}/memos/${memoId}`, {
         method: 'PATCH',
@@ -597,29 +658,60 @@ export default function CanvasArea({
           position: memo.position
         })
       });
-      
+
       const updatedMemo = await response.json();
       setMemos(prev => prev.map(m => m.id === memoId ? updatedMemo : m));
     } catch (error) {
       console.error("Error updating memo:", error);
     }
-  }, [canvas.id, memos]);
+  }, [canvas.id, memos, isTempId]);
 
   const deleteMemo = useCallback(async (memoId: string) => {
     try {
-      await fetch(`/api/canvases/${canvas.id}/memos/${memoId}`, {
-        method: 'DELETE',
-        credentials: 'include'
-      });
-      
+      // 삭제 전에 보류 중인 위치/크기 업데이트 타이머 정리
+      if (memoUpdateTimeoutsRef.current[memoId]) {
+        clearTimeout(memoUpdateTimeoutsRef.current[memoId]);
+        delete memoUpdateTimeoutsRef.current[memoId];
+      }
+      if (pendingMemoUpdatesRef.current[memoId]) {
+        delete pendingMemoUpdatesRef.current[memoId];
+      }
+      if (memoSizeUpdateTimeoutsRef.current[memoId]) {
+        clearTimeout(memoSizeUpdateTimeoutsRef.current[memoId]);
+        delete memoSizeUpdateTimeoutsRef.current[memoId];
+      }
+      if (pendingMemoSizeUpdatesRef.current[memoId]) {
+        delete pendingMemoSizeUpdatesRef.current[memoId];
+      }
+
+      // 낙관적 삭제: 즉시 UI에서 제거
+      const prevMemos = memos;
       setMemos(prev => prev.filter(m => m.id !== memoId));
       if (selectedMemoId === memoId) {
         setSelectedMemoId(null);
       }
+
+      // 임시 메모라면 서버 삭제를 지연 플래그로 표시만
+      if (isTempId(memoId)) {
+        tempDeletedIdsRef.current.add(memoId);
+        return;
+      }
+
+      const res = await fetch(`/api/canvases/${canvas.id}/memos/${memoId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+
+      // 404는 이미 삭제된 상태로 간주하고 유지, 그 외 실패 시 복구
+      if (!res.ok && res.status !== 404) {
+        setMemos(prevMemos);
+      }
     } catch (error) {
       console.error("Error deleting memo:", error);
+      // 실패 시 복구
+      setMemos(prev => prev);
     }
-  }, [canvas.id, selectedMemoId]);
+  }, [canvas.id, selectedMemoId, memos, isTempId]);
 
   // 메모 위치 업데이트 디바운싱을 위한 ref 저장소
   const memoUpdateTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
@@ -632,6 +724,23 @@ export default function CanvasArea({
 
       // 로컬 상태 즉시 업데이트 (드래그 중 UI 반응성 보장)
       setMemos(prev => prev.map(m => m.id === memoId ? { ...m, position } : m));
+
+      // 임시 메모면 서버 호출 대신 변경만 큐잉 후 종료
+      if (isTempId(memoId)) {
+        // 기존 타이머/보류 레코드 정리
+        if (memoUpdateTimeoutsRef.current[memoId]) {
+          clearTimeout(memoUpdateTimeoutsRef.current[memoId]);
+          delete memoUpdateTimeoutsRef.current[memoId];
+        }
+        if (pendingMemoUpdatesRef.current[memoId]) {
+          delete pendingMemoUpdatesRef.current[memoId];
+        }
+        tempMemoPendingRef.current[memoId] = {
+          ...(tempMemoPendingRef.current[memoId] || {}),
+          position
+        };
+        return;
+      }
 
       // 기존 타이머 취소
       if (memoUpdateTimeoutsRef.current[memoId]) {
@@ -689,7 +798,7 @@ export default function CanvasArea({
     } catch (error) {
       console.error("Error in updateMemoPosition:", error);
     }
-  }, [canvas.id, memos]);
+  }, [canvas.id, memos, isTempId]);
 
   // 메모 크기 업데이트 디바운싱을 위한 ref 저장소
   const memoSizeUpdateTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
@@ -705,6 +814,22 @@ export default function CanvasArea({
       setMemos(prev => prev.map(m => 
         m.id === memoId ? { ...m, size: newSize } : m
       ));
+
+      // 임시 메모면 서버 호출 대신 큐잉 후 종료
+      if (isTempId(memoId)) {
+        if (memoSizeUpdateTimeoutsRef.current[memoId]) {
+          clearTimeout(memoSizeUpdateTimeoutsRef.current[memoId]);
+          delete memoSizeUpdateTimeoutsRef.current[memoId];
+        }
+        if (pendingMemoSizeUpdatesRef.current[memoId]) {
+          delete pendingMemoSizeUpdatesRef.current[memoId];
+        }
+        tempMemoPendingRef.current[memoId] = {
+          ...(tempMemoPendingRef.current[memoId] || {}),
+          size: newSize
+        };
+        return;
+      }
 
       // 기존 타이머 취소
       if (memoSizeUpdateTimeoutsRef.current[memoId]) {
@@ -759,7 +884,7 @@ export default function CanvasArea({
     } catch (error) {
       console.error("Error in handleMemoSizeChange:", error);
     }
-  }, [canvas.id, memos]);
+  }, [canvas.id, memos, isTempId]);
 
   // 컴포넌트 언마운트 시 모든 타이머 정리
   useEffect(() => {
@@ -783,6 +908,17 @@ export default function CanvasArea({
   // Create memo from modal
   const createMemoFromModal = useCallback(async (position: { x: number; y: number }, content: string) => {
     try {
+      // 낙관적 추가: 임시 메모 즉시 표시
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const tempMemo: Memo = {
+        id: tempId,
+        content,
+        position,
+        size: { width: 200, height: 150 }
+      };
+      setMemos(prev => [...prev, tempMemo]);
+      setSelectedMemoId(tempId);
+
       const response = await fetch(`/api/canvases/${canvas.id}/memos`, {
         method: 'POST',
         credentials: 'include',
@@ -792,18 +928,24 @@ export default function CanvasArea({
         body: JSON.stringify({
           content,
           position,
-          size: { width: 200, height: 150 } // Default size
+          size: { width: 200, height: 150 }
         }),
       });
 
       if (response.ok) {
         const newMemo = await response.json();
-        setMemos(prev => [...prev, newMemo]);
+        // 임시 메모를 실제 메모로 교체
+        setMemos(prev => prev.map(m => m.id === tempId ? newMemo : m));
+        setSelectedMemoId(newMemo.id);
       } else {
+        // 실패 시 임시 메모 제거
+        setMemos(prev => prev.filter(m => m.id !== tempId));
         console.error("Failed to create memo:", response.status);
       }
     } catch (error) {
       console.error("Error creating memo:", error);
+      // 에러 시 임시 메모 제거
+      setMemos(prev => prev.filter(m => !m.id.startsWith('temp-')));
     }
   }, [canvas.id]);
 
@@ -906,161 +1048,34 @@ export default function CanvasArea({
   }, [nodes, onNodeDoubleClick]);
 
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
-    // Prevent default canvas mouse move handling when global handlers are active
-    if (isPanning || draggedNodeId || isConnecting) {
+    // 연결 중에는 마우스 좌표를 캔버스 좌표로 변환하여 임시 연결선을 업데이트
+    if (isConnecting) {
+      const { x, y } = getCanvasCoordinates(e.clientX, e.clientY);
+      setTemporaryConnection({ x, y });
       return;
     }
-  }, [isPanning, draggedNodeId, isConnecting]);
+    // 패닝 또는 노드 드래그 중에는 별도 처리 없음
+    if (isPanning || draggedNodeId) {
+      return;
+    }
+  }, [isConnecting, isPanning, draggedNodeId, getCanvasCoordinates, setTemporaryConnection]);
+
+  // 캔버스 영역에서 마우스 업 시, 연결 중이라면 연결 상태 초기화 (빈 공간에 놓을 때 임시 엣지 제거)
+  const handleCanvasMouseUp = useCallback(() => {
+    if (isConnecting) {
+      setIsConnecting(false);
+      setConnectionStart(null);
+      setTemporaryConnection(null);
+      setConnectionStartAnchor(null as any);
+      setDraggedNodeId(null);
+    }
+  }, [isConnecting, setIsConnecting, setConnectionStart, setTemporaryConnection, setConnectionStartAnchor, setDraggedNodeId]);
 
   // 마우스 업 전역 정리는 훅에서 처리
 
   // remove legacy handleWheel (replaced by hook)
 
-  // Global mouse event listeners for dragging
-  useEffect(() => {
-    const handleGlobalMouseMove = (e: MouseEvent) => {
-      if (isPanning) {
-        const deltaX = e.clientX - panStart.x;
-        const deltaY = e.clientY - panStart.y;
-        
-        setViewport({
-          x: lastPanPoint.x + deltaX,
-          y: lastPanPoint.y + deltaY,
-          zoom: viewport.zoom
-        });
-      } else if (draggedNodeId) {
-        // Calculate movement delta in screen coordinates first
-        const deltaX = e.clientX - nodeDragStart.x;
-        const deltaY = e.clientY - nodeDragStart.y;
-        
-        // Apply delta scaled by zoom to original position
-        const originalPos = nodePositions[draggedNodeId];
-        if (originalPos) {
-          const newX = originalPos.x + (deltaX / viewport.zoom);
-          const newY = originalPos.y + (deltaY / viewport.zoom);
-          
-          setNodePositions(prev => ({
-            ...prev,
-            [draggedNodeId]: { x: newX, y: newY }
-          }));
-          
-
-          
-
-        }
-      } else if (isConnecting && temporaryConnection) {
-        // Update temporary connection mouse position in canvas coordinates
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (rect) {
-          setTemporaryConnection({ 
-            x: (e.clientX - rect.left - viewport.x) / viewport.zoom, 
-            y: (e.clientY - rect.top - viewport.y) / viewport.zoom 
-          });
-        }
-      }
-    };
-
-    const handleGlobalMouseUp = (e: MouseEvent) => {
-      console.log('Global mouse up triggered. IsConnecting:', isConnecting, 'ConnectionStart:', connectionStart);
-      
-      // Enhanced connection detection
-      if (isConnecting && connectionStart) {
-        console.log('Mouse up during connection mode, checking for target...');
-        const targetElement = document.elementFromPoint(e.clientX, e.clientY);
-        const nodeElement = targetElement?.closest('[data-node-id]');
-        console.log('Target element found:', nodeElement);
-        
-        if (nodeElement) {
-          const targetNodeId = nodeElement.getAttribute('data-node-id');
-          console.log(`Target node ID: ${targetNodeId}, Source: ${connectionStart}`);
-          if (targetNodeId && targetNodeId !== connectionStart) {
-            // Check if connection already exists
-            const connectionExists = edges.some(edge => 
-              edge.source === connectionStart && edge.target === targetNodeId
-            );
-            console.log(`Connection exists check: ${connectionExists}`);
-            
-            if (!connectionExists) {
-              // Create new connection with enhanced feedback
-              const newEdge: FlowEdge = {
-                id: `edge-${connectionStart}-${targetNodeId}-${Date.now()}`,
-                source: connectionStart,
-                target: targetNodeId,
-                data: {
-                  sourceAnchor: (connectionStartAnchor as any) || 'right',
-                  targetAnchor: (() => {
-                    const sourceNode = nodes.find(n => n.id === connectionStart);
-                    const targetNode = nodes.find(n => n.id === targetNodeId);
-                    if (sourceNode && targetNode) {
-                      const src = sourceNode.position;
-                      const tgt = targetNode.position;
-                      const isVertical = connectionStartAnchor === 'top' || connectionStartAnchor === 'bottom';
-                      if (isVertical) {
-                        return tgt.y >= src.y ? 'top' : 'bottom';
-                      }
-                      return 'left';
-                    }
-                    return 'left';
-                  })()
-                }
-              };
-              
-              console.log(`Creating new edge:`, newEdge);
-              
-              // Update local state immediately
-              const newEdges = [...edges, newEdge];
-              setEdges(newEdges);
-              console.log('Current edges after adding connection:', newEdges);
-              console.log(`Created connection from ${connectionStart} to ${targetNodeId}`);
-              
-              // 저장 트리거 (즉시 저장)
-              triggerSave("connect", true);
-              
-              // Optional: Add success visual feedback here
-            } else {
-              console.log(`Connection already exists from ${connectionStart} to ${targetNodeId}`);
-            }
-          } else {
-            console.log('No valid target node ID or same as source');
-          }
-        } else {
-          console.log('No node element found at drop location');
-        }
-      } else {
-        console.log('Not in connection mode or no connection start');
-      }
-      
-
-      
-      // Save node position changes to server when dragging ends
-      if (draggedNodeId) {
-        const newPosition = nodePositions[draggedNodeId];
-        if (newPosition) {
-          // 즉시 저장으로 포지션 반영
-          triggerSave("drag-end", true);
-        }
-      }
-
-      // Clear connection states
-      setIsConnecting(false);
-      setConnectionStart(null);
-      setTemporaryConnection(null);
-      setConnectionStartAnchor(null as any);
-      
-      setIsPanning(false);
-      setDraggedNodeId(null);
-    };
-
-    if (isPanning || draggedNodeId || isConnecting) {
-      document.addEventListener('mousemove', handleGlobalMouseMove);
-      document.addEventListener('mouseup', handleGlobalMouseUp);
-      
-      return () => {
-        document.removeEventListener('mousemove', handleGlobalMouseMove);
-        document.removeEventListener('mouseup', handleGlobalMouseUp);
-      };
-    }
-  }, [isPanning, panStart.x, panStart.y, lastPanPoint.x, lastPanPoint.y, draggedNodeId, viewport.x, viewport.y, viewport.zoom, isConnecting, connectionStart, temporaryConnection, edges, nodeDragStart.x, nodeDragStart.y, nodePositions, setConnectionStart, setDraggedNodeId, setEdges, setIsConnecting, setIsPanning, setNodePositions, setTemporaryConnection, setViewport, triggerSave]);
+  // Global mouse event listeners moved to useCanvasInteractions for single-source-of-truth
 
   // 엣지 지오메트리는 CanvasEdges로 이전됨
 
@@ -1145,11 +1160,13 @@ export default function CanvasArea({
         style={{ 
           cursor: draggedNodeId ? 'move' : 'grab',
           width: '100%',
-          height: '100%'
+          height: '100%',
+          pointerEvents: showNodeCreationModal ? 'none' : 'auto'
         }}
         onMouseDown={!isReadOnly ? handleCanvasMouseDown : undefined}
+        onPointerDown={!isReadOnly ? handleCanvasPointerDown : undefined}
         onMouseMove={!isReadOnly ? handleCanvasMouseMove : undefined}
-        onMouseUp={undefined}
+        onMouseUp={!isReadOnly ? handleCanvasMouseUp : undefined}
         onDoubleClick={!isReadOnly ? handleCanvasDoubleClick : undefined}
         onWheel={handleWheel}
         onDragOver={!isReadOnly ? handleDragOver : undefined}
@@ -1177,6 +1194,7 @@ export default function CanvasArea({
           connectionStart={connectionStart}
           connectionStartAnchor={connectionStartAnchor as any}
           temporaryConnection={temporaryConnection}
+          livePositionsRef={livePositionsRef as any}
           onDeleteEdge={(edgeId) => handleEdgeDelete(edgeId, { preventDefault() {}, stopPropagation() {} } as any)}
         />
 
@@ -1203,6 +1221,7 @@ export default function CanvasArea({
                     selected={selectedNodeId === node.id}
                     onDoubleClick={!isReadOnly ? () => handleNodeDoubleClick(node.id) : undefined}
                     onMouseDown={!isReadOnly ? (e) => handleNodeMouseDown(node.id, e) : undefined}
+                    onPointerDown={!isReadOnly ? (e) => handleNodePointerDown(node.id, e) : undefined}
                     onMouseUp={!isReadOnly ? () => handleNodeMouseUp(node.id) : undefined}
                     isDragging={draggedNodeId === node.id}
                     isConnectable={isConnecting && connectionStart !== node.id && !isReadOnly}

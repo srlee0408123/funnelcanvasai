@@ -226,14 +226,36 @@ export function CanvasHeader({
             <Button 
               variant="ghost" 
               size="sm"
-              onClick={() => setViewport({ ...viewport, zoom: Math.min(3, viewport.zoom * 1.2) })}
+              onClick={() => {
+                // 10% 단위 줌 인, 50%~200% 범위 제한
+                const STEP = 0.1;
+                const MIN_ZOOM = 0.5; // 최소 50%
+                const MAX_ZOOM = 2.0; // 최대 200%
+                const target = viewport.zoom + STEP;
+                const quantized = Math.round(target * 10) / 10;
+                const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, quantized));
+                setViewport({ ...viewport, zoom: newZoom });
+              }}
+              disabled={viewport.zoom >= 2.0}
+              title="줌 인 (10% 단위)"
             >
               <Plus className="h-4 w-4" />
             </Button>
             <Button 
               variant="ghost" 
               size="sm"
-              onClick={() => setViewport({ ...viewport, zoom: Math.max(0.1, viewport.zoom * 0.8) })}
+              onClick={() => {
+                // 10% 단위 줌 아웃, 50%~200% 범위 제한
+                const STEP = 0.1;
+                const MIN_ZOOM = 0.5; // 최소 50%
+                const MAX_ZOOM = 2.0; // 최대 200%
+                const target = viewport.zoom - STEP;
+                const quantized = Math.round(target * 10) / 10;
+                const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, quantized));
+                setViewport({ ...viewport, zoom: newZoom });
+              }}
+              disabled={viewport.zoom <= 0.5}
+              title="줌 아웃 (10% 단위)"
             >
               <Minus className="h-4 w-4" />
             </Button>

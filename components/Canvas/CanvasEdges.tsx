@@ -27,6 +27,8 @@ export interface CanvasEdgesProps {
   connectionStart: string | null;
   connectionStartAnchor: 'left' | 'right' | 'top' | 'bottom' | null;
   temporaryConnection: { x: number; y: number } | null;
+  // 드래그 중 실시간 노드 위치 공유(엣지 동기화용)
+  livePositionsRef?: React.MutableRefObject<Record<string, { x: number; y: number }>>;
   onDeleteEdge: (edgeId: string) => void;
 }
 
@@ -39,10 +41,12 @@ export function CanvasEdges({
   connectionStart,
   connectionStartAnchor,
   temporaryConnection,
+  livePositionsRef,
   onDeleteEdge,
 }: CanvasEdgesProps) {
   const { computeEdgeGeometry, generatePath } = useEdgeGeometry(viewport.zoom);
   const edgePathRefs = useRef<Map<string, SVGPathElement>>(new Map());
+  const edgeVisiblePathRefs = useRef<Map<string, SVGPathElement>>(new Map());
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
   const [edgeMidpoints, setEdgeMidpoints] = useState<Record<string, { x: number; y: number }>>({});
 
@@ -56,6 +60,98 @@ export function CanvasEdges({
   useEffect(() => {
     setEdgeMidpoints({});
   }, [nodes]);
+
+  // RAF 루프: 드래그 중 노드에 연결된 엣지만 path를 동기화
+  useEffect(() => {
+    if (!livePositionsRef) return;
+    let rafId: number | null = null;
+
+    const step = () => {
+      const overrides = livePositionsRef.current || {};
+      const draggingIds = Object.keys(overrides);
+      if (!draggingIds.length) {
+        rafId = null;
+        return;
+      }
+
+      // 프레임 단위 측정 캐시
+      const sizeCache = new Map<string, { width: number; height: number }>();
+      const measure = (id: string) => {
+        const cached = sizeCache.get(id);
+        if (cached) return cached;
+        const el = typeof document !== 'undefined' ? (document.querySelector(`[data-node-id="${id}"]`) as HTMLElement | null) : null;
+        const size = el ? { width: el.getBoundingClientRect().width / viewport.zoom, height: el.getBoundingClientRect().height / viewport.zoom } : { width: 160, height: 80 };
+        sizeCache.set(id, size);
+        return size;
+      };
+
+      for (const edge of edges) {
+        if (!draggingIds.includes(edge.source) && !draggingIds.includes(edge.target)) continue;
+        const sNode = nodes.find(n => n.id === edge.source);
+        const tNode = nodes.find(n => n.id === edge.target);
+        if (!sNode || !tNode) continue;
+
+        const sPos = overrides[sNode.id] || sNode.position;
+        const tPos = overrides[tNode.id] || tNode.position;
+
+        const sSize = measure(sNode.id);
+        const tSize = measure(tNode.id);
+        const sAnchor = ((edge.data as any)?.sourceAnchor as 'left' | 'right' | 'top' | 'bottom') || 'right';
+        const tAnchor = ((edge.data as any)?.targetAnchor as 'left' | 'right' | 'top' | 'bottom') || 'left';
+
+        const getPt = (pos: { x: number; y: number }, size: { width: number; height: number }, a: 'left' | 'right' | 'top' | 'bottom') => {
+          switch (a) {
+            case 'left': return { x: pos.x, y: pos.y + size.height / 2 };
+            case 'right': return { x: pos.x + size.width, y: pos.y + size.height / 2 };
+            case 'top': return { x: pos.x + size.width / 2, y: pos.y };
+            case 'bottom': return { x: pos.x + size.width / 2, y: pos.y + size.height };
+          }
+        };
+
+        const { x: sx, y: sy } = getPt(sPos, sSize, sAnchor)!;
+        const { x: tx, y: ty } = getPt(tPos, tSize, tAnchor)!;
+        const vertical = sAnchor === 'top' || sAnchor === 'bottom' || tAnchor === 'top' || tAnchor === 'bottom';
+
+        const siblings = edges.filter(e => e.source === edge.source && ((((e.data as any)?.sourceAnchor) || 'right') === sAnchor));
+        const idx = siblings.findIndex(e => e.id === edge.id);
+        const offsetAmount = (idx - (siblings.length - 1) / 2) * 15;
+        const offX = vertical ? offsetAmount : 0;
+        const offY = vertical ? 0 : offsetAmount;
+
+        let d = '';
+        if (!vertical) {
+          const dx = tx - sx;
+          const c = Math.max(Math.abs(dx) * 0.4, 50);
+          const c1x = sx + c;
+          const c1y = sy + offY;
+          const c2x = tx - c;
+          const c2y = ty;
+          d = `M ${sx} ${sy} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${tx} ${ty}`;
+        } else {
+          const dy = ty - sy;
+          const c = Math.max(Math.abs(dy) * 0.4, 50);
+          const c1x = sx + offX;
+          const c1y = sy + (sAnchor === 'top' ? -c : c);
+          const c2x = tx + offX;
+          const c2y = ty + (tAnchor === 'top' ? -c : c);
+          d = `M ${sx} ${sy} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${tx} ${ty}`;
+        }
+
+        const main = edgeVisiblePathRefs.current.get(edge.id);
+        if (main) main.setAttribute('d', d);
+        const hit = edgePathRefs.current.get(edge.id);
+        if (hit) hit.setAttribute('d', d);
+      }
+
+      rafId = window.requestAnimationFrame(step);
+    };
+
+    // 루프 시작
+    if (Object.keys(livePositionsRef.current || {}).length) {
+      rafId = window.requestAnimationFrame(step);
+    }
+    return () => { if (rafId) cancelAnimationFrame(rafId) };
+  }, [edges, nodes, livePositionsRef, viewport.zoom]);
 
   return (
     <svg 
@@ -110,11 +206,10 @@ export function CanvasEdges({
         return (
           <g key={edge.id} data-edge={edge.id} className="edge-group group">
             <g transform={`translate(${viewport.x},${viewport.y}) scale(${viewport.zoom})`}>
-              <path d={path} stroke="rgba(0,0,0,0.1)" strokeWidth={6 / viewport.zoom} fill="none" className="pointer-events-none" />
               <path
                 d={path}
                 stroke="transparent"
-                strokeWidth={Math.max(28, 28 / viewport.zoom)}
+                strokeWidth={Math.max(20, Math.min(40, 28 / viewport.zoom))}
                 fill="none"
                 style={{ pointerEvents: 'stroke', cursor: 'pointer', strokeLinecap: 'round', strokeLinejoin: 'round' }}
                 ref={(el) => {
@@ -145,6 +240,10 @@ export function CanvasEdges({
                 markerEnd="url(#arrowhead)"
                 className="hover:stroke-[url(#tempConnectionGradient)] transition-all duration-300 hover:drop-shadow-lg"
                 style={{ pointerEvents: 'none', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }}
+                ref={(el) => {
+                  if (el) edgeVisiblePathRefs.current.set(edge.id, el);
+                  else edgeVisiblePathRefs.current.delete(edge.id);
+                }}
               />
             </g>
 
@@ -165,11 +264,11 @@ export function CanvasEdges({
                       onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     >
                       <g transform={`scale(${hoveredEdgeId === edge.id ? 1.1 : 1})`}>
-                        <circle cx={0} cy={0} r={Math.max(14, 14 / viewport.zoom)} fill="transparent" style={{ pointerEvents: 'all', cursor: 'pointer' }} />
-                        <circle cx={0} cy={0} r={Math.max(10, 10 / viewport.zoom)} fill="white" stroke="#EF4444" strokeWidth={Math.max(2, 2 / viewport.zoom)} style={{ pointerEvents: 'none', filter: 'drop-shadow(0 2px 4px rgba(239, 68, 68, 0.3))' }} />
+                        <circle cx={0} cy={0} r={Math.max(12, Math.min(20, 14 / viewport.zoom))} fill="transparent" style={{ pointerEvents: 'all', cursor: 'pointer' }} />
+                        <circle cx={0} cy={0} r={Math.max(8, Math.min(15, 10 / viewport.zoom))} fill="white" stroke="#EF4444" strokeWidth={Math.max(1.5, Math.min(3, 2 / viewport.zoom))} style={{ pointerEvents: 'none', filter: 'drop-shadow(0 2px 4px rgba(239, 68, 68, 0.3))' }} />
                         <g style={{ pointerEvents: 'none' }}>
-                          <line x1={Math.max(-4, -4 / viewport.zoom)} y1={Math.max(-4, -4 / viewport.zoom)} x2={Math.max(4, 4 / viewport.zoom)} y2={Math.max(4, 4 / viewport.zoom)} stroke="#EF4444" strokeWidth={Math.max(2, 2 / viewport.zoom)} strokeLinecap="round" />
-                          <line x1={Math.max(4, 4 / viewport.zoom)} y1={Math.max(-4, -4 / viewport.zoom)} x2={Math.max(-4, -4 / viewport.zoom)} y2={Math.max(4, 4 / viewport.zoom)} stroke="#EF4444" strokeWidth={Math.max(2, 2 / viewport.zoom)} strokeLinecap="round" />
+                          <line x1={Math.max(-3, Math.min(-6, -4 / viewport.zoom))} y1={Math.max(-3, Math.min(-6, -4 / viewport.zoom))} x2={Math.max(3, Math.min(6, 4 / viewport.zoom))} y2={Math.max(3, Math.min(6, 4 / viewport.zoom))} stroke="#EF4444" strokeWidth={Math.max(1.5, Math.min(3, 2 / viewport.zoom))} strokeLinecap="round" />
+                          <line x1={Math.max(3, Math.min(6, 4 / viewport.zoom))} y1={Math.max(-3, Math.min(-6, -4 / viewport.zoom))} x2={Math.max(-3, Math.min(-6, -4 / viewport.zoom))} y2={Math.max(3, Math.min(6, 4 / viewport.zoom))} stroke="#EF4444" strokeWidth={Math.max(1.5, Math.min(3, 2 / viewport.zoom))} strokeLinecap="round" />
                         </g>
                       </g>
                     </g>
@@ -233,11 +332,10 @@ export function CanvasEdges({
 
         return (
           <g transform={`translate(${viewport.x},${viewport.y}) scale(${viewport.zoom})`}>
-            <path d={tempPath} stroke="rgba(59, 130, 246, 0.3)" strokeWidth={6 / viewport.zoom} fill="none" className="pointer-events-none" />
-            <path d={tempPath} stroke="url(#tempConnectionGradient)" strokeWidth={2.5 / viewport.zoom} fill="none" strokeDasharray={`${6 / viewport.zoom},${3 / viewport.zoom}`} markerEnd="url(#temp-arrowhead)" style={{ filter: 'drop-shadow(0 0 4px rgba(59, 130, 246, 0.5))' }} />
+            <path d={tempPath} stroke="url(#tempConnectionGradient)" strokeWidth={2.5 / viewport.zoom} fill="none" strokeDasharray={`${6 / viewport.zoom},${3 / viewport.zoom}`} markerEnd="url(#temp-arrowhead)" />
             <g>
-              <circle cx={targetX} cy={targetY} r={8 / viewport.zoom} fill="rgba(59, 130, 246, 0.2)" />
-              <circle cx={targetX} cy={targetY} r={4 / viewport.zoom} fill="url(#tempArrowGradient)" />
+              <circle cx={targetX} cy={targetY} r={Math.max(6, Math.min(12, 8 / viewport.zoom))} fill="rgba(59, 130, 246, 0.2)" />
+              <circle cx={targetX} cy={targetY} r={Math.max(3, Math.min(6, 4 / viewport.zoom))} fill="url(#tempArrowGradient)" />
             </g>
           </g>
         );

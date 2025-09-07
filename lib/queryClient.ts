@@ -116,9 +116,8 @@ export async function invalidateCanvasQueries(params: {
 
   const tasks: Array<Promise<unknown>> = [];
 
-  // 공통: 캔버스 루트/상태
+  // 공통: 상태 전용 키만 무효화 (루트 키 제외 → 지식/할일 등 연쇄 무효화 방지)
   if (wants.has("all") || wants.has("state")) {
-    tasks.push(invalidate(["/api/canvases", canvasId]));
     tasks.push(invalidate(["/api/canvases", canvasId, "state"]));
     tasks.push(invalidate(["/api/canvases", canvasId, "state", "latest"]));
     tasks.push(invalidate([`/api/canvases/${canvasId}/state`]));
