@@ -18,11 +18,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/U
 import PdfUploadModal from "@/components/Modals/PdfUploadModal";
 import YoutubeUploadModal from "@/components/Modals/YoutubeUploadModal";
 import ScrapingUploadModal from "@/components/Modals/ScrapingUploadModal";
+import TextUploadModal from "@/components/Modals/TextUploadModal";
 
 interface UploadModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  uploadType: "pdf" | "youtube" | "url" | null;
+  uploadType: "pdf" | "youtube" | "url" | "text" | null;
   workspaceId: string;
   canvasId: string;
 }
@@ -36,6 +37,9 @@ export default function UploadModal({ open, onOpenChange, uploadType, workspaceI
   }
   if (uploadType === "url") {
     return <ScrapingUploadModal open={open} onOpenChange={onOpenChange} workspaceId={workspaceId} canvasId={canvasId} />;
+  }
+  if (uploadType === "text") {
+    return <TextUploadModal open={open} onOpenChange={onOpenChange} workspaceId={workspaceId} canvasId={canvasId} />;
   }
 
   return (

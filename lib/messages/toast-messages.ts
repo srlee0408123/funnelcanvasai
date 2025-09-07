@@ -49,6 +49,10 @@ export const UPLOAD_MESSAGES = {
     WEBSITE: {
       title: "웹사이트 업로드 완료",
       description: "웹사이트 내용이 성공적으로 스크래핑되었습니다."
+    },
+    TEXT: {
+      title: "텍스트 업로드 완료",
+      description: "텍스트 자료가 성공적으로 저장되었습니다."
     }
   },
   

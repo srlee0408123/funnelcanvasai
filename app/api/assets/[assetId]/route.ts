@@ -4,12 +4,12 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { canAccessCanvas } from "@/lib/auth/permissions";
 
 /**
- * assets/[assetId]/route.ts - 업로드 자료(지식 항목) 삭제 API
+ * assets/[assetId]/route.ts - 업로드 자료(지식 항목) 단건 조회/삭제 API
  * 
  * 주요 역할:
- * 1. Sidebar에서 호출하는 `/api/assets/:assetId` 삭제 요청 처리
- * 2. Clerk 인증 및 캔버스 접근 권한(최소 member) 검증
- * 3. `canvas_knowledge` 테이블의 해당 레코드 삭제
+ * 1. GET: Sidebar에서 클릭 시 텍스트 본문을 모달로 보여주기 위한 단건 조회
+ * 2. DELETE: `/api/assets/:assetId` 삭제 요청 처리
+ * 3. Clerk 인증 및 캔버스 접근 권한(최소 member) 검증
  * 
  * 핵심 특징:
  * - 기존 라우트 부재로 404가 발생하던 문제 해결
@@ -17,10 +17,63 @@ import { canAccessCanvas } from "@/lib/auth/permissions";
  * - 서비스 키로 RLS 우회하되, 애플리케이션 레벨에서 권한 엄격 검증
  * 
  * 주의사항:
- * - 이 엔드포인트는 `canvas_knowledge` 레코드를 삭제합니다
- * - 연관된 청크가 FK on delete cascade면 자동 정리됩니다
- * - 최소 member 이상의 역할이 필요합니다(viewer 불가)
+ * - 이 엔드포인트는 `canvas_knowledge` 레코드를 다룹니다
+ * - 연관된 청크는 FK on delete cascade면 자동 정리됩니다
+ * - 최소 member 이상의 역할이 필요합니다(viewer 불가) - 단, GET은 viewer 허용
  */
+
+export const GET = async (
+  request: NextRequest,
+  { params }: { params: any }
+) => {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
+    }
+
+    const rawParams = params && typeof (params as any)?.then === "function" ? await params : params;
+    const assetId = rawParams?.assetId as string | undefined;
+    if (!assetId) {
+      return NextResponse.json({ error: "assetId가 필요합니다." }, { status: 400 });
+    }
+
+    const supabase = createServiceClient();
+
+    const { data: knowledge, error: fetchError } = await (supabase as any)
+      .from("canvas_knowledge")
+      .select("id, canvas_id, title, type, content, metadata, created_at, updated_at")
+      .eq("id", assetId)
+      .single();
+
+    if (fetchError || !knowledge) {
+      return NextResponse.json({ error: "자료를 찾을 수 없습니다." }, { status: 404 });
+    }
+
+    // 권한 확인 (viewer 허용)
+    const access = await canAccessCanvas(userId, knowledge.canvas_id as string);
+    if (!access.hasAccess) {
+      return NextResponse.json({ error: "접근 권한이 없습니다." }, { status: 403 });
+    }
+
+    return NextResponse.json({
+      id: knowledge.id,
+      canvasId: knowledge.canvas_id,
+      title: knowledge.title,
+      type: knowledge.type,
+      content: knowledge.content,
+      metadata: knowledge.metadata,
+      createdAt: knowledge.created_at,
+      updatedAt: knowledge.updated_at,
+    });
+  } catch (error) {
+    console.error("Asset GET API error:", error);
+    return NextResponse.json(
+      { error: "자료 조회 중 오류가 발생했습니다.", details: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 }
+    );
+  }
+};
 
 export const DELETE = async (
   request: NextRequest,

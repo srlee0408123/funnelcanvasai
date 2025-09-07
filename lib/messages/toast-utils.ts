@@ -70,7 +70,7 @@ export class ToastMessageBuilder {
   /**
    * 업로드 성공 메시지 생성
    */
-  static uploadSuccess(type: 'PDF' | 'YOUTUBE' | 'WEBSITE'): ToastOptions {
+  static uploadSuccess(type: 'PDF' | 'YOUTUBE' | 'WEBSITE' | 'TEXT'): ToastOptions {
     const message = TOAST_MESSAGES.UPLOAD.SUCCESS[type];
     return {
       ...message,
