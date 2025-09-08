@@ -10,9 +10,9 @@ import { Button } from "@/components/Ui/buttons";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/Ui/data-display";
 import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
 import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
-import { Share, ArrowLeft, FileText } from "lucide-react";
+import { Share, ArrowLeft, FileText, Trash2 } from "lucide-react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/database.types";
 
@@ -130,6 +130,21 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
     },
   });
 
+  // Delete canvas mutation
+  const deleteCanvasMutation = useMutation({
+    mutationFn: async (canvasId: string) => {
+      await apiRequest("DELETE", `/api/canvases/${canvasId}`);
+      return canvasId;
+    },
+    onSuccess: async (_data, _variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["canvases", workspaceId] });
+      toast({ title: "캔버스가 삭제되었습니다." });
+    },
+    onError: () => {
+      toast({ title: "오류", description: "캔버스 삭제에 실패했습니다.", variant: "destructive" });
+    },
+  });
+
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -241,16 +256,36 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
                 <CardHeader>
                   <div className="flex justify-between items-start">
                     <CardTitle className="text-lg">{canvas.title}</CardTitle>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setShareCanvas(canvas);
-                      }}
-                    >
-                      <Share className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setShareCanvas(canvas);
+                        }}
+                        aria-label="Share Canvas"
+                        title="Share"
+                      >
+                        <Share className="h-4 w-4" />
+                      </Button>
+                      {workspace?.owner_id === userId && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (confirm(`"${canvas.title}" 캔버스를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+                              deleteCanvasMutation.mutate(canvas.id);
+                            }
+                          }}
+                          aria-label="Delete Canvas"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>

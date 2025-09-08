@@ -588,7 +588,14 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_canvas_state_ids_to_delete: {
+        Args: { p_canvas_id: string; p_keep_count: number }
+        Returns: { id: string }[]
+      }
+      prune_canvas_states_for_inactive_canvases: {
+        Args: { p_keep_count?: number | null; p_inactive_interval?: unknown | null }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never

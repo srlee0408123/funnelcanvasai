@@ -91,4 +91,42 @@ const patchCanvas = async (
 export const GET = withAuthorization({ resourceType: 'canvas' }, getCanvas)
 export const PATCH = withAuthorization({ resourceType: 'canvas', minRole: 'member' }, patchCanvas)
 
+// DELETE /api/canvases/[canvasId]
+const deleteCanvas = async (
+  _req: Request,
+  { params }: { params: any }
+) => {
+  try {
+    const { canvasId } = await params
+
+    const supabase = createServiceClient()
+    const { error } = await (supabase as any)
+      .from('canvases')
+      .delete()
+      .eq('id', canvasId)
+      .select('id')
+      .single()
+
+    if (error) {
+      // Row not found or deletion error
+      const isNotFound = (error as any)?.code === 'PGRST116' || (error as any)?.code === 'PGRST204'
+      if (isNotFound) {
+        return NextResponse.json({ error: 'Canvas not found' }, { status: 404 })
+      }
+      console.error('Error deleting canvas:', error)
+      return NextResponse.json({ error: 'Failed to delete canvas' }, { status: 500 })
+    }
+
+    // CASCADE constraints ensure related data is removed
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('DELETE /api/canvases/[canvasId] error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    )
+  }
+}
+
+export const DELETE = withAuthorization({ resourceType: 'canvas', minRole: 'owner' }, deleteCanvas)
 
