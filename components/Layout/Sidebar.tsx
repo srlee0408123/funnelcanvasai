@@ -1,4 +1,7 @@
 import { Button } from "@/components/Ui/buttons";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/Ui/data-display";
+import { Textarea } from "@/components/Ui/form-controls";
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -44,7 +47,7 @@ interface Node {
 interface SidebarProps {
   collapsed: boolean;
   onToggleCollapse: () => void;
-  onOpenUploadModal: (type: "pdf" | "youtube" | "url") => void;
+  onOpenUploadModal: (type: "pdf" | "youtube" | "url" | "text") => void;
   onOpenMembersModal?: () => void;
   onAddNode?: (nodeType: string) => void;
   assets: Asset[];
@@ -71,6 +74,9 @@ export default function Sidebar({
   onAssetDeleted,
 }: SidebarProps) {
   const { toast } = useToast();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewTitle, setPreviewTitle] = useState("");
+  const [previewContent, setPreviewContent] = useState("");
 
   // Delete asset mutation
   const deleteAssetMutation = useMutation({
@@ -118,10 +124,22 @@ export default function Sidebar({
    * 유튜브 자료 카드 클릭 시 해당 영상 URL로 연결
    * 새 탭에서 열어 사용자 경험 향상
    */
-  const handleAssetClick = (asset: Asset) => {
+  const handleAssetClick = async (asset: Asset) => {
     if (asset.type === "youtube" && asset.url) {
       window.open(asset.url, "_blank", "noopener,noreferrer");
+      return;
     }
+    // 텍스트/URL/PDF 자료는 모달로 본문 미리보기 제공 (요구사항 6)
+    try {
+      const res = await fetch(`/api/assets/${asset.id}`, { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const preview = data?.content || "내용이 없습니다.";
+      const title = data?.title || asset.title || "텍스트 자료";
+      setPreviewTitle(title);
+      setPreviewContent(preview);
+      setPreviewOpen(true);
+    } catch {}
   };
 
   /**
@@ -338,6 +356,16 @@ export default function Sidebar({
               <span className="text-sm text-muted-foreground">웹사이트 URL</span>
             </div>
           </button>
+
+          <button
+            onClick={() => onOpenUploadModal("text")}
+            className="w-full p-3 border-2 border-dashed border-border rounded-lg hover:border-primary hover:bg-accent transition-colors text-left"
+          >
+            <div className="flex items-center space-x-3">
+              <FileText className="h-4 w-4 text-green-600" />
+              <span className="text-sm text-muted-foreground">텍스트 붙여넣기</span>
+            </div>
+          </button>
         </div>
       </div>
       {/* Workspace Management */}
@@ -422,6 +450,17 @@ export default function Sidebar({
           </div>
         )}
       </div>
+    {/* 미리보기 모달 */}
+    <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{previewTitle || "텍스트 자료"}</DialogTitle>
+        </DialogHeader>
+        <div>
+          <Textarea value={previewContent} readOnly className="h-72" />
+        </div>
+      </DialogContent>
+    </Dialog>
     </div>
   );
 }
