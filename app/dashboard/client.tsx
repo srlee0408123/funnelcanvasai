@@ -12,7 +12,8 @@ import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { createToastMessage } from "@/lib/messages/toast-utils";
-import { FolderOpen, Users, Calendar } from "lucide-react";
+import { FolderOpen, Users, Calendar, Trash2 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/database.types";
 
@@ -139,6 +140,24 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
     },
   });
 
+  // Delete workspace mutation
+  const deleteWorkspaceMutation = useMutation({
+    mutationFn: async (workspaceId: string) => {
+      await apiRequest("DELETE", `/api/workspaces/${workspaceId}`);
+      return workspaceId;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["workspaces", userId] });
+      const successMessage = createToastMessage.custom("워크스페이스 삭제 완료", "워크스페이스가 삭제되었습니다.", "default");
+      toast(successMessage);
+    },
+    onError: (error) => {
+      console.error('Failed to delete workspace:', error);
+      const errorMessage = createToastMessage.custom("워크스페이스 삭제 실패", "삭제 중 문제가 발생했습니다.", "destructive", "다시 시도해주세요");
+      toast(errorMessage);
+    },
+  });
+
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -239,16 +258,29 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {workspaces?.map((workspace) => (
-              <Card 
-                key={workspace.id} 
+              <Card
+                key={workspace.id}
                 className="hover:shadow-lg transition-shadow cursor-pointer"
                 onClick={() => router.push(`/workspace/${workspace.id}`)}
               >
                 <CardHeader>
-                  <CardTitle className="text-lg flex items-center justify-between">
-                    <span>{workspace.name}</span>
-                    <FolderOpen className="h-5 w-5 text-gray-400" />
-                  </CardTitle>
+                  <div className="flex items-start justify-between">
+                    <CardTitle className="text-lg">{workspace.name}</CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`"${workspace.name}" 워크스페이스를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+                          deleteWorkspaceMutation.mutate(workspace.id);
+                        }
+                      }}
+                      aria-label="Delete Workspace"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="text-sm text-gray-600 space-y-2">

@@ -7,10 +7,21 @@ description: "노드 & 엣지 관리 시 참고하세요 - 노드 생성, 연결
 ### 라우터
 * `POST /api/canvases/[canvasId]/state`: 캔버스 전체 상태를 저장하는 라우터를 통해 노드와 엣지 정보가 함께 저장됩니다.
 * `GET /api/canvases/[canvasId]/state/latest`: 최신 캔버스 상태에서 노드와 엣지 배열을 함께 조회합니다.
+* (백그라운드) 상태 정리 작업은 API 라우트가 아닌 서버 스케줄러에서 수행됩니다.
 
 ### 스키마 (Drizzle ORM)
 * `canvas_states` 내부 `state` JSONB 필드: 노드 배열(`id`, `type`, `position`, `data`, `style` 등)과 엣지 배열(`id`, `source`, `target`, `type` 등)을 저장합니다.
 * `canvasEdges`: 개별 엣지 정보를 별도 저장(`canvasId`, `edgeId`, `sourceNodeId`, `targetNodeId`, `type`, `data`, `metadata`)합니다.
+
+### 상태 보존/정리 정책 (Pruning)
+* **보존 개수**: 캔버스별 `canvas_states`는 최신 30개만 보존합니다.
+* **비활성 기준**: 해당 캔버스의 최근 상태 변경이 **30분 이상 없을 때**만 정리 작업을 실행합니다.
+* **스케줄러**: `pg_cron`으로 **10분마다** 백그라운드 실행됩니다.
+* **구현**:
+  - RPC: `public.prune_canvas_states_for_inactive_canvases(p_keep_count int default 30, p_inactive_interval interval default '30 minutes')`
+  - 참고용 RPC: `public.get_canvas_state_ids_to_delete(p_canvas_id uuid, p_keep_count int)`
+  - 마이그레이션: `supabase/migrations/00016_prune_canvas_states.sql`
+* **서비스 동작**: 상태 저장 시(POST) 즉시 삭제하지 않고, 스케줄러가 조건을 만족할 때만 정리합니다. API 지연이나 실패에 영향을 주지 않습니다.
 
 ### 서비스 함수/컴포넌트
 * `FunnelNode (Component)`: 개별 노드를 렌더링하고 연결점, 삭제 버튼, 드래그 핸들 등 UI 상호작용을 처리합니다.
@@ -24,3 +35,4 @@ description: "노드 & 엣지 관리 시 참고하세요 - 노드 생성, 연결
 * **실시간 렌더링**: `requestAnimationFrame`을 사용하여 노드 이동 시 엣지 경로를 부드럽게 업데이트합니다.
 * **자유형 노드**: 사전 정의된 노드 타입 없이 사용자가 자유롭게 노드를 생성하고 커스터마이징할 수 있습니다.
 * **시각적 연결**: 앵커 포인트 기반으로 노드 간 연결을 시각화하고, 연결 과정에서 미리보기를 제공합니다.
+* **스토리지 최적화**: 워크스페이스 기준 멀티 테넌트 환경에서 불필요한 상태 이력을 주기적으로 정리하여 저장소 사용량을 최소화합니다.
