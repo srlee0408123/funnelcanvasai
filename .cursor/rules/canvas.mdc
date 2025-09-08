@@ -1,0 +1,31 @@
+---
+description: "캔버스 관리 시 참고하세요 - 생성, 조회, 수정, 상태 저장, 메타데이터 관리 기능"
+---
+
+## 3. 캔버스 (Canvas)
+
+### 라우터
+* `GET /api/canvases`: 사용자가 접근 가능한 모든 캔버스 목록을 조회합니다.
+* `POST /api/canvases`: 새 캔버스를 생성하고 워크스페이스에 연결합니다.
+* `GET /api/canvases/[canvasId]`: 특정 캔버스의 메타데이터를 조회합니다.
+* `PATCH /api/canvases/[canvasId]`: 캔버스의 제목이나 설명을 수정합니다.
+* `GET /api/canvases/[canvasId]/state/latest`: 캔버스의 가장 최신 상태(노드, 엣지 등)를 조회합니다.
+* `POST /api/canvases/[canvasId]/state`: 캔버스의 새 상태를 저장하고 버전 관리합니다.
+
+### 스키마 (Drizzle ORM)
+* `canvases`: 캔버스 기본 정보(`id`, `title`, `workspaceId`, `createdBy`, `createdAt`, `updatedAt`)를 저장합니다.
+* `canvasStates`: 캔버스의 전체 상태(노드, 엣지, 뷰포트 포함)를 JSONB 형태로 버전 관리하여 저장합니다.
+* `canvasShares`: 캔버스별 개별 공유 권한(`canvasId`, `userId`, `role`, `sharedBy`)을 관리합니다.
+
+### 서비스 함수/훅
+* `useCanvasStore (Hook)`: Zustand를 사용하여 캔버스의 노드, 엣지, 뷰포트, 선택 상태 등 UI 상태를 전역으로 관리합니다.
+* `useCanvasSync (Hook)`: 캔버스 상태 변경을 감지하여 서버에 자동으로 디바운스 저장하며 충돌 방지 기능을 제공합니다.
+* `useCanvasInteractions (Hook)`: `requestAnimationFrame`으로 캔버스 드래그, 패닝, 줌 성능을 최적화합니다.
+* `useCanvasRole (Hook)`: 현재 사용자의 캔버스 접근 권한(owner/editor/viewer)을 조회합니다.
+* `getCanvasById (Service)`: ID로 캔버스 정보와 최신 상태를 조회하는 서비스 함수입니다.
+* `insertCanvasState (Service)`: 캔버스의 새 상태를 저장하고 버전을 증가시키는 서비스 함수입니다.
+
+### 핵심 특징
+* **실시간 동기화**: 상태 변경을 디바운스하여 자동 저장하고 실시간 협업을 지원합니다.
+* **버전 관리**: 모든 상태 변경을 `canvas_states` 테이블에 버전별로 저장하여 히스토리 추적이 가능합니다.
+* **성능 최적화**: Zustand 전역 상태와 `requestAnimationFrame`을 활용한 부드러운 캔버스 조작을 제공합니다.

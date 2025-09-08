@@ -1,0 +1,77 @@
+---
+alwaysApply: true
+description: "신규 페이지를 개발하거나 렌더링 관련 성능 문제를 해결할 때, 올바른 렌더링 방식(ISS/CSC)을 결정하기 위해 이 내용을 참고."
+---
+
+### 렌더링 규칙
+
+*   **ISS (Initial Server-Side)**: 서버에서 초기 렌더링 및 데이터 페칭을 담당하는 서버 컴포넌트 또는 서버 측 로직(API Route 등)을 의미합니다.
+*   **CSC (Client-Side Component)**: `"use client";`로 명시되어 브라우저에서 상태와 상호작용을 관리하는 클라이언트 컴포넌트를 의미합니다.
+---
+
+### 페이지 및 컴포넌트별 렌더링 규칙
+
+*   **`app/page.tsx` (ISS)**: 로그인 상태에 따라 대시보드 또는 랜딩 페이지로 리디렉션하는 서버 측 로직을 실행합니다.
+*   **`app/dashboard/page.tsx` (ISS)**: 서버에서 사용자를 인증하고, 워크스페이스 목록을 렌더링하는 `DashboardClient`를 호출합니다.
+*   **`app/dashboard/client.tsx` (CSC)**: 워크스페이스 목록을 표시하고 생성하며, 실시간 변경 사항을 구독하는 클라이언트 측 로직을 처리합니다.
+*   **`app/workspace/[workspaceId]/page.tsx` (ISS)**: 서버에서 워크스페이스 데이터를 가져와 캔버스 목록을 렌더링하는 `WorkspaceClient`를 호출합니다.
+*   **`app/workspace/[workspaceId]/client.tsx` (CSC)**: 특정 워크스페이스의 캔버스 목록을 표시하고, 실시간 캔버스 변경을 구독합니다.
+*   **`app/canvas/[canvasId]/page.tsx` (ISS)**: 서버에서 캔버스 ID를 받아 `CanvasClient`에 전달하여 캔버스 뷰를 초기 렌더링합니다.
+*   **`app/canvas/[canvasId]/client.tsx` (CSC)**: 캔버스 데이터와 최신 상태를 클라이언트에서 비동기적으로 로드하고, 실시간 메타데이터 변경을 구독하여 `CanvasView`를 렌더링합니다.
+*   **`app/share/[canvasId]/page.tsx` (ISS)**: 서버에서 공개 캔버스 ID를 받아 읽기 전용 뷰를 렌더링하는 `ReadOnlyCanvasClient`를 호출합니다.
+*   **`app/share/[canvasId]/client.tsx` (CSC)**: 공개 캔버스 데이터를 클라이언트에서 비동기적으로 로드하여 읽기 전용 모드로 렌더링합니다.
+*   **`app/layout.tsx` (ISS)**: 전역 레이아웃을 서버에서 구성하고, 클라이언트 측 프로바이더(`ClerkProvider`, `Providers`)를 래핑합니다.
+*   **`app/providers.tsx` (CSC)**: `QueryClient`, `ThemeProvider` 등 클라이언트 측 전역 상태 및 컨텍스트를 제공합니다.
+*   **`app/globals.css` / `tailwind.config.ts` (Build-time/Styling)**: 빌드 시점에 처리되어 전역 스타일링과 디자인 시스템(라이트 모드 고정)을 정의합니다.
+*   **`components/Canvas/CanvasView.tsx` (CSC)**: 캔버스의 모든 UI(사이드바, 캔버스 영역, 패널, 모달)를 클라이언트에서 통합 관리하며 권한에 따라 인터랙션을 제어합니다.
+*   **`components/Canvas/CanvasHeader.tsx` (CSC)**: 캔버스 제목 편집, 저장, 공유, 줌 등 모든 상호작용을 클라이언트에서 처리합니다.
+*   **`components/Canvas/CanvasEdges.tsx` (CSC)**: 노드 위치가 변경될 때마다 `requestAnimationFrame`을 사용하여 클라이언트에서 SVG 엣지 경로를 실시간으로 다시 계산하고 렌더링합니다.
+*   **`components/Canvas/FunnelNode.tsx` (CSC)**: 드래그, 선택, 더블클릭 등 사용자 상호작용에 따라 동적으로 스타일과 상태가 변경되는 노드를 클라이언트에서 렌더링합니다.
+*   **`components/Canvas/NodeCreationModal.tsx` (CSC)**: 사용자의 입력에 따라 노드 또는 메모 생성 폼을 동적으로 렌더링하고 상태를 관리합니다.
+*   **`components/Canvas/NodePalette.tsx` (CSC)**: 드래그 앤 드롭 시작 이벤트를 클라이언트에서 처리하여 캔버스 영역으로 노드 데이터를 전달합니다.
+*   **`components/Canvas/NodeMetrics.tsx` (CSC)**: 지표 데이터를 비동기적으로 가져와 표시하고, 지표 추가/편집/삭제 등 모든 CRUD 작업을 클라이언트에서 처리합니다.
+*   **`components/Canvas/TextMemo.tsx` (CSC)**: 드래그, 리사이즈, 편집 등 모든 상호작용과 상태를 클라이언트에서 관리하며, 변경 사항을 서버에 비동기적으로 전송합니다.
+*   **`components/Chat/SidebarChat.tsx` (CSC)**: 채팅 메시지 목록을 관리하고, 사용자 입력을 받아 AI 응답을 요청하며, 실시간 메시지를 수신하여 UI를 업데이트합니다.
+*   **`components/Layout/CanvasArea.tsx` (CSC)**: 사용자의 마우스/포인터 이벤트(드래그, 줌, 패닝)를 클라이언트에서 직접 처리하여 `requestAnimationFrame`으로 캔버스 뷰포트와 노드 위치를 업데이트합니다.
+*   **`components/Layout/Sidebar.tsx` (CSC)**: 확장/축소 상태를 관리하고, 모달 열기, 자료 삭제 등 모든 사용자 인터랙션을 클라이언트에서 처리합니다.
+*   **`components/Node/NodeDetailsPanel.tsx` (CSC)**: 선택된 노드의 상세 정보를 비동기적으로 로드하고, 사용자의 편집 입력을 받아 상태를 업데이트하며, 변경 사항을 서버에 저장합니다.
+*   **`components/TodoSticker/TodoSticker.tsx` (CSC)**: 할일 목록의 CRUD 작업을 클라이언트에서 낙관적 업데이트로 처리하고, 드래그, 리사이즈, 접기/펴기 등 모든 UI 상태를 관리합니다.
+*   **`components/TodoSticker/TodoStickerToggle.tsx` (CSC)**: 숨겨진 스티커를 다시 표시하는 버튼으로, 드래그하여 위치를 변경하는 모든 로직을 클라이언트에서 처리합니다.
+*   **`components/Modals/UploadModal.tsx` (CSC)**: `uploadType` 상태에 따라 적절한 업로드 모달을 클라이언트에서 동적으로 렌더링합니다.
+*   **`components/Ui/*` (CSC)**: 모든 UI 프리미티브는 상태와 이벤트 핸들러를 가지는 클라이언트 컴포넌트로, 재사용 가능한 인터랙티브 요소를 제공합니다.
+*   **`hooks/*` (CSC)**: 모든 커스텀 훅은 클라이언트 컴포넌트 내에서 상태, 데이터 페칭, 상호작용 로직을 관리하기 위해 사용됩니다.
+*   **ISS (Initial Server-Side)**: 서버에서 초기 렌더링 및 데이터 페칭을 담당하는 서버 컴포넌트 또는 서버 측 로직(API Route 등)을 의미합니다.
+*   **CSC (Client-Side Component)**: `"use client";`로 명시되어 브라우저에서 상태와 상호작용을 관리하는 클라이언트 컴포넌트를 의미합니다.
+---
+
+### 페이지 및 컴포넌트별 렌더링 규칙 (ISS/CSC 구분 포함)
+
+*   **`app/page.tsx` (ISS)**: 로그인 상태에 따라 대시보드 또는 랜딩 페이지로 리디렉션하는 서버 측 로직을 실행합니다.
+*   **`app/dashboard/page.tsx` (ISS)**: 서버에서 사용자를 인증하고, 워크스페이스 목록을 렌더링하는 `DashboardClient`를 호출합니다.
+*   **`app/dashboard/client.tsx` (CSC)**: 워크스페이스 목록을 표시하고 생성하며, 실시간 변경 사항을 구독하는 클라이언트 측 로직을 처리합니다.
+*   **`app/workspace/[workspaceId]/page.tsx` (ISS)**: 서버에서 워크스페이스 데이터를 가져와 캔버스 목록을 렌더링하는 `WorkspaceClient`를 호출합니다.
+*   **`app/workspace/[workspaceId]/client.tsx` (CSC)**: 특정 워크스페이스의 캔버스 목록을 표시하고, 실시간 캔버스 변경을 구독합니다.
+*   **`app/canvas/[canvasId]/page.tsx` (ISS)**: 서버에서 캔버스 ID를 받아 `CanvasClient`에 전달하여 캔버스 뷰를 초기 렌더링합니다.
+*   **`app/canvas/[canvasId]/client.tsx` (CSC)**: 캔버스 데이터와 최신 상태를 클라이언트에서 비동기적으로 로드하고, 실시간 메타데이터 변경을 구독하여 `CanvasView`를 렌더링합니다.
+*   **`app/share/[canvasId]/page.tsx` (ISS)**: 서버에서 공개 캔버스 ID를 받아 읽기 전용 뷰를 렌더링하는 `ReadOnlyCanvasClient`를 호출합니다.
+*   **`app/share/[canvasId]/client.tsx` (CSC)**: 공개 캔버스 데이터를 클라이언트에서 비동기적으로 로드하여 읽기 전용 모드로 렌더링합니다.
+*   **`app/layout.tsx` (ISS)**: 전역 레이아웃을 서버에서 구성하고, 클라이언트 측 프로바이더(`ClerkProvider`, `Providers`)를 래핑합니다.
+*   **`app/providers.tsx` (CSC)**: `QueryClient`, `ThemeProvider` 등 클라이언트 측 전역 상태 및 컨텍스트를 제공합니다.
+*   **`app/globals.css` / `tailwind.config.ts` (Build-time/Styling)**: 빌드 시점에 처리되어 전역 스타일링과 디자인 시스템(라이트 모드 고정)을 정의합니다.
+*   **`components/Canvas/CanvasView.tsx` (CSC)**: 캔버스의 모든 UI(사이드바, 캔버스 영역, 패널, 모달)를 클라이언트에서 통합 관리하며 권한에 따라 인터랙션을 제어합니다.
+*   **`components/Canvas/CanvasHeader.tsx` (CSC)**: 캔버스 제목 편집, 저장, 공유, 줌 등 모든 상호작용을 클라이언트에서 처리합니다.
+*   **`components/Canvas/CanvasEdges.tsx` (CSC)**: 노드 위치가 변경될 때마다 `requestAnimationFrame`을 사용하여 클라이언트에서 SVG 엣지 경로를 실시간으로 다시 계산하고 렌더링합니다.
+*   **`components/Canvas/FunnelNode.tsx` (CSC)**: 드래그, 선택, 더블클릭 등 사용자 상호작용에 따라 동적으로 스타일과 상태가 변경되는 노드를 클라이언트에서 렌더링합니다.
+*   **`components/Canvas/NodeCreationModal.tsx` (CSC)**: 사용자의 입력에 따라 노드 또는 메모 생성 폼을 동적으로 렌더링하고 상태를 관리합니다.
+*   **`components/Canvas/NodePalette.tsx` (CSC)**: 드래그 앤 드롭 시작 이벤트를 클라이언트에서 처리하여 캔버스 영역으로 노드 데이터를 전달합니다.
+*   **`components/Canvas/NodeMetrics.tsx` (CSC)**: 지표 데이터를 비동기적으로 가져와 표시하고, 지표 추가/편집/삭제 등 모든 CRUD 작업을 클라이언트에서 처리합니다.
+*   **`components/Canvas/TextMemo.tsx` (CSC)**: 드래그, 리사이즈, 편집 등 모든 상호작용과 상태를 클라이언트에서 관리하며, 변경 사항을 서버에 비동기적으로 전송합니다.
+*   **`components/Chat/SidebarChat.tsx` (CSC)**: 채팅 메시지 목록을 관리하고, 사용자 입력을 받아 AI 응답을 요청하며, 실시간 메시지를 수신하여 UI를 업데이트합니다.
+*   **`components/Layout/CanvasArea.tsx` (CSC)**: 사용자의 마우스/포인터 이벤트(드래그, 줌, 패닝)를 클라이언트에서 직접 처리하여 `requestAnimationFrame`으로 캔버스 뷰포트와 노드 위치를 업데이트합니다.
+*   **`components/Layout/Sidebar.tsx` (CSC)**: 확장/축소 상태를 관리하고, 모달 열기, 자료 삭제 등 모든 사용자 인터랙션을 클라이언트에서 처리합니다.
+*   **`components/Node/NodeDetailsPanel.tsx` (CSC)**: 선택된 노드의 상세 정보를 비동기적으로 로드하고, 사용자의 편집 입력을 받아 상태를 업데이트하며, 변경 사항을 서버에 저장합니다.
+*   **`components/TodoSticker/TodoSticker.tsx` (CSC)**: 할일 목록의 CRUD 작업을 클라이언트에서 낙관적 업데이트로 처리하고, 드래그, 리사이즈, 접기/펴기 등 모든 UI 상태를 관리합니다.
+*   **`components/TodoSticker/TodoStickerToggle.tsx` (CSC)**: 숨겨진 스티커를 다시 표시하는 버튼으로, 드래그하여 위치를 변경하는 모든 로직을 클라이언트에서 처리합니다.
+*   **`components/Modals/UploadModal.tsx` (CSC)**: `uploadType` 상태에 따라 적절한 업로드 모달을 클라이언트에서 동적으로 렌더링합니다.
+*   **`components/Ui/*` (CSC)**: 모든 UI 프리미티브는 상태와 이벤트 핸들러를 가지는 클라이언트 컴포넌트로, 재사용 가능한 인터랙티브 요소를 제공합니다.
+*   **`hooks/*` (CSC)**: 모든 커스텀 훅은 클라이언트 컴포넌트 내에서 상태, 데이터 페칭, 상호작용 로직을 관리하기 위해 사용됩니다.

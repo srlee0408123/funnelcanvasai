@@ -1,0 +1,241 @@
+---
+description: "공용 함수 및 데이터 페칭 시 참고하세요 - 유틸리티 함수, API 요청, 권한 검증, 서비스 함수 재사용"
+alwaysApply: true
+---
+
+# 공용 함수 및 데이터 페칭 가이드
+
+## 핵심 원칙
+모든 API 요청은 `lib/queryClient.ts`의 `apiRequest`를, 공용 로직은 `lib` 또는 `services`의 함수를 재사용합니다.
+
+## 1. 공용 유틸리티 함수 (Common Utility Functions)
+여러 컴포넌트와 서비스에서 반복적으로 사용되는 순수 함수 및 헬퍼입니다.
+
+| 함수/모듈 | 위치 | 목적 | 사용 시점 |
+| :--- | :--- | :--- | :--- |
+| **`cn`** | `lib/utils.ts` | Tailwind CSS 클래스 병합 | `className` prop을 동적으로 구성할 때 |
+| **`createToastMessage`** | `lib/messages/toast-utils.ts` | 일관된 사용자 피드백(토스트) 메시지 생성 | 사용자 액션의 성공/실패 결과를 알릴 때 |
+| **`buildSystemPrompt`** | `services/rag/promptBuilder.ts` | AI 채팅을 위한 시스템 프롬프트 생성 | AI 어시스턴트에게 역할을 부여하고 컨텍스트를 주입할 때 |
+| **`ErrorDetectors`** | `lib/messages/toast-utils.ts` | 에러 타입 자동 판별 | 에러 객체에서 적절한 메시지를 자동 선택할 때 |
+| **`getErrorMessage`** | `lib/messages/toast-utils.ts` | 에러 타입별 자동 메시지 생성 | 에러 처리 시 사용자 친화적 메시지 제공 |
+
+### Reference Examples
+
+#### `cn` (클래스 병합)
+```typescript
+import { cn } from '@/lib/utils';
+
+// 조건부 클래스 적용
+<div className={cn('p-4 rounded-lg', { 'bg-red-500': isError })}>...</div>
+
+// 여러 클래스 조합
+<button className={cn('btn', variant === 'primary' ? 'btn-primary' : 'btn-secondary')}>
+```
+
+#### `createToastMessage` (토스트 메시지 생성)
+```typescript
+import { useToast } from '@/hooks/use-toast';
+import { createToastMessage } from '@/lib/messages';
+
+const { toast } = useToast();
+
+// 성공 메시지
+const successMessage = createToastMessage.uploadSuccess('PDF');
+toast(successMessage);
+
+// 에러 메시지 (자동 타입 판별)
+try {
+  await uploadFile();
+} catch (error) {
+  const errorMessage = createToastMessage.canvasError(error, 'SAVE');
+  toast(errorMessage);
+}
+
+// 커스텀 메시지
+const customMessage = createToastMessage.custom(
+  '작업 완료', 
+  '모든 파일이 성공적으로 업로드되었습니다.',
+  'default'
+);
+toast(customMessage);
+```
+
+#### `ErrorDetectors` (에러 타입 판별)
+```typescript
+import { ErrorDetectors, getErrorMessage } from '@/lib/messages';
+
+// 에러 타입별 처리
+if (ErrorDetectors.isNetworkError(error)) {
+  // 네트워크 에러 처리
+} else if (ErrorDetectors.isUnauthorizedError(error)) {
+  // 인증 에러 처리
+}
+
+// 자동 메시지 생성
+const message = getErrorMessage(error, 'CANVAS_SAVE');
+toast(message);
+```
+
+## 2. 데이터 페칭 함수 (Data Fetching Functions)
+데이터를 가져오거나 서버 상태를 변경하는 모든 함수는 목적에 따라 명확히 분리되어 있습니다.
+
+| 함수/모듈 | 위치 | 목적 | 사용 시점 |
+| :--- | :--- | :--- | :--- |
+| **`apiRequest`** | `lib/queryClient.ts` | **(Client-side)** 프론트엔드에서 백엔드 API (`/api/...`)로 요청 | **모든 클라이언트-서버 통신에 사용.** React Query의 `mutationFn` 등에서 활용 |
+| **`getQueryFn`** | `lib/queryClient.ts` | **(Client-side)** React Query용 표준화된 쿼리 함수 | React Query의 `queryFn`으로 사용하여 일관된 에러 처리 |
+| **`[resource]-service.ts`** | `services/*-service.ts` | **(Server-side)** API 라우트에서 DB 데이터를 직접 조회/수정 | `app/api/**/route.ts` 내부에서 RLS를 우회하여 데이터를 처리할 때 |
+| **`[external]Service`** | `services/**.ts` | **(Server-side)** 외부 서비스(OpenAI, Firecrawl 등) API 호출 캡슐화 | 텍스트 임베딩, 웹 스크래핑 등 외부 서비스 기능이 필요할 때 |
+| **`canAccess[Resource]`** | `lib/auth/permissions.ts` | **(Server-side)** 특정 리소스에 대한 사용자 접근 권한 검증 | `withAuthorization` HOF 또는 API 핸들러 시작 지점에서 권한 확인 시 |
+| **`getCanvasAccessInfo`** | `lib/auth/auth-service.ts` | **(Server-side)** 캔버스 접근 권한 최종 판정 | 공개/워크스페이스/개별 공유를 모두 고려한 권한 확인 |
+
+### Reference Examples
+
+#### `apiRequest` (클라이언트 → 서버 API 호출)
+```typescript
+import { apiRequest } from '@/lib/queryClient';
+
+// GET 요청
+const response = await apiRequest('GET', `/api/canvases/${canvasId}`);
+const data = await response.json();
+
+// POST 요청
+const response = await apiRequest('POST', `/api/canvases/${canvasId}/shares`, {
+  email: 'user@example.com',
+  role: 'editor'
+});
+
+// React Query와 함께 사용
+const uploadMutation = useMutation({
+  mutationFn: (formData) => apiRequest('POST', `/api/workspaces/${workspaceId}/upload-pdf`, formData),
+});
+```
+
+#### `getQueryFn` (React Query 표준 쿼리 함수)
+```typescript
+import { getQueryFn } from '@/lib/queryClient';
+
+// 401 에러 시 null 반환 (옵셔널 데이터)
+const { data } = useQuery({
+  queryKey: ['canvas', canvasId],
+  queryFn: getQueryFn({ on401: 'returnNull' }),
+});
+
+// 401 에러 시 예외 발생 (필수 데이터)
+const { data } = useQuery({
+  queryKey: ['user', 'profile'],
+  queryFn: getQueryFn({ on401: 'throw' }),
+});
+```
+
+#### `[resource]-service.ts` (서버 → DB)
+```typescript
+// app/api/canvases/[canvasId]/route.ts
+import { getCanvasById } from '@/services/canvas-service';
+import { getLatestCanvasState } from '@/services/storageService';
+
+export const GET = withAuthorization(
+  { resourceType: 'canvas' },
+  async (request, { params }) => {
+    const { canvasId } = params;
+    
+    // 서비스 함수로 DB 데이터 조회 (RLS 우회)
+    const canvas = await getCanvasById(canvasId);
+    const state = await getLatestCanvasState(canvasId);
+    
+    if (!canvas) {
+      return NextResponse.json({ error: 'Canvas not found' }, { status: 404 });
+    }
+    
+    return NextResponse.json({ canvas, state });
+  }
+);
+```
+
+#### `[external]Service` (서버 → 외부 API)
+```typescript
+// services/openai.ts
+export class OpenAIService {
+  async generateEmbedding(text: string): Promise<number[]> {
+    const response = await this.client.embeddings.create({
+      model: "text-embedding-3-small",
+      input: text,
+    });
+    return response.data[0].embedding;
+  }
+}
+
+// services/firecrawl.ts
+export class FirecrawlService {
+  async scrapeUrl(url: string): Promise<ScrapedResult> {
+    const response = await this.client.scrapeUrl(url);
+    return response.data;
+  }
+}
+
+// 사용처 예시 (app/api/.../route.ts)
+const openaiService = new OpenAIService();
+const embedding = await openaiService.generateEmbedding("some text");
+
+const firecrawlService = new FirecrawlService();
+const scrapedData = await firecrawlService.scrapeUrl("https://example.com");
+```
+
+#### `canAccess[Resource]` (권한 검증)
+```typescript
+// lib/auth/permissions.ts
+import { canAccessCanvas, canAccessWorkspace } from '@/lib/auth/permissions';
+
+// 워크스페이스 권한 확인
+const workspaceAccess = await canAccessWorkspace(userId, workspaceId);
+if (!workspaceAccess.hasAccess) {
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+}
+
+// 캔버스 권한 확인
+const canvasAccess = await canAccessCanvas(userId, canvasId);
+if (!canvasAccess.hasAccess) {
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+}
+
+// 최종 권한 확인 (공개/워크스페이스/개별 공유 모두 고려)
+import { getCanvasAccessInfo } from '@/lib/auth/auth-service';
+
+const accessInfo = await getCanvasAccessInfo(userId, canvasId);
+if (!accessInfo.hasAccess) {
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+}
+// accessInfo.role: 'owner' | 'admin' | 'member' | 'editor' | 'viewer' | null
+```
+
+## 3. 캐시 관리 함수 (Cache Management)
+React Query 캐시를 효율적으로 관리하는 유틸리티 함수들입니다.
+
+| 함수/모듈 | 위치 | 목적 | 사용 시점 |
+| :--- | :--- | :--- | :--- |
+| **`invalidateCanvasQueries`** | `lib/queryClient.ts` | 캔버스 관련 모든 쿼리 캐시 무효화 | 캔버스 상태 변경 후 관련 데이터 갱신 시 |
+| **`queryClient.invalidateQueries`** | React Query | 특정 쿼리 키의 캐시 무효화 | 데이터 변경 후 해당 쿼리 갱신 시 |
+
+### Reference Examples
+
+#### 캐시 무효화
+```typescript
+import { queryClient } from '@/lib/queryClient';
+
+// 캔버스 관련 모든 쿼리 무효화
+await queryClient.invalidateQueries({
+  queryKey: ['canvas', canvasId],
+  exact: false
+});
+
+// 특정 타겟만 무효화
+await queryClient.invalidateQueries({
+  queryKey: ['canvas', canvasId, 'todos'],
+  exact: false
+});
+```
+
+## 핵심 특징
+* **일관된 에러 처리**: 모든 API 요청에서 동일한 에러 처리 패턴을 사용합니다.
+* **타입 안전성**: TypeScript를 활용한 타입 안전한 함수 호출을 보장합니다.
+* **재사용성**: 공통 로직을 중앙에서 관리하여 코드 중복을 방지합니다.
+* **권한 중심**: 모든 리소스 접근에 대해 일관된 권한 검증을 적용합니다.

@@ -1,0 +1,16 @@
+---
+description: "사용자 및 인증 관련 규칙을 만들 때 참고하세요"
+alwaysApply: false
+---
+## 1. 사용자 및 인증 (User & Authentication)
+*   **라우터**:
+    *   `POST /api/webhooks/clerk`: Clerk 웹훅을 통해 사용자 생성/수정/삭제 시 Supabase `profiles` 테이블을 동기화합니다.
+    *   `POST /api/sync-user`: 현재 로그인된 Clerk 사용자의 정보를 Supabase `profiles` 테이블에 동기화합니다.
+    *   `GET /api/user/canvases`: 현재 로그인된 사용자가 접근 가능한 캔버스 목록을 조회합니다.
+*   **스키마**:
+    *   `profiles`: Clerk 사용자 정보를 저장하며 `id`, `email`, `name`, `avatar_url` 필드를 포함합니다.
+*   **서비스 함수/훅**:
+    *   `useAuth (Hook)`: 현재 로그인된 사용자 정보를 React Query로 가져옵니다.
+    *   `clerkMiddleware (Middleware)`: Clerk 미들웨어를 통해 보호된 라우트의 접근을 제어합니다.
+    *   `withAuthorization (HOF)`: API 라우트 핸들러를 래핑하여 리소스(캔버스/워크스페이스) 접근 권한을 검증합니다.
+    *   `getCanvasAccessInfo (Service)`: 사용자 ID와 캔버스 ID로 최종 접근 권한과 역할을 판정하는 중앙 권한 서비스입니다.
