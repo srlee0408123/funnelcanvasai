@@ -153,7 +153,7 @@ export type CanvasAsset = Asset;
 /**
  * 업로드 관련 타입 정의
  */
-export type UploadType = "pdf" | "youtube" | "url" | "text";
+export type UploadType = "pdf" | "youtube" | "url";
 
 /**
  * 타입 가드 함수들

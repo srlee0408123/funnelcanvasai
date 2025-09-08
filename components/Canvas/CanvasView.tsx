@@ -13,7 +13,7 @@ import UploadModal from "@/components/Modals/UploadModal";
 import { WorkspaceMembersModal } from "@/components/Modals/WorkspaceMembersModal";
 import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
 import { useCanvasRole } from "@/hooks/useCanvasRole";
-import type { CanvasViewProps, CanvasAreaCanvas, FlowNode, UploadType } from "@/types/canvas";
+import type { CanvasViewProps, CanvasAreaCanvas, FlowNode } from "@/types/canvas";
 import type { Asset } from "@shared/schema";
 import { toCanvasAreaCanvas } from "@/types/canvas";
 
@@ -50,7 +50,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showCanvasShareModal, setShowCanvasShareModal] = useState(false);
-  const [uploadType, setUploadType] = useState<UploadType>("pdf");
+  const [uploadType, setUploadType] = useState<"pdf" | "youtube" | "url" | "text">("pdf");
   
   // Node details state for right panel
   const [showNodeDetails, setShowNodeDetails] = useState(false);
@@ -84,7 +84,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
     setSelectedNodeDetails(null);
   };
 
-  const handleOpenUploadModal = (type: UploadType) => {
+  const handleOpenUploadModal = (type: "pdf" | "youtube" | "url" | "text") => {
     setUploadType(type);
     setShowUploadModal(true);
   };
