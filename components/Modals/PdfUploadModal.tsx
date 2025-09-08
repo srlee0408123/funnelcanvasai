@@ -30,9 +30,11 @@ interface PdfUploadModalProps {
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
   canvasId: string;
+  isGlobalKnowledge?: boolean;
+  onComplete?: (data: any) => void;
 }
 
-export default function PdfUploadModal({ open, onOpenChange, workspaceId, canvasId }: PdfUploadModalProps) {
+export default function PdfUploadModal({ open, onOpenChange, workspaceId, canvasId, isGlobalKnowledge = false, onComplete }: PdfUploadModalProps) {
   const { toast } = useToast();
   const [title, setTitle] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -54,7 +56,10 @@ export default function PdfUploadModal({ open, onOpenChange, workspaceId, canvas
       formData.append("workspaceId", workspaceId);
       formData.append("canvasId", canvasId);
 
-      const response = await fetch(`/api/workspaces/${workspaceId}/upload-pdf`, {
+      const endpoint = isGlobalKnowledge
+        ? `/api/admin/global-knowledge/upload-pdf`
+        : `/api/workspaces/${workspaceId}/upload-pdf`;
+      const response = await fetch(endpoint, {
         method: "POST",
         body: formData,
       });
@@ -75,7 +80,9 @@ export default function PdfUploadModal({ open, onOpenChange, workspaceId, canvas
         throw new Error(msg || `HTTP ${response.status}`);
       }
 
-      return await response.json();
+      const json = await response.json();
+      onComplete?.(json);
+      return json;
     },
     onSuccess: async () => {
       await invalidateCanvasQueries({ canvasId, workspaceId, client: queryClient, targets: ["assets", "knowledge"] });

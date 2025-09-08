@@ -31,9 +31,11 @@ interface YoutubeUploadModalProps {
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
   canvasId: string;
+  isGlobalKnowledge?: boolean;
+  onComplete?: (data: any) => void;
 }
 
-export default function YoutubeUploadModal({ open, onOpenChange, workspaceId, canvasId }: YoutubeUploadModalProps) {
+export default function YoutubeUploadModal({ open, onOpenChange, workspaceId, canvasId, isGlobalKnowledge = false, onComplete }: YoutubeUploadModalProps) {
   const { toast } = useToast();
   const [url, setUrl] = useState("");
 
@@ -87,34 +89,46 @@ export default function YoutubeUploadModal({ open, onOpenChange, workspaceId, ca
       if (!url || !isValidYouTubeUrl(url)) {
         throw new Error("Invalid YouTube URL");
       }
-      const supabase = createSupabaseBrowserClient();
-      const { data, error } = await supabase.functions.invoke("youtube-transcript-ingest", {
-        body: {
-          canvasId,
-          youtubeUrl: url,
-          title: url,
-          chunk: { enabled: true, maxTokens: 1000, overlapTokens: 120 },
-        },
-      });
-
-      if (error) {
-        // 함수 에러(비 2xx)에서도 서버의 JSON 메시지를 최대한 복구하여 사용자에게 전달
-        const friendly = extractFunctionErrorMessage(error);
-        throw new Error(friendly);
+      if (!isGlobalKnowledge) {
+        // 기존 워크스페이스 업로드 플로우 유지
+        const supabase = createSupabaseBrowserClient();
+        const { data, error } = await supabase.functions.invoke("youtube-transcript-ingest", {
+          body: {
+            canvasId,
+            youtubeUrl: url,
+            title: url,
+            chunk: { enabled: true, maxTokens: 1000, overlapTokens: 120 },
+          },
+        });
+        if (error) {
+          const friendly = extractFunctionErrorMessage(error);
+          throw new Error(friendly);
+        }
+        if (!data?.success) {
+          throw new Error(data?.error || "요청 처리 중 오류가 발생했습니다.");
+        }
+        return data;
       }
-
-      if (!data?.success) {
-        throw new Error(data?.error || "요청 처리 중 오류가 발생했습니다.");
+      // 글로벌 지식 플로우 (서버 라우트로 직접 생성/청킹)
+      const res = await fetch('/api/admin/global-knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ type: 'youtube', youtubeUrl: url, title: url })
+      })
+      if (!res.ok) {
+        const t = await res.text().catch(() => '')
+        throw new Error(t || res.statusText)
       }
-
-      return data;
+      return await res.json().catch(() => ({}))
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       await invalidateCanvasQueries({ canvasId, workspaceId, client: queryClient, targets: ["assets", "knowledge"] });
       const successMessage = createToastMessage.uploadSuccess('YOUTUBE');
       toast(successMessage);
       onOpenChange(false);
       setUrl("");
+      onComplete?.(data)
     },
     onError: (error) => {
       if (ErrorDetectors.isUnauthorizedError(error)) {

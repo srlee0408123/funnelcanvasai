@@ -12,6 +12,8 @@ interface TextUploadModalProps {
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
   canvasId: string;
+  isGlobalKnowledge?: boolean;
+  onComplete?: (data: any) => void;
 }
 
 /**
@@ -27,7 +29,7 @@ interface TextUploadModalProps {
  * - 저장 중 버튼 로딩 처리로 중복 제출 방지
  * - Sidebar의 "업로드된 자료" 리스트는 Realtime으로 자동 갱신됨
  */
-export default function TextUploadModal({ open, onOpenChange, workspaceId, canvasId }: TextUploadModalProps) {
+export default function TextUploadModal({ open, onOpenChange, workspaceId, canvasId, isGlobalKnowledge = false, onComplete }: TextUploadModalProps) {
   const { toast } = useToast();
   const [title, setTitle] = useState<string>("텍스트 자료");
   const [content, setContent] = useState<string>("");
@@ -53,18 +55,17 @@ export default function TextUploadModal({ open, onOpenChange, workspaceId, canva
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const response = await fetch(`/api/workspaces/${workspaceId}/assets`, {
+      const endpoint = isGlobalKnowledge
+        ? `/api/admin/global-knowledge`
+        : `/api/workspaces/${workspaceId}/assets`;
+      const payload = isGlobalKnowledge
+        ? { type: 'text', title: title?.trim() || '텍스트 자료', content }
+        : { type: 'text', title: title?.trim() || '텍스트 자료', canvasId, metaJson: { source: 'text', contentLength: content.length }, url: null, content };
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          type: "text",
-          title: title?.trim() || "텍스트 자료",
-          canvasId,
-          metaJson: { source: "text", contentLength: content.length },
-          url: null,
-          content, // 서버에서 text 타입 처리 분기 시 사용
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -77,13 +78,14 @@ export default function TextUploadModal({ open, onOpenChange, workspaceId, canva
       setContent("");
       setTitle("텍스트 자료");
       onOpenChange(false);
+      onComplete?.(await response.json().catch(() => null));
     } catch (error) {
       const errorMessage = createToastMessage.uploadError(error, "text");
       toast(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
-  }, [workspaceId, canvasId, content, title, isSubmitting, toast, onOpenChange]);
+  }, [workspaceId, canvasId, content, title, isSubmitting, toast, onOpenChange, isGlobalKnowledge, onComplete]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

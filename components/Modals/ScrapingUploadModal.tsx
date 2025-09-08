@@ -29,9 +29,11 @@ interface ScrapingUploadModalProps {
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
   canvasId: string;
+  isGlobalKnowledge?: boolean;
+  onComplete?: (data: any) => void;
 }
 
-export default function ScrapingUploadModal({ open, onOpenChange, workspaceId, canvasId }: ScrapingUploadModalProps) {
+export default function ScrapingUploadModal({ open, onOpenChange, workspaceId, canvasId, isGlobalKnowledge = false, onComplete }: ScrapingUploadModalProps) {
   const { toast } = useToast();
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -55,13 +57,11 @@ export default function ScrapingUploadModal({ open, onOpenChange, workspaceId, c
       if (!url || !isValidUrl(url)) {
         throw new Error("Invalid URL");
       }
-      const res = await apiRequest("POST", `/api/workspaces/${workspaceId}/assets`, {
-        type: "url",
-        title: title || url,
-        url: url,
-        canvasId: canvasId,
-        metaJson: { originalUrl: url },
-      });
+      const endpoint = isGlobalKnowledge ? `/api/admin/global-knowledge` : `/api/workspaces/${workspaceId}/assets`;
+      const body = isGlobalKnowledge
+        ? { type: 'url', title: title || url, url }
+        : { type: 'url', title: title || url, url, canvasId, metaJson: { originalUrl: url } };
+      const res = await apiRequest("POST", endpoint, body);
       // 정상 응답 본문을 그대로 반환
       try {
         return await res.json();
@@ -69,12 +69,13 @@ export default function ScrapingUploadModal({ open, onOpenChange, workspaceId, c
         return null;
       }
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       await invalidateCanvasQueries({ canvasId, workspaceId, client: queryClient, targets: ["assets", "knowledge"] });
       const successMessage = createToastMessage.uploadSuccess('WEBSITE');
       toast(successMessage);
       onOpenChange(false);
       resetForm();
+      onComplete?.(data);
     },
     onError: (error) => {
       if (ErrorDetectors.isUnauthorizedError(error)) {

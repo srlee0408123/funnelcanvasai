@@ -91,6 +91,67 @@ export async function getGlobalKnowledge(): Promise<Array<{ id: string; title: s
   }));
 }
 
+/**
+ * 글로벌 지식 청크 생성 (관리자 업로드용)
+ */
+export async function createGlobalKnowledgeChunks(payload: {
+  knowledgeId: string;
+  chunks: Array<{ seq: number; text: string; embedding?: number[]; tokens?: number; }>;
+}): Promise<void> {
+  const supabase = createServiceClient();
+  const rows = payload.chunks.map((c) => ({
+    knowledge_id: payload.knowledgeId,
+    seq: c.seq,
+    text: c.text,
+    embedding: c.embedding ? (c.embedding as any) : null,
+    tokens: c.tokens ?? null,
+  }));
+  await (supabase as any)
+    .from('global_knowledge_chunks')
+    .insert(rows);
+}
+
+/**
+ * 글로벌 지식 CRUD 및 청킹(중앙화)
+ */
+export async function listGlobalKnowledge(): Promise<Array<{ id: string; title: string; content: string; tags?: string[] | null; sourceUrl?: string | null; createdAt: string | null }>> {
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from('global_ai_knowledge')
+    .select('id, title, content, tags, source_url, created_at')
+    .order('created_at', { ascending: false });
+  return (data || []).map((r: any) => ({
+    id: String(r.id),
+    title: String(r.title),
+    content: String(r.content || ''),
+    tags: r.tags || null,
+    sourceUrl: r.source_url || null,
+    createdAt: r.created_at || null,
+  }));
+}
+
+export async function deleteGlobalKnowledge(id: string): Promise<void> {
+  const supabase = createServiceClient();
+  await supabase.from('global_ai_knowledge').delete().eq('id', id);
+}
+
+export async function createGlobalKnowledge(payload: { title: string; content: string; tags?: string[]; sourceUrl?: string }): Promise<{ id: string; title: string; content: string; createdAt: string | null }> {
+  const supabase = createServiceClient();
+  const { data, error } = await (supabase as any)
+    .from('global_ai_knowledge')
+    .insert({
+      title: payload.title,
+      content: payload.content,
+      tags: payload.tags ?? null,
+      source_url: payload.sourceUrl ?? null,
+      version: 1,
+    })
+    .select('id, title, content, created_at')
+    .single();
+  if (error || !data) throw new Error('Failed to insert global knowledge');
+  return { id: String((data as any).id), title: String((data as any).title), content: String((data as any).content || ''), createdAt: (data as any).created_at || null };
+}
+
 // Top-K knowledge from asset_chunks by workspace
 export async function getTopKKnowledge(
   workspaceId: string,

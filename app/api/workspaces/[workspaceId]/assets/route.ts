@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { withAuthorization } from '@/lib/auth/withAuthorization';
 import { extractYouTubeTranscript } from "@/services/apify/youtubeTranscript";
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { buildChunks } from "@/services/textChunker";
 import { OpenAIService } from "@/services/openai";
 import { firecrawlService } from "@/services/firecrawl";
 
@@ -100,11 +100,7 @@ const postAsset = async (
         processedTitle = title || scraped.title || url;
 
         // 1) 청킹은 순수 텍스트 기준으로 수행
-        const splitter = new RecursiveCharacterTextSplitter({
-          chunkSize: 1000,
-          chunkOverlap: 150,
-        });
-        chunkTexts = await splitter.splitText(scraped.text);
+        chunkTexts = await buildChunks(scraped.text);
 
         // 2) 임베딩 일괄 생성
         const ai = new OpenAIService();
@@ -140,11 +136,7 @@ const postAsset = async (
       processedTitle = title || "텍스트 자료";
 
       // 텍스트도 청크/임베딩 생성하여 knowledge_chunks에 저장
-      const splitter = new RecursiveCharacterTextSplitter({
-        chunkSize: 1000,
-        chunkOverlap: 150,
-      });
-      const textChunks = await splitter.splitText(extractedContent);
+      const textChunks = await buildChunks(extractedContent);
       const ai = new OpenAIService();
       const embeddings = await ai.generateEmbeddingsBatch(textChunks);
       chunkTexts = textChunks;

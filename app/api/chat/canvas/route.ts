@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     const chatHistory = (chatHistoryData || []) as any[];
 
     // 컨텍스트 구성 (지식 + 웹)
-    const { knowledgeContext, knowledgeCitations, webCitations, ragUsed } = await canvasRAG.buildContext({
+    const { knowledgeContext, knowledgeCitations, webCitations, webContext, ragUsed } = await canvasRAG.buildContext({
       supabase,
       canvasId,
       message,
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     if (kbEnough) {
       aiMessage = await canvasRAG.answerFromKnowledgeOnly({ knowledgeContext, historyText, message });
     } else {
-      const result = await canvasRAG.answerFromKnowledgeAndWeb({ knowledgeContext, historyText, message });
+      const result = await canvasRAG.answerFromKnowledgeAndWeb({ knowledgeContext, historyText, message, webCitations, webContext });
       aiMessage = result.content;
       webCitationsFinal = result.webCitations;
     }

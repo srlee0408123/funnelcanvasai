@@ -24,6 +24,24 @@ export type AccessInfo = {
   role: 'owner' | 'admin' | 'member' | 'editor' | 'viewer' | null
 }
 
+export type ProfileRole = 'admin' | 'user'
+
+/**
+ * 현재 사용자의 프로필 기반 시스템 역할을 조회합니다.
+ * admin | user 중 하나를 반환합니다.
+ */
+export async function getUserProfileRole(userId: string | null): Promise<ProfileRole> {
+  if (!userId) return 'user'
+  const supabase = createServiceClient()
+  const { data } = await (supabase as any)
+    .from('profiles')
+    .select('role')
+    .eq('id', userId)
+    .maybeSingle()
+  const role = (data as any)?.role as ProfileRole | undefined
+  return role === 'admin' ? 'admin' : 'user'
+}
+
 /**
  * 사용자의 특정 캔버스에 대한 최종 접근 권한과 역할을 반환합니다.
  * (공개 여부, 워크스페이스 멤버십, 개별 공유 모두 고려)
