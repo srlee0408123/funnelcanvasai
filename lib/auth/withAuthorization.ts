@@ -19,7 +19,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { canAccessCanvas, canAccessWorkspace, type AccessRole } from '@/lib/auth/permissions';
-import { getCanvasAccessInfo } from '@/lib/auth/auth-service';
+import { getCanvasAccessInfo, getUserProfileRole } from '@/lib/auth/auth-service';
 
 type ResourceType = 'canvas' | 'workspace';
 
@@ -99,6 +99,24 @@ export function withAuthorization(options: AuthOptions, handler: AuthorizedHandl
       role: (permissionCheck as any)?.role as AccessRole | undefined
     });
   };
+}
+
+/**
+ * withAdmin - 관리자 전용 API 라우트 가드
+ * 클라이언트/서버에서 재사용 가능하도록 간단한 HOF 제공
+ */
+export function withAdmin(handler: (req: NextRequest, ctx: { auth: { userId: string } }) => Promise<NextResponse>) {
+  return async (req: NextRequest): Promise<NextResponse> => {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
+    }
+    const profileRole = await getUserProfileRole(userId)
+    if (profileRole !== 'admin') {
+      return NextResponse.json({ error: '관리자만 접근 가능합니다.' }, { status: 403 });
+    }
+    return handler(req, { auth: { userId } })
+  }
 }
 
 

@@ -1,5 +1,6 @@
 import { storage } from "./storageService";
 import { OpenAIService } from "./openai";
+import { buildChunks, estimateTokens } from "./textChunker";
 const openaiService = new OpenAIService();
 import type { Asset } from "@shared/schema";
 
@@ -56,8 +57,8 @@ export class AssetProcessor {
         throw new Error("No content extracted from asset");
       }
 
-      // Chunk the content
-      const chunks = this.chunkText(textContent);
+      // Chunk the content (shared chunker)
+      const chunks = await buildChunks(textContent);
       
       // Generate embeddings and store chunks
       for (let i = 0; i < chunks.length; i++) {
@@ -69,7 +70,7 @@ export class AssetProcessor {
           seq: i,
           text: chunk,
           embedding: JSON.stringify(embedding),
-          tokens: this.estimateTokens(chunk),
+          tokens: estimateTokens(chunk),
         });
       }
 
@@ -160,35 +161,7 @@ export class AssetProcessor {
     }
   }
 
-  private chunkText(text: string, maxChunkSize = 1000): string[] {
-    const chunks: string[] = [];
-    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    
-    let currentChunk = "";
-    
-    for (const sentence of sentences) {
-      const trimmedSentence = sentence.trim();
-      if (trimmedSentence.length === 0) continue;
-      
-      if (currentChunk.length + trimmedSentence.length > maxChunkSize && currentChunk.length > 0) {
-        chunks.push(currentChunk.trim());
-        currentChunk = trimmedSentence;
-      } else {
-        currentChunk += (currentChunk.length > 0 ? ". " : "") + trimmedSentence;
-      }
-    }
-    
-    if (currentChunk.trim().length > 0) {
-      chunks.push(currentChunk.trim());
-    }
-    
-    return chunks.length > 0 ? chunks : [text];
-  }
-
-  private estimateTokens(text: string): number {
-    // Rough estimation: 1 token ≈ 4 characters for English text
-    return Math.ceil(text.length / 4);
-  }
+  // chunkText/estimateTokens는 공용 유틸로 대체됨
 
   private extractYouTubeId(url: string): string | null {
     const patterns = [

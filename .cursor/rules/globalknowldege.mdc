@@ -1,0 +1,40 @@
+---
+description: "글로벌 지식 관리 시 참고하세요"
+alwaysApply: false
+---
+## 글로벌 지식 (Global Knowledge)
+
+### 개요
+모든 사용자/캔버스가 공유하는 전역 지식 베이스입니다. Admin이 UI에서 작성/삭제하며, AI 채팅의 RAG 컨텍스트에 캔버스 지식과 함께 자동 포함됩니다.
+
+### 테이블/함수
+* `global_ai_knowledge`: 전역 지식 문서(`title`, `content`, `tags[]`, `source_url`, `version`, `created_at`)
+* `global_knowledge_chunks`: 전역 지식 청크(`knowledge_id`, `seq`, `text`, `tokens`, `embedding`, `created_at`)
+* `match_global_knowledge_chunks(query_embedding, match_count, min_similarity)`: 전역 청크 벡터 유사도 검색 RPC
+
+### 라우터 (Admin 전용)
+* `GET /api/admin/global-knowledge`: 전역 지식 목록 조회
+* `POST /api/admin/global-knowledge`: 전역 지식 생성(본문 청킹/임베딩 → `global_knowledge_chunks` 저장)
+* `POST /api/admin/global-knowledge/upload-pdf`: PDF 업로드 전용 엔드포인트
+* `DELETE /api/admin/global-knowledge/[id]`: 전역 지식 문서 및 관련 청크 삭제
+
+### 서비스
+* `services/storageService.ts` (통합됨):
+  - `createGlobalKnowledge({ title, content, tags, sourceUrl })`: 전역 지식 생성 + 자동 청킹/임베딩 저장
+  - `listGlobalKnowledge()`: 전역 지식 목록 조회
+  - `deleteGlobalKnowledge(id)`: 전역 지식 삭제
+  - `createGlobalKnowledgeChunks({ knowledgeId, content })`: 텍스트 청킹 → 배치 임베딩 → 청크 저장
+* `services/pdf.ts`: PDF 텍스트 추출 공용 유틸리티 (`extractPdfText`)
+
+### Admin UI
+* `app/admin/client.tsx`: AI 지식 탭에서 전역 지식 업로드/목록/삭제
+* `components/Admin/UploadButtons.tsx`: PDF/YouTube/URL/Text 업로드 4열 버튼
+* `components/Admin/KnowledgeList.tsx`: 리스트 형태의 전역 지식 뷰(삭제 지원)
+* `components/Modals/UploadModal.tsx`: 글로벌 지식 업로드 플래그 지원(`isGlobalKnowledge`)
+
+### 업로드 워크플로우(전역)
+1. Admin이 업로드 타입 선택(모달)
+2. 모달에서 직접 `POST /api/admin/global-knowledge` 또는 `POST /api/admin/global-knowledge/upload-pdf` 호출
+3. 서버: 텍스트 청킹 → OpenAI 임베딩 생성 → `global_knowledge_chunks` 저장
+4. `handleUploadComplete`: 캐시 갱신만 수행 (중복 방지)
+5. 목록 새로고침 및 삭제 가능

@@ -21,25 +21,61 @@ import ScrapingUploadModal from "@/components/Modals/ScrapingUploadModal";
 import TextUploadModal from "@/components/Modals/TextUploadModal";
 
 interface UploadModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   uploadType: "pdf" | "youtube" | "url" | "text" | null;
-  workspaceId: string;
-  canvasId: string;
+  workspaceId?: string;
+  canvasId?: string;
+  // 글로벌 지식용 props
+  type?: "pdf" | "youtube" | "url" | "text";
+  onClose?: () => void;
+  onComplete?: (data: any) => void;
+  isGlobalKnowledge?: boolean;
 }
 
-export default function UploadModal({ open, onOpenChange, uploadType, workspaceId, canvasId }: UploadModalProps) {
+export default function UploadModal({ 
+  open, 
+  onOpenChange, 
+  uploadType, 
+  workspaceId, 
+  canvasId,
+  type,
+  onClose,
+  onComplete,
+  isGlobalKnowledge = false
+}: UploadModalProps) {
+  // 글로벌 지식용 모달 처리
+  if (isGlobalKnowledge && type && onClose && onComplete) {
+    const actualType = type;
+    const handleClose = () => onClose();
+    const handleComplete = (data: any) => onComplete(data);
+    
+    if (actualType === "pdf") {
+      return <PdfUploadModal open={true} onOpenChange={() => handleClose()} workspaceId="" canvasId="" isGlobalKnowledge={true} onComplete={handleComplete} />;
+    }
+    if (actualType === "youtube") {
+      return <YoutubeUploadModal open={true} onOpenChange={() => handleClose()} workspaceId="" canvasId="" isGlobalKnowledge={true} onComplete={handleComplete} />;
+    }
+    if (actualType === "url") {
+      return <ScrapingUploadModal open={true} onOpenChange={() => handleClose()} workspaceId="" canvasId="" isGlobalKnowledge={true} onComplete={handleComplete} />;
+    }
+    if (actualType === "text") {
+      return <TextUploadModal open={true} onOpenChange={() => handleClose()} workspaceId="" canvasId="" isGlobalKnowledge={true} onComplete={handleComplete} />;
+    }
+  }
+
+  // 기존 로직 (워크스페이스용)
   if (uploadType === "pdf") {
-    return <PdfUploadModal open={open} onOpenChange={onOpenChange} workspaceId={workspaceId} canvasId={canvasId} />;
+    return <PdfUploadModal open={open!} onOpenChange={onOpenChange!} workspaceId={workspaceId!} canvasId={canvasId!} />;
   }
   if (uploadType === "youtube") {
-    return <YoutubeUploadModal open={open} onOpenChange={onOpenChange} workspaceId={workspaceId} canvasId={canvasId} />;
+    return <YoutubeUploadModal open={open!} onOpenChange={onOpenChange!} workspaceId={workspaceId!} canvasId={canvasId!} />;
   }
   if (uploadType === "url") {
-    return <ScrapingUploadModal open={open} onOpenChange={onOpenChange} workspaceId={workspaceId} canvasId={canvasId} />;
+    return <ScrapingUploadModal open={open!} onOpenChange={onOpenChange!} workspaceId={workspaceId!} canvasId={canvasId!} />;
   }
   if (uploadType === "text") {
-    return <TextUploadModal open={open} onOpenChange={onOpenChange} workspaceId={workspaceId} canvasId={canvasId} />;
+    return <TextUploadModal open={open!} onOpenChange={onOpenChange!} workspaceId={workspaceId!} canvasId={canvasId!} />;
   }
 
   return (

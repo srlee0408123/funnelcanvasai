@@ -121,15 +121,17 @@ export default function Sidebar({
   };
 
   /**
-   * 유튜브 자료 카드 클릭 시 해당 영상 URL로 연결
-   * 새 탭에서 열어 사용자 경험 향상
+   * 자료 카드 클릭 시 타입별 동작 처리
+   * 유튜브/URL/PDF는 원본 링크를 새 탭에서 열기
+   * 텍스트 자료는 모달로 본문 미리보기 제공
    */
   const handleAssetClick = async (asset: Asset) => {
-    if (asset.type === "youtube" && asset.url) {
+    // 유튜브/URL/PDF 자료는 원본 링크를 새 탭에서 열기
+    if ((asset.type === "youtube" || asset.type === "url" || asset.type === "pdf") && asset.url) {
       window.open(asset.url, "_blank", "noopener,noreferrer");
       return;
     }
-    // 텍스트/URL/PDF 자료는 모달로 본문 미리보기 제공 (요구사항 6)
+    // 텍스트 자료는 모달로 본문 미리보기 제공
     try {
       const res = await fetch(`/api/assets/${asset.id}`, { credentials: 'include' });
       if (!res.ok) return;
@@ -409,11 +411,21 @@ export default function Sidebar({
                 key={asset.id}
                 onClick={() => handleAssetClick(asset)}
                 className={`group p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-gray-100 transition-colors ${
-                  asset.type === "youtube" && asset.url 
-                    ? "cursor-pointer hover:border-blue-300 hover:shadow-sm" 
+                  ((asset.type === "youtube" || asset.type === "url" || asset.type === "pdf") && asset.url)
+                    ? "cursor-pointer hover:border-blue-300 hover:shadow-sm"
                     : ""
                 }`}
-                title={asset.type === "youtube" && asset.url ? "클릭하여 유튜브 영상 보기" : undefined}
+                title={
+                  asset.url
+                    ? asset.type === "youtube"
+                      ? "클릭하여 유튜브 영상 보기"
+                      : asset.type === "url"
+                        ? "클릭하여 원본 링크 열기"
+                        : asset.type === "pdf"
+                          ? "클릭하여 PDF 문서 보기"
+                          : undefined
+                    : undefined
+                }
               >
                 <div className="flex items-start space-x-3">
                   <div className="mt-1">{getAssetIcon(asset.type)}</div>

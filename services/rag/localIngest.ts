@@ -17,12 +17,11 @@
  */
 
 import { OpenAIService } from '@/services/openai';
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
+import { buildChunks } from '@/services/textChunker';
 
 type SupabaseClientLike = any; // Supabase service client (run-time validated)
 
-const CHUNK_SIZE = 1000;
-const CHUNK_OVERLAP = 150;
+
 
 async function replaceKnowledgeChunks(params: {
   supabase: SupabaseClientLike;
@@ -63,25 +62,12 @@ async function replaceKnowledgeChunks(params: {
   }
 }
 
-function splitToChunks(fullText: string): string[] {
-  if (!fullText || fullText.trim().length === 0) return [];
-  const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: CHUNK_SIZE,
-    chunkOverlap: CHUNK_OVERLAP,
-  });
-  // LangChain splitters are async
-  // Note: To keep function sync, we expose async wrapper below
+function splitToChunks(_fullText: string): string[] {
+  // 동기 버전은 더 이상 사용하지 않습니다. buildChunks를 사용하세요.
   return [];
 }
 
-async function buildChunks(fullText: string): Promise<string[]> {
-  if (!fullText || fullText.trim().length === 0) return [];
-  const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: CHUNK_SIZE,
-    chunkOverlap: CHUNK_OVERLAP,
-  });
-  return await splitter.splitText(fullText);
-}
+export { buildChunks };
 
 function formatNodeLine(node: { node_id?: string; type?: string; data?: Record<string, any> }): string {
   const title = node?.data?.title ? String(node.data.title) : '제목 없음';

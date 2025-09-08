@@ -45,20 +45,34 @@ export class CanvasRAGService {
   async buildContext(params: BuildContextParams): Promise<BuildContextResult> {
     const { supabase, canvasId, message } = params;
 
+    // console.log('🔍 [RAG 시작] 지식 베이스 검색 실행');
     const { matchedChunks, ragSuccess } = await this.searchKnowledge({ supabase, canvasId, message });
 
+    // console.log('📚 [지식 컨텍스트] 캔버스 + 글로벌 지식 구성');
     const knowledgeContext = await this.composeKnowledgeContext({ supabase, canvasId, matchedChunks, ragSuccess });
 
-    const { webCitations, webContext } = await this.maybeSearchWeb(message);
+    // 추가: 글로벌 지식 매칭 및 컨텍스트 결합
+    const globalContext = await this.composeGlobalKnowledgeContext({ supabase, message });
 
-    const fullContext = knowledgeContext + (webContext ? '\n\n최신 웹 검색 결과:\n' + webContext : '');
+    // console.log('⚖️ [지식 충분성 판정] 웹 검색 필요 여부 결정');
+    // 지식 우선: 충분하면 웹 검색 생략, 부족하면 검색
+    const { webCitations, webContext } = await this.maybeSearchWeb(message, {
+      ragSuccess,
+      matchedChunks,
+      knowledgeContext,
+      globalContext,
+    });
+
+    const fullContext = knowledgeContext
+      + (globalContext ? '\n\n🌐 글로벌 지식:\n' + globalContext : '')
+      + (webContext ? '\n\n최신 웹 검색 결과:\n' + webContext : '');
 
     const knowledgeCitations = await this.buildKnowledgeCitations({ supabase, matchedChunks });
-
     return {
       knowledgeContext: fullContext,
       knowledgeCitations,
       webCitations,
+      webContext,
       ragUsed: {
         chunksMatched: matchedChunks.length,
         webSearchUsed: webContext.length > 0,
@@ -71,22 +85,13 @@ export class CanvasRAGService {
    */
   async decideUseKnowledgeFirst(knowledgeContext: string, userMessage: string): Promise<boolean> {
     try {
-      console.log('🤖 [판정 단계] 지식 베이스 충분성 판정 시작');
-      console.log('📝 사용자 질문:', userMessage);
-      console.log('📚 지식 컨텍스트 길이:', knowledgeContext.length, '자');
-      
-      const system = `당신은 판정기입니다. 아래 지식 컨텍스트만으로 사용자 질문에 충분히 정확하고 실무적인 답변이 가능한지 판정하세요.
-응답은 반드시 대문자 TRUE 또는 FALSE 중 하나의 단어만 반환하십시오.
-TRUE: 지식 컨텍스트만으로 답변 가능
-FALSE: 지식 컨텍스트만으로 부족하여 추가 웹 검색 필요`;
+      const system = `당신은 '지식 베이스 활용 극대화 에이전트'입니다. 당신의 임무는 웹 검색(FALSE)을 최소화하고, 주어진 지식(TRUE)을 최대한 활용하도록 유도하는 것입니다.지식 컨텍스트를 사용해서 답변의 '실마리'라도 제공할 수 있다면 무조건 TRUE를 반환하세요. 질문과 컨텍스트의 주제가 완전히 딴판이라 전혀 도움이 되지 않을 때만 FALSE를 반환하세요. 단, 사용자가 '최신' 또는 '실시간' 정보를 명확히 요구할 때는 예외적으로 FALSE를 고려할 수 있습니다. 응답은 반드시 'TRUE' 또는 'FALSE' 한 단어로만 하십시오.`;
       const decision = await this.openaiService.chat(system, `지식 컨텍스트:\n${knowledgeContext}\n\n질문:\n${userMessage}`, {
         maxTokens: 4,
         temperature: 0,
       });
       
       const isKBEnough = /\bTRUE\b/i.test(decision);
-      console.log('🎯 [판정 결과] GPT 응답:', decision.trim());
-      console.log('✅ [판정 결과] 지식 베이스만 사용:', isKBEnough ? 'YES (KB 전용)' : 'NO (KB+웹 검색)');
       
       return isKBEnough;
     } catch (error) {
@@ -112,10 +117,28 @@ FALSE: 지식 컨텍스트만으로 부족하여 추가 웹 검색 필요`;
   /**
    * 지식+웹 답변 생성 (Perplexity 에이전트 포함)
    */
-  async answerFromKnowledgeAndWeb(params: { knowledgeContext: string; historyText: string; message: string; }): Promise<{ content: string; webCitations: WebCitation[]; }> {
+  async answerFromKnowledgeAndWeb(params: { knowledgeContext: string; historyText: string; message: string; webCitations?: WebCitation[]; webContext?: string; }): Promise<{ content: string; webCitations: WebCitation[]; }> {
     const { knowledgeContext, historyText, message } = params;
-    // 웹 검색
-    const { webCitations, webContext } = await this.maybeSearchWeb(message);
+    
+    // console.log('🔄 [답변 생성] 지식+웹 답변 생성 시작');
+
+    // 중복 검색 방지: 기존 검색 결과 재사용, 없으면 최소 조건으로 검색 시도
+    let webCitations: WebCitation[] = Array.isArray(params.webCitations) ? params.webCitations : [];
+    let webContext: string = typeof params.webContext === 'string' ? params.webContext : '';
+
+    if (webContext.length === 0 && webCitations.length === 0) {
+      // console.log('🔍 [중복 검색 방지] 기존 검색 결과 없음, 추가 검색 시도');
+      const searched = await this.maybeSearchWeb(message, {
+        ragSuccess: false,
+        matchedChunks: [],
+        knowledgeContext: '',
+        globalContext: '',
+      });
+      webCitations = searched.webCitations;
+      webContext = searched.webContext;
+    } else {
+      // console.log(`♻️ [검색 결과 재사용] 기존 웹 검색 결과 활용 (${webCitations.length}개 인용, ${webContext.length}자 컨텍스트)`);
+    }
     const system = buildKBAndWebSystemPrompt(knowledgeContext, webContext, historyText);
 
     // Perplexity 우선 시도 (검색+답변)
@@ -172,6 +195,7 @@ FALSE: 지식 컨텍스트만으로 부족하여 추가 웹 검색 필요`;
     try {
       const embedding = await this.openaiService.generateEmbedding(message);
 
+      // 캔버스 지식
       const { data: matchData, error: matchError } = await (supabase as any)
         .rpc('match_knowledge_chunks', {
           canvas_id: canvasId,
@@ -180,14 +204,42 @@ FALSE: 지식 컨텍스트만으로 부족하여 추가 웹 검색 필요`;
           min_similarity: 0.70,
         });
 
-      if (!matchError && Array.isArray(matchData) && matchData.length > 0) {
-        const matchedChunks: KnowledgeChunk[] = matchData.map((m: any) => ({
-          id: String(m.id),
-          knowledge_id: String(m.knowledge_id),
-          text: String(m.text || ''),
-          similarity: typeof m.similarity === 'number' ? m.similarity : 0,
-        }));
-        return { matchedChunks, ragSuccess: true };
+      // 글로벌 지식
+      const { data: globalData, error: globalError } = await (supabase as any)
+        .rpc('match_global_knowledge_chunks', {
+          query_embedding: embedding,
+          match_count: 8,
+          min_similarity: 0.70,
+        });
+
+      const combined: KnowledgeChunk[] = [];
+
+      if (!matchError && Array.isArray(matchData)) {
+        combined.push(
+          ...matchData.map((m: any) => ({
+            id: String(m.id),
+            knowledge_id: String(m.knowledge_id),
+            text: String(m.text || ''),
+            similarity: typeof m.similarity === 'number' ? m.similarity : 0,
+          }))
+        );
+      }
+
+      if (!globalError && Array.isArray(globalData)) {
+        combined.push(
+          ...globalData.map((m: any) => ({
+            id: String(m.id),
+            knowledge_id: String(m.knowledge_id),
+            text: String(m.text || ''),
+            similarity: typeof m.similarity === 'number' ? m.similarity : 0,
+          }))
+        );
+      }
+
+      if (combined.length > 0) {
+        combined.sort((a, b) => b.similarity - a.similarity);
+        const top = combined.slice(0, 20);
+        return { matchedChunks: top, ragSuccess: true };
       }
     } catch (error) {
       // RAG 실패는 폴백으로 처리하므로 로깅만 하고 진행
@@ -226,12 +278,15 @@ FALSE: 지식 컨텍스트만으로 부족하여 추가 웹 검색 필요`;
       const topChunks = matchedChunks
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, 8);
-
+        // console.log(`🏆 상위 ${Math.min(8, topChunks.length)}개 청크 상세 정보:`);
       knowledgeContext += topChunks
         .map((chunk, idx) => {
           const doc = knowledgeById.get(chunk.knowledge_id);
           const docTitle = doc?.title || '지식 항목';
-          return `${idx + 1}. [${docTitle}] (유사도: ${(chunk.similarity * 100).toFixed(1)}%)\n${chunk.text}`;
+          const similarityPercentage = this.convertToPercentage(chunk.similarity);
+          // console.log(`   ${idx + 1}. [${docTitle}] 유사도: ${similarityPercentage.toFixed(1)}%`);
+          // console.log(`      내용 미리보기: ${chunk.text.substring(0, 100)}...`);
+          return `${idx + 1}. [${docTitle}] (유사도: ${similarityPercentage.toFixed(1)}%)\n${chunk.text}`;
         })
         .join('\n\n');
 
@@ -261,12 +316,60 @@ FALSE: 지식 컨텍스트만으로 부족하여 추가 웹 검색 필요`;
     return knowledgeContext;
   }
 
-  private async maybeSearchWeb(message: string): Promise<{ webCitations: WebCitation[]; webContext: string; }> {
-    const shouldSearch = this.webSearchService.shouldSearchWeb(message);
-    if (!shouldSearch) {
+  /**
+   * 글로벌 지식 컨텍스트 구성: 전역 청크 매칭 후 상위 일부를 요약 컨텍스트로 구성
+   */
+  private async composeGlobalKnowledgeContext({ supabase, message }: { supabase: any; message: string; }): Promise<string> {
+    try {
+      const embedding = await this.openaiService.generateEmbedding(message);
+      const { data: matchData } = await (supabase as any)
+        .rpc('match_global_knowledge_chunks', {
+          query_embedding: embedding,
+          match_count: 6,
+          min_similarity: 0.70,
+        });
+      if (!Array.isArray(matchData) || matchData.length === 0) return '';
+
+      // 관련 지식 제목 로드
+      const uniqueIds = Array.from(new Set(matchData.map((m: any) => String(m.knowledge_id))));
+      const { data: docs } = await (supabase as any)
+        .from('global_ai_knowledge')
+        .select('id, title')
+        .in('id', uniqueIds);
+      const titleMap = new Map<string, string>((docs || []).map((d: any) => [String(d.id), String(d.title)]));
+
+      const top = matchData
+        .map((m: any) => ({
+          id: String(m.id),
+          knowledge_id: String(m.knowledge_id),
+          text: String(m.text || ''),
+          similarity: typeof m.similarity === 'number' ? m.similarity : 0,
+        }))
+        .sort((a: any, b: any) => b.similarity - a.similarity)
+        .slice(0, 6);
+
+      const lines = top.map((c: any, idx: number) => {
+        const title = titleMap.get(c.knowledge_id) || '글로벌 지식';
+        const similarityPercentage = this.convertToPercentage(c.similarity);
+        return `${idx + 1}. [${title}] (유사도: ${similarityPercentage.toFixed(1)}%)\n${c.text}`;
+      });
+
+      return lines.join('\n\n');
+    } catch (e) {
+      console.warn('Global knowledge compose failed:', e);
+      return '';
+    }
+  }
+
+  private async maybeSearchWeb(message: string, context: { ragSuccess: boolean; matchedChunks: KnowledgeChunk[]; knowledgeContext: string; globalContext: string; }): Promise<{ webCitations: WebCitation[]; webContext: string; }> {
+    const hasKnowledge = this.hasSufficientKnowledge(context);
+    if (hasKnowledge) {
+      // console.log('📚 [지식 우선] 충분한 지식 베이스 존재, 웹 검색 생략');
       return { webCitations: [], webContext: '' };
     }
 
+    // 지식이 부족하면 키워드 조건 무시하고 무조건 웹 검색 실행
+    // console.log('🌐 [웹 검색 실행] 지식 부족으로 인한 웹 검색 필요');
     try {
       const searchResponse = await this.webSearchService.searchWeb(message, 5);
       const webCitations: WebCitation[] = (searchResponse.results || [])
@@ -281,11 +384,64 @@ FALSE: 지식 컨텍스트만으로 부족하여 추가 웹 검색 필요`;
         }));
 
       const webContext = this.webSearchService.formatSearchResults(searchResponse.results);
+      // console.log(`✅ [웹 검색 완료] ${webCitations.length}개 결과 수집, ${webContext.length}자 컨텍스트 생성`);
       return { webCitations, webContext };
     } catch (error) {
-      console.error('Web search failed:', error);
+      console.error('❌ [웹 검색 실패]', error);
       return { webCitations: [], webContext: '' };
     }
+  }
+
+  /**
+   * 음수/양수 코사인 유사도를 0~100%로 변환해 직관적으로 비교
+   */
+  private convertToPercentage(similarity: number): number {
+    return Math.max(0, Math.min(100, (similarity + 1) * 50));
+  }
+
+  /**
+   * 지식 충분성 판정: 지식이 충분하면 웹 검색 생략
+   */
+  private hasSufficientKnowledge(context: { ragSuccess: boolean; matchedChunks: KnowledgeChunk[]; knowledgeContext: string; globalContext: string; }): boolean {
+    const { ragSuccess, matchedChunks, knowledgeContext, globalContext } = context;
+
+    // console.log('📊 [지식 충분성 판정] 시작');
+
+    if (!ragSuccess) {
+      // console.log('❌ [지식 부족] RAG 검색 실패');
+      return false;
+    }
+
+    if (!Array.isArray(matchedChunks) || matchedChunks.length < 3) {
+      // console.log(`❌ [지식 부족] 매칭된 청크 부족 (${matchedChunks.length}개)`);
+      return false;
+    }
+
+    const sorted = [...matchedChunks].sort((a, b) => b.similarity - a.similarity);
+    const top = sorted[0]?.similarity ?? 0;
+    const avgTop3 = (sorted.slice(0, 3).reduce((s, c) => s + (c.similarity || 0), 0) / Math.min(3, sorted.length)) || 0;
+    const topPct = this.convertToPercentage(top);
+    const avgPct = this.convertToPercentage(avgTop3);
+
+    // console.log(`📈 [유사도 분석] 최고: ${topPct.toFixed(1)}%, 평균(상위3): ${avgPct.toFixed(1)}%, 청크수: ${matchedChunks.length}개`);
+
+    // 임계값: 매우 높음 95+, 높음 85+, 수용 75+
+    const hasHighSimilarity = topPct >= 95 || (topPct >= 85 && avgPct >= 80) || (topPct >= 75 && matchedChunks.length >= 5);
+
+    const totalContextLength = (knowledgeContext || '').length + (globalContext || '').length;
+    const hasEnoughContext = totalContextLength >= 300;
+
+    // console.log(`📝 [컨텍스트 분석] 총 길이: ${totalContextLength}자 (최소 300자 필요)`);
+
+    const isSufficient = hasHighSimilarity && hasEnoughContext;
+
+    if (isSufficient) {
+      // console.log('✅ [지식 충분] 웹 검색 생략 결정');
+    } else {
+      // console.log('❌ [지식 부족] 웹 검색 필요');
+    }
+
+    return isSufficient;
   }
 
   private async buildKnowledgeCitations({ supabase, matchedChunks }: { supabase: any; matchedChunks: KnowledgeChunk[]; }): Promise<KnowledgeCitation[]> {

@@ -50,6 +50,7 @@ export interface BuildContextResult {
   knowledgeContext: string;
   knowledgeCitations: KnowledgeCitation[];
   webCitations: WebCitation[];
+  webContext: string;
   ragUsed: RAGUsedMeta;
 }
 

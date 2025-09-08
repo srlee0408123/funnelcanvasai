@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorization } from "@/lib/auth/withAuthorization";
 import { createServiceClient } from "@/lib/supabase/service";
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { buildChunks } from "@/services/textChunker";
 import { OpenAIService } from "@/services/openai";
+import { extractPdfText } from "@/services/pdf";
 
 /**
  * upload-pdf/route.ts - PDF 업로드, 텍스트 추출, 청킹 및 지식 저장
@@ -56,58 +57,7 @@ async function handlePost(request: NextRequest, { params }: { params: { workspac
     const storagePath = `${workspaceId}/${canvasId}/${fileName}`;
 
     const arrayBuffer = await file.arrayBuffer();
-
-    // 1-a) Extract text using pdf2json (server-friendly, dynamic import)
-    const extractedText = await (async () => {
-      const pdf2json = await import("pdf2json");
-      const PDFParser = (pdf2json as any).default || (pdf2json as any);
-      const parser = new PDFParser();
-
-      const buffer = Buffer.from(arrayBuffer);
-      const text = await new Promise<string>((resolve, reject) => {
-        let combined = "";
-        const handleDataReady = (data: any) => {
-          try {
-            const decode = (s: string) => {
-              try { return decodeURIComponent(s); } catch { return s; }
-            };
-            const rawPages = (data && (data.formImage?.Pages || data.Pages)) || [];
-            const pages = Array.isArray(rawPages) ? rawPages : [];
-            for (const page of pages) {
-              const texts = Array.isArray((page as any)?.Texts) ? (page as any).Texts : [];
-              let line = "";
-              for (const t of texts) {
-                const runs = Array.isArray((t as any)?.R) ? (t as any).R : [];
-                const runStr = runs.length > 0
-                  ? runs.map((r: any) => decode(typeof r?.T === "string" ? r.T : "")).join("")
-                  : decode(typeof (t as any)?.T === "string" ? (t as any).T : "");
-                if (runStr && runStr.trim()) {
-                  line += (line ? " " : "") + runStr.trim();
-                }
-              }
-              if (line.trim()) {
-                combined += (combined ? "\n\n" : "") + line.trim();
-              }
-            }
-            resolve(combined || "");
-          } catch (e) {
-            reject(e);
-          } finally {
-            parser.removeAllListeners("pdfParser_dataReady");
-            parser.removeAllListeners("pdfParser_dataError");
-          }
-        };
-        const handleError = (err: any) => {
-          parser.removeAllListeners("pdfParser_dataReady");
-          parser.removeAllListeners("pdfParser_dataError");
-          reject(err);
-        };
-        parser.on("pdfParser_dataReady", handleDataReady);
-        parser.on("pdfParser_dataError", handleError);
-        parser.parseBuffer(buffer);
-      });
-      return text;
-    })();
+    const extractedText = await extractPdfText(arrayBuffer);
     
     // 1-b) Upload to Supabase Storage with path workspace/canvas
     const uploadRes = await supabase
@@ -122,12 +72,8 @@ async function handlePost(request: NextRequest, { params }: { params: { workspac
       return NextResponse.json({ error: `Upload failed: ${uploadRes.error.message}` }, { status: 500 });
     }
 
-    // 2) Split text into chunks
-    const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 1000,
-      chunkOverlap: 150,
-    });
-    const chunkTexts = await splitter.splitText(extractedText);
+    // 2) Split text into chunks (shared chunker)
+    const chunkTexts = await buildChunks(extractedText);
     // Generate embeddings for chunks
     const ai = new OpenAIService();
     const embeddings = await ai.generateEmbeddingsBatch(chunkTexts);
