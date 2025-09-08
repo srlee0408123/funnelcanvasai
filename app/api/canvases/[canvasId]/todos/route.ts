@@ -41,7 +41,10 @@ const getTodos = async (
       );
     }
 
-    return NextResponse.json(todos || []);
+    const res = NextResponse.json(todos || []);
+    // 할일 목록도 비교적 정적: 캐싱 + SWR 적용
+    res.headers.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=180');
+    return res;
 
   } catch (error) {
     console.error('Canvas todos GET API error:', error);

@@ -34,7 +34,7 @@ const postAsset = async (
   try {
     const { workspaceId } = await params;
     const body = await request.json();
-    const { type, title, url, canvasId, metaJson, testMode = false } = body;
+    const { type, title, url, canvasId, metaJson, testMode = false, content } = body;
 
     if (!type || !title || !canvasId) {
       return NextResponse.json({ 
@@ -129,6 +129,32 @@ const postAsset = async (
           error: `Failed to scrape website: ${error instanceof Error ? error.message : 'Unknown error'}`
         }, { status: 500 });
       }
+    } else if (type === "text") {
+      // 사용자가 직접 입력한 텍스트 업로드 처리
+      const raw = typeof content === 'string' ? content : '';
+      const trimmed = raw.slice(0, 10000); // 10,000자 하드 제한
+      if (!trimmed) {
+        return NextResponse.json({ error: "텍스트 내용이 비어 있습니다." }, { status: 400 });
+      }
+      extractedContent = trimmed;
+      processedTitle = title || "텍스트 자료";
+
+      // 텍스트도 청크/임베딩 생성하여 knowledge_chunks에 저장
+      const splitter = new RecursiveCharacterTextSplitter({
+        chunkSize: 1000,
+        chunkOverlap: 150,
+      });
+      const textChunks = await splitter.splitText(extractedContent);
+      const ai = new OpenAIService();
+      const embeddings = await ai.generateEmbeddingsBatch(textChunks);
+      chunkTexts = textChunks;
+      chunkEmbeddings = embeddings;
+      additionalMeta = {
+        ...additionalMeta,
+        source: 'text',
+        contentLength: extractedContent.length,
+        processedAt: new Date().toISOString(),
+      };
     }
 
     // Canvas Knowledge에 저장
@@ -153,8 +179,8 @@ const postAsset = async (
         details: knowledgeError.message || "Unknown database error"
       }, { status: 500 });
     }
-    // URL 타입인 경우 PDF와 동일하게 청크 저장 수행
-    if (type === 'url' && chunkTexts && chunkTexts.length > 0) {
+    // URL/텍스트 타입의 경우 청크 저장 수행 (PDF는 별도 라우트에서 처리)
+    if ((type === 'url' || type === 'text') && chunkTexts && chunkTexts.length > 0) {
       const inserts = chunkTexts.map((text, idx) => ({
         canvas_id: canvasId,
         knowledge_id: knowledgeEntry.id,

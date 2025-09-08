@@ -1,0 +1,26 @@
+---
+description: "노드 & 엣지 관리 시 참고하세요 - 노드 생성, 연결, 이동, 삭제 및 엣지 렌더링 기능"
+---
+
+## 4. 노드 & 엣지 (Nodes & Edges)
+
+### 라우터
+* `POST /api/canvases/[canvasId]/state`: 캔버스 전체 상태를 저장하는 라우터를 통해 노드와 엣지 정보가 함께 저장됩니다.
+* `GET /api/canvases/[canvasId]/state/latest`: 최신 캔버스 상태에서 노드와 엣지 배열을 함께 조회합니다.
+
+### 스키마 (Drizzle ORM)
+* `canvas_states` 내부 `state` JSONB 필드: 노드 배열(`id`, `type`, `position`, `data`, `style` 등)과 엣지 배열(`id`, `source`, `target`, `type` 등)을 저장합니다.
+* `canvasEdges`: 개별 엣지 정보를 별도 저장(`canvasId`, `edgeId`, `sourceNodeId`, `targetNodeId`, `type`, `data`, `metadata`)합니다.
+
+### 서비스 함수/컴포넌트
+* `FunnelNode (Component)`: 개별 노드를 렌더링하고 연결점, 삭제 버튼, 드래그 핸들 등 UI 상호작용을 처리합니다.
+* `CanvasEdges (Component)`: 모든 엣지를 SVG로 렌더링하고, 삭제 버튼 및 임시 연결선(preview edge)을 관리합니다.
+* `NodePalette (Component)`: 드래그 앤 드롭으로 새 노드를 생성할 수 있는 팔레트를 제공합니다.
+* `NodeCreationModal (Component)`: 노드 타입 선택 및 초기 설정을 위한 모달을 제공합니다.
+* `useEdgeGeometry (Hook)`: 노드 위치와 앵커 포인트를 기반으로 엣지의 SVG 경로(path)를 실시간 계산합니다.
+* `useCanvasStore`: 노드 선택, 이동, 연결 상태를 전역으로 관리합니다.
+
+### 핵심 특징
+* **실시간 렌더링**: `requestAnimationFrame`을 사용하여 노드 이동 시 엣지 경로를 부드럽게 업데이트합니다.
+* **자유형 노드**: 사전 정의된 노드 타입 없이 사용자가 자유롭게 노드를 생성하고 커스터마이징할 수 있습니다.
+* **시각적 연결**: 앵커 포인트 기반으로 노드 간 연결을 시각화하고, 연결 과정에서 미리보기를 제공합니다.

@@ -29,11 +29,19 @@ const patchMemo = async (
       .eq('id', memoId)
       .eq('canvas_id', canvasId)
       .select('id, content, position, size')
-      .single();
+      .maybeSingle();
 
     if (updateError) {
       console.error('Error updating text memo:', updateError);
       return NextResponse.json({ error: '메모 업데이트에 실패했습니다.' }, { status: 500 });
+    }
+
+    // 0행 업데이트(이미 삭제되었거나 없는 경우) - 404로 응답
+    if (!updated) {
+      return NextResponse.json(
+        { error: '해당 메모를 찾을 수 없습니다.' },
+        { status: 404 }
+      );
     }
 
     // RAG 동기화: 메모 업데이트 반영

@@ -1,0 +1,29 @@
+---
+description: "웹 검색 기능 개발 시 참고하세요 - Perplexity API 통합, 실시간 검색, AI 컨텍스트 생성 기능"
+---
+
+## 9. 웹 검색 (Web Search)
+
+### 라우터
+* `POST /api/search`: 주어진 쿼리로 웹 검색을 수행하고 구조화된 결과를 반환합니다.
+* `GET /api/search`: 웹 검색 API 사용법 안내 메시지를 반환합니다.
+
+### 서비스 함수/훅
+* `WebSearchService (Service)`: Perplexity API를 사용하여 웹 검색을 수행하고, API 키가 없을 경우 컨텍스트 기반의 대체 결과를 생성합니다.
+* `CanvasRAGService`: AI 채팅에서 사용자 질문에 대해 웹 검색을 자동으로 수행하여 최신 정보를 컨텍스트에 포함합니다.
+* `buildSystemPrompt`: 웹 검색 결과를 AI 시스템 프롬프트에 통합하여 답변의 정확성을 높입니다.
+
+### API 파라미터
+* **요청**: `{ query: string, numResults?: number }` (기본값: 8개 결과)
+* **응답**: `{ success: boolean, results: SearchResult[], searchTime: number, totalResults: number, searchTerm: string }`
+* **SearchResult**: `{ title: string, url: string, content: string, publishedDate?: string }`
+
+### 핵심 특징
+* **Perplexity 통합**: 고품질 웹 검색 결과를 제공하며 최신 정보에 대한 접근성을 보장합니다.
+* **Fallback 시스템**: API 키가 없거나 오류 발생 시 컨텍스트 기반의 대체 응답을 생성합니다.
+* **AI 컨텍스트 통합**: 검색 결과가 자동으로 AI 채팅의 컨텍스트에 포함되어 더 정확한 답변을 제공합니다.
+* **성능 최적화**: 검색 시간과 결과 수를 추적하여 사용자에게 투명한 정보를 제공합니다.
+
+### 에러 처리
+* 네트워크 오류, API 키 누락, 잘못된 쿼리 등에 대한 적절한 에러 메시지를 제공합니다.
+* 사용자 친화적인 한국어 에러 메시지로 문제 해결 가이드를 포함합니다.

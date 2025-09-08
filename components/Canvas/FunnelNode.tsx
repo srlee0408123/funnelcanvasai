@@ -22,6 +22,7 @@ interface FunnelNodeProps {
   onClick?: () => void;
   onDoubleClick?: () => void;
   onMouseDown?: (e: React.MouseEvent) => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
   onMouseUp?: () => void;
   isDragging?: boolean;
   isConnectable?: boolean;
@@ -37,6 +38,7 @@ export default function FunnelNode({
   onClick,
   onDoubleClick,
   onMouseDown,
+  onPointerDown,
   onMouseUp,
   isDragging = false,
   isConnectable = false,
@@ -206,6 +208,15 @@ export default function FunnelNode({
         }
         e.stopPropagation();
         onMouseDown?.(e);
+      } : undefined}
+      onPointerDown={!isReadOnly ? (e) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('.delete-button') || target.closest('.connection-point')) {
+          e.stopPropagation();
+          return;
+        }
+        e.stopPropagation();
+        onPointerDown?.(e);
       } : undefined}
       onMouseUp={!isReadOnly ? (e) => {
         // 삭제 버튼을 마우스업한 경우 노드 마우스업 이벤트 방지

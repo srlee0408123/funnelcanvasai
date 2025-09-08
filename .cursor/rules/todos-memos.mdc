@@ -1,0 +1,32 @@
+---
+description: "할일 & 메모 관리 시 참고하세요 - CRUD 작업, 위치 저장, 드래그 앤 드롭, 실시간 동기화 기능"
+---
+
+## 7. 할일 & 메모 (Todos & Memos)
+
+### 라우터
+* `GET /api/canvases/[canvasId]/todos`: 캔버스의 모든 할일 목록을 위치 순서대로 조회합니다.
+* `POST /api/canvases/[canvasId]/todos`: 새 할일을 생성하고 위치를 설정합니다.
+* `PATCH /api/canvases/[canvasId]/todos/[todoId]`: 특정 할일의 내용, 완료 상태, 위치를 수정합니다.
+* `DELETE /api/canvases/[canvasId]/todos/[todoId]`: 특정 할일을 삭제합니다.
+* `GET /api/canvases/[canvasId]/memos`: 캔버스의 모든 텍스트 메모를 조회합니다.
+* `POST /api/canvases/[canvasId]/memos`: 새 텍스트 메모를 생성하고 위치/크기를 설정합니다.
+* `PATCH /api/canvases/[canvasId]/memos/[memoId]`: 특정 메모의 내용, 위치, 크기를 수정합니다.
+* `DELETE /api/canvases/[canvasId]/memos/[memoId]`: 특정 메모를 삭제합니다.
+
+### 스키마 (Drizzle ORM)
+* `canvasTodos`: 할일 정보를 저장하며 `canvasId`, `text`, `completed`, `position`(정렬 순서), `createdAt`, `updatedAt` 필드를 포함합니다.
+* `textMemos`: 텍스트 메모 정보를 저장하며 `canvasId`, `content`, `position`(x, y 좌표), `size`(width, height), `createdAt`, `updatedAt` 필드를 포함합니다.
+
+### 서비스 함수/컴포넌트
+* `TodoSticker (Component)`: 할일 목록 UI를 렌더링하고, 낙관적 업데이트(Optimistic Updates)를 통해 CRUD 작업을 즉시 반영합니다.
+* `TodoStickerToggle (Component)`: 숨겨진 할일 스티커를 다시 표시하는 버튼으로, 드래그하여 위치를 변경할 수 있습니다.
+* `TextMemo (Component)`: 드래그, 리사이즈, 편집 등 모든 상호작용과 상태를 클라이언트에서 관리하며, 변경 사항을 서버에 비동기적으로 전송합니다.
+* `upsertCanvasTodoKnowledge (Service)`: 할일 변경 시 `canvas_knowledge` 테이블에 동기화하여 AI가 할일 정보를 참조할 수 있도록 합니다.
+* `upsertCanvasMemoKnowledge (Service)`: 메모 변경 시 `canvas_knowledge` 테이블에 동기화합니다.
+
+### 핵심 특징
+* **낙관적 업데이트**: UI에서 즉시 변경사항을 반영한 후 서버 동기화를 수행하여 반응성을 높입니다.
+* **위치 기반 관리**: 할일은 순서(position), 메모는 2D 좌표(x, y)와 크기를 저장하여 시각적 배치를 유지합니다.
+* **AI 통합**: 할일과 메모 내용이 지식 베이스에 자동 동기화되어 AI 채팅에서 참조 가능합니다.
+* **실시간 상호작용**: 드래그, 리사이즈, 편집 등 모든 UI 조작이 부드럽게 처리되며 변경사항이 즉시 저장됩니다.

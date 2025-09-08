@@ -17,6 +17,19 @@ export default {
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
+        navy: {
+          50: '#f0f5ff',
+          100: '#e0eaff',
+          200: '#c7d8ff',
+          300: '#a4bcff',
+          400: '#8094ff',
+          500: '#6366f1',
+          600: '#4f46e5',
+          700: '#4338ca',
+          800: '#3730a3',
+          900: '#312e81',
+          950: '#1e1b4b',
+        },
         card: {
           DEFAULT: "var(--card)",
           foreground: "var(--card-foreground)",

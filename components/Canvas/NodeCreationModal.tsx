@@ -164,6 +164,8 @@ export default function NodeCreationModal({
                     className="w-full"
                     autoFocus
                     onMouseDown={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onPointerUp={(e) => e.stopPropagation()}
                     onFocus={(e) => e.stopPropagation()}
                     onClick={(e) => e.stopPropagation()}
                   />
@@ -179,6 +181,8 @@ export default function NodeCreationModal({
                     onChange={(e) => setDescription(e.target.value)}
                     className="w-full h-24 resize-none"
                     onMouseDown={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onPointerUp={(e) => e.stopPropagation()}
                     onFocus={(e) => e.stopPropagation()}
                     onClick={(e) => e.stopPropagation()}
                   />
@@ -199,6 +203,9 @@ export default function NodeCreationModal({
                             : 'border-gray-300'
                         }`}
                         style={{ backgroundColor: color }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onPointerUp={(e) => e.stopPropagation()}
                       />
                     ))}
                   </div>
@@ -244,6 +251,9 @@ export default function NodeCreationModal({
                             ? 'border-blue-500 bg-white shadow-md scale-105' 
                             : 'border-gray-200 bg-white hover:border-gray-300'
                         }`}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onPointerUp={(e) => e.stopPropagation()}
                       >
                         {icon}
                       </button>
@@ -272,6 +282,8 @@ export default function NodeCreationModal({
                   className="w-full h-40 resize-none"
                   autoFocus={mode === 'memo'}
                   onMouseDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onPointerUp={(e) => e.stopPropagation()}
                   onFocus={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                 />

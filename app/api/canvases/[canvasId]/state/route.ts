@@ -4,7 +4,7 @@ import type { Database } from '@/lib/database.types';
 import { getCanvasAccessInfo } from '@/lib/auth/auth-service';
 import { getLatestCanvasState, insertCanvasState, getCanvasById } from '@/services/canvas-service';
 import { createServiceClient } from '@/lib/supabase/service';
-import { upsertCanvasNodesKnowledge } from '@/services/rag/localIngest';
+// RAG 동기화는 상태 저장과 분리하여 업로드 시로 제한
 
 /**
  * state/route.ts - Save/read canvas state (collection endpoint)
@@ -31,7 +31,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const stateRow = await getLatestCanvasState(canvasId);
-    return NextResponse.json(stateRow ?? null);
+    const res = NextResponse.json(stateRow ?? null);
+    // 상태는 자주 변할 수 있으므로 강한 캐싱은 피하지만, 동일 요청에 대한 짧은 캐싱을 허용
+    res.headers.set('Cache-Control', 'private, max-age=5, stale-while-revalidate=30');
+    return res;
   } catch (error) {
     console.error('Failed to fetch canvas state:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -64,14 +67,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (!inserted) {
       return NextResponse.json({ error: 'Failed to save canvas state' }, { status: 500 });
     }
-    // 비동기 RAG 동기화: 최신 상태 기반으로 노드 지식 업데이트 (todo 노드 제외)
-    try {
-      const supabase = createServiceClient();
-      await upsertCanvasNodesKnowledge({ supabase, canvasId });
-    } catch (e) {
-      console.error('RAG sync (state save) failed:', e);
-      // 저장 성공을 막지 않음
-    }
+    // RAG 동기화 제거: 지식 업로드/변경 시에만 수행
     return NextResponse.json(inserted, { status: 201 });
   } catch (error) {
     console.error('Canvas state POST error:', error);

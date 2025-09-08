@@ -1,0 +1,53 @@
+---
+description: "중앙 설정 및 서버 관리 시 참고하세요 - 환경변수, 데이터베이스, 인증, Next.js 설정, 외부 서비스 통합"
+---
+
+## 중앙 설정 및 서버 관리 규칙 (Configuration & Server-Side Management)
+
+### 1. 환경 변수 및 시크릿 관리 (Environment Variables & Secrets)
+* **파일**: `/.env.example`
+* **설명**: Clerk, Supabase, OpenAI 등 모든 외부 서비스의 API 키와 시크릿을 한 곳에서 관리하는 템플릿 파일입니다.
+
+### 2. 데이터베이스 스키마 및 클라이언트 (Database & Schema)
+* **파일**: `/supabase/migrations/*.sql`
+* **설명**: 순차적인 SQL 마이그레이션 파일들을 통해 전체 데이터베이스 스키마(테이블, 관계, 함수)를 정의하고 버전 관리합니다.
+* **파일**: `/lib/supabase/client.ts`
+* **설명**: 브라우저 환경(클라이언트 컴포넌트)에서 사용되는 Supabase 클라이언트를 생성하며, 공개(anon) 키를 사용합니다.
+* **파일**: `/lib/supabase/server.ts`
+* **설명**: Next.js 서버 컴포넌트 및 API 라우트에서 쿠키 기반으로 사용자를 인증하는 Supabase 클라이언트를 생성합니다.
+* **파일**: `/lib/supabase/service.ts`
+* **설명**: RLS(Row Level Security) 정책을 우회하는 서비스 롤 키를 사용하여 서버 단의 백그라운드 작업 및 권한 검증에 사용되는 클라이언트를 생성합니다.
+
+### 3. 인증 및 권한 관리 (Authentication & Authorization)
+* **파일**: `middleware.ts`
+* **설명**: Clerk 미들웨어를 사용하여 보호가 필요한 라우트(`dashboard`, `canvas` 등)에 대한 접근을 중앙에서 제어합니다.
+* **파일**: `/lib/auth/withAuthorization.ts`
+* **설명**: API 라우트 핸들러를 감싸는 HOF(고차 함수)로, 리소스(캔버스/워크스페이스)에 대한 사용자 역할(owner, member 등) 기반 권한을 중앙에서 검증합니다.
+* **파일**: `/lib/auth/auth-service.ts`
+* **설명**: 공개 여부, 워크스페이스 멤버십, 개별 공유를 모두 고려하여 사용자의 캔버스 접근 권한과 최종 역할을 판정하는 중앙 서비스입니다.
+
+### 4. Next.js 애플리케이션 설정 (Application Configuration)
+* **파일**: `next.config.mjs`
+* **설명**: Next.js 애플리케이션의 핵심 설정을 관리하며, 외부 이미지 도메인, API CORS 헤더, 서버 액션의 body 크기 제한 등을 정의합니다.
+* **파일**: `app/providers.tsx`
+* **설명**: React Query, ThemeProvider(라이트 모드 고정), Toaster 등 클라이언트 측 전역 프로바이더를 한 곳에서 설정합니다.
+
+### 5. 외부 서비스 클라이언트 (3rd-Party Service Clients)
+* **파일**: `/services/*.ts` (e.g., `openai.ts`, `apify/client.ts`, `firecrawl.ts`)
+* **설명**: OpenAI, Apify, Firecrawl 등 외부 서비스 클라이언트를 클래스 또는 싱글톤 인스턴스로 정의하며, 각 서비스는 `process.env`에서 API 키를 가져와 초기화됩니다.
+
+### 6. 데이터 페칭 및 캐시 관리 (Data Fetching & Caching)
+* **파일**: `/lib/queryClient.ts`
+* **설명**: React Query 클라이언트 인스턴스를 생성하고, `apiRequest` 헬퍼 및 캔버스 관련 쿼리 캐시를 일괄 무효화하는 유틸리티 함수를 제공합니다.
+
+### 7. 빌드 및 개발 환경 설정 (Build & Development)
+* **파일**: `package.json`
+* **설명**: `dev`, `build`, `start` 등 프로젝트 실행 스크립트와 모든 의존성을 정의합니다.
+* **파일**: `tsconfig.json`
+* **설명**: TypeScript 컴파일러 설정을 관리하며, `@/components`, `@/lib` 등 절대 경로 별칭(alias)을 정의합니다.
+
+### 핵심 특징
+* **중앙 집중식 관리**: 모든 설정과 서비스 클라이언트를 한 곳에서 관리하여 일관성을 보장합니다.
+* **환경별 분리**: 개발/스테이징/프로덕션 환경에 따른 설정 분리와 시크릿 관리가 체계화되어 있습니다.
+* **타입 안전성**: TypeScript 설정과 절대 경로 별칭을 통해 개발 생산성을 높입니다.
+* **보안 우선**: RLS 정책, 미들웨어 기반 인증, 권한 검증을 통한 다층 보안 구조를 제공합니다.

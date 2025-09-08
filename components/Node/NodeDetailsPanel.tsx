@@ -19,6 +19,7 @@
 
 import { Button } from "@/components/Ui/buttons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateCanvasQueries } from "@/lib/queryClient";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { X } from "lucide-react";
@@ -403,9 +404,7 @@ export default function NodeDetailsPanel({ nodeId, canvasId, onClose }: NodeDeta
     });
     
     if (response.ok) {
-      await queryClient.invalidateQueries({ 
-        queryKey: ["/api/canvases", canvasId, "state", "latest"] 
-      });
+      await invalidateCanvasQueries({ canvasId, client: queryClient, targets: ["state"] });
       return true;
     }
     throw new Error('캔버스 상태 업데이트 실패');

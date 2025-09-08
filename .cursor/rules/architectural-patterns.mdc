@@ -1,0 +1,153 @@
+---
+description: "코드베이스 아키텍처 패턴은 `Hooks/Services`에, UI는 `Components`에, 데이터 연결은 `app/**/client.tsx`에 배치하여 역할을 명확히 분리합니다."
+alwaysApply: true
+---
+
+# 코드베이스 아키텍처 패턴 및 가이드
+
+## 핵심 원칙
+로직은 `Hooks/Services`에, UI는 `Components`에, 데이터 연결은 `app/**/client.tsx`에 배치하여 역할을 명확히 분리합니다.
+
+## AI 에이전트 작업 가이드
+아래 표를 사용하여 필요한 정보를 가장 빠르게 찾고, 이어지는 예시 코드를 참고하여 패턴을 적용하세요.
+
+| 무엇을 하려 하시나요? | 어디를 확인해야 하나요? | 설명 |
+| :--- | :--- | :--- |
+| **UI/스타일 수정** | `components/**` | 이곳의 컴포넌트들은 데이터나 비즈니스 로직 없이 순수하게 UI 렌더링에만 집중합니다. Props를 통해 데이터와 함수를 전달받습니다. |
+| **상태 관리 또는 복잡한 클라이언트 로직** | `hooks/**` | 컴포넌트에서 분리된 재사용 가능한 로직이 여기에 있습니다. `useCanvasStore.ts` (전역 상태), `useCanvasSync.ts` (서버 동기화) 등을 확인하세요. |
+| **데이터 페칭 또는 서버 상태 연동** | `app/**/client.tsx` (주로), `hooks/**` (로직 분리 시) | `client.tsx` 파일이 데이터 페칭(React Query)과 상태 관리를 담당하는 컨테이너 역할을 합니다. 복잡한 로직은 커스텀 훅으로 분리됩니다. |
+| **외부 API 연동** (OpenAI, Apify 등) | `services/**` | 외부 서비스와의 통신 로직이 완전히 분리되어 있습니다. API 키, 요청/응답 형식 처리는 여기서 이루어집니다. |
+| **Next.js API 라우트 수정** | `app/api/**/route.ts` | API 엔드포인트입니다. `withAuthorization` HOF로 권한을 먼저 처리하고, 실제 로직은 `services`나 `lib`의 함수를 호출하는 데 집중합니다. |
+| **인증 및 DB 접근 제어** | `lib/auth/**`, `lib/supabase/**` | 인증 상태, 권한 검증, Supabase 클라이언트 생성 등 핵심 인프라 로직이 중앙에서 관리됩니다. |
+
+## Reference Examples
+
+### 1. UI/Style Modification (`components/**`)
+**`components/Ui/buttons.tsx`**는 비즈니스 로직 없이 UI 렌더링에만 집중하는 순수 프레젠테이셔널 컴포넌트의 좋은 예입니다.
+
+```typescript
+// 역할: UI 렌더링. 비즈니스 로직 없음.
+// Props(variant, size)로 스타일을 결정하고, onClick 같은 이벤트는 상위로 전달.
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, asChild = false, ...props }, ref) => {
+    const Comp = asChild ? Slot : "button"
+    return (
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        {...props}
+      />
+    )
+  }
+)
+```
+
+### 2. 상태 관리 (`hooks/**`)
+**`hooks/useCanvasStore.ts`**는 Zustand를 사용한 전역 상태 관리의 예시입니다.
+
+```typescript
+// 역할: 캔버스 전역 상태 관리
+// 노드, 엣지, 뷰포트, 선택 상태를 중앙에서 관리
+export const useCanvasStore = create<CanvasState>((set, get) => ({
+  nodes: [],
+  edges: [],
+  viewport: { x: 0, y: 0, zoom: 1 },
+  selectedNodes: [],
+  
+  // 액션들
+  addNode: (node) => set((state) => ({ 
+    nodes: [...state.nodes, node] 
+  })),
+  updateNode: (id, updates) => set((state) => ({
+    nodes: state.nodes.map(node => 
+      node.id === id ? { ...node, ...updates } : node
+    )
+  })),
+}))
+```
+
+### 3. 데이터 페칭 (`app/**/client.tsx`)
+**`app/canvas/[canvasId]/client.tsx`**는 데이터 페칭과 상태 관리의 컨테이너 역할을 합니다.
+
+```typescript
+// 역할: 데이터 페칭과 상태 관리 컨테이너
+// React Query로 서버 상태 관리, 복잡한 로직은 커스텀 훅으로 분리
+export default function CanvasClient({ canvasId }: { canvasId: string }) {
+  const { data: canvas, isLoading } = useQuery({
+    queryKey: ['canvas', canvasId],
+    queryFn: () => getCanvasById(canvasId),
+  })
+  
+  const { mutate: saveCanvas } = useMutation({
+    mutationFn: (state: CanvasState) => insertCanvasState(canvasId, state),
+  })
+  
+  if (isLoading) return <CanvasSkeleton />
+  
+  return <CanvasView canvas={canvas} onSave={saveCanvas} />
+}
+```
+
+### 4. 외부 API 연동 (`services/**`)
+**`services/openai.ts`**는 외부 서비스와의 통신을 담당합니다.
+
+```typescript
+// 역할: OpenAI API 통신 로직
+// API 키 관리, 요청/응답 형식 처리, 에러 핸들링
+export class OpenAIService {
+  private client: OpenAI
+  
+  constructor() {
+    this.client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })
+  }
+  
+  async generateEmbedding(text: string): Promise<number[]> {
+    const response = await this.client.embeddings.create({
+      model: "text-embedding-3-small",
+      input: text,
+    })
+    return response.data[0].embedding
+  }
+}
+```
+
+### 5. API 라우트 (`app/api/**/route.ts`)
+**`app/api/canvases/[canvasId]/route.ts`**는 권한 검증과 비즈니스 로직을 분리합니다.
+
+```typescript
+// 역할: API 엔드포인트
+// withAuthorization으로 권한 검증 후, services의 함수 호출
+export const GET = withAuthorization(async (request, { params, user }) => {
+  const { canvasId } = params
+  
+  // 권한 검증은 withAuthorization에서 처리됨
+  const canvas = await getCanvasById(canvasId)
+  
+  return NextResponse.json(canvas)
+})
+```
+
+### 6. 인증 및 권한 (`lib/auth/**`)
+**`lib/auth/withAuthorization.ts`**는 API 라우트의 권한을 중앙에서 관리합니다.
+
+```typescript
+// 역할: API 라우트 권한 검증 HOF
+// 리소스 접근 권한을 중앙에서 검증하고 무권한 접근 차단
+export function withAuthorization(
+  handler: (request: NextRequest, context: AuthContext) => Promise<NextResponse>
+) {
+  return async (request: NextRequest, context: RouteContext) => {
+    const { userId } = await auth()
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    
+    const accessInfo = await getCanvasAccessInfo(userId, context.params.canvasId)
+    if (!accessInfo.hasAccess) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    
+    return handler(request, { ...context, user: { id: userId }, accessInfo })
+  }
+}
+```

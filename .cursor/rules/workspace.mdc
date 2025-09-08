@@ -1,0 +1,28 @@
+---
+description: "워크스페이스 관리 시 참고하세요 - 생성, 조회, 멤버 관리, 자료 업로드 기능"
+---
+
+## 2. 워크스페이스 (Workspace)
+
+### 라우터
+* `GET /api/workspaces`: 현재 사용자가 소유한 워크스페이스 목록을 조회합니다.
+* `POST /api/workspaces`: 새 워크스페이스를 생성하고 소유자를 멤버로 자동 추가합니다.
+* `GET /api/workspaces/[workspaceId]/assets`: 특정 워크스페이스 또는 캔버스에 속한 모든 자료(지식) 목록을 조회합니다.
+* `POST /api/workspaces/[workspaceId]/assets`: URL, YouTube, 텍스트 등 다양한 타입의 자료를 업로드하고 지식으로 저장합니다.
+* `POST /api/workspaces/[workspaceId]/upload-pdf`: PDF 파일을 업로드하고 텍스트 추출, 청킹 후 지식으로 저장합니다.
+
+### 스키마 (Drizzle ORM)
+* `workspaces`: 워크스페이스 정보(`id`, `ownerUserId`, `name`, `plan`, `createdAt`, `updatedAt`)를 저장합니다.
+* `workspaceMembers`: 워크스페이스 멤버와 역할을 정의하며 `workspaceId`, `userId`, `role`(owner/admin/editor/viewer) 필드를 포함합니다.
+* `assets`: 워크스페이스별 업로드 자료(`id`, `workspaceId`, `canvasId`, `type`, `title`, `status`, `metaJson`)를 저장합니다.
+
+### 서비스 함수/훅
+* `useWorkspaceRole (Hook)`: 특정 워크스페이스에 대한 현재 사용자의 역할과 권한을 조회합니다.
+* `getUserWorkspaces (Service)`: 특정 사용자의 모든 워크스페이스를 조회하는 서비스 함수입니다.
+* `createWorkspace (Service)`: 새 워크스페이스를 생성하고 소유자를 자동으로 멤버에 추가하는 서비스 함수입니다.
+* `WorkspaceMembersModal (Component)`: 워크스페이스 멤버 초대 및 역할 관리 UI를 제공합니다.
+
+### 핵심 특징
+* **멀티 테넌트 구조**: 각 워크스페이스는 독립적인 데이터 공간을 제공합니다.
+* **역할 기반 접근제어**: owner → admin → editor → viewer 순으로 권한이 제한됩니다.
+* **자동 멤버십**: 워크스페이스 생성자는 자동으로 owner 역할로 추가됩니다.
