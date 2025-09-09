@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getUserWorkspaces, createWorkspace } from "@/services/workspace-service";
+import { isFreePlan, countOwnedWorkspaces } from "@/lib/planLimits";
 
 export async function GET() {
   try {
@@ -30,6 +31,22 @@ export async function POST(req: Request) {
     
     if (!name) {
       return NextResponse.json({ error: "Workspace name is required" }, { status: 400 });
+    }
+    // Free plan: allow only 1 owned workspace
+    try {
+      const free = await isFreePlan(userId);
+      if (free) {
+        const ownedCount = await countOwnedWorkspaces(userId);
+        if (ownedCount >= 1) {
+          return NextResponse.json({
+            error: '무료 플랜에서는 워크스페이스를 1개까지만 생성할 수 있습니다.',
+            code: 'FREE_PLAN_LIMIT_WORKSPACES',
+            limit: 1
+          }, { status: 403 });
+        }
+      }
+    } catch (planErr) {
+      console.warn('Workspace plan check failed, proceeding cautiously:', planErr);
     }
     const created = await createWorkspace(userId, name);
     if (!created) {

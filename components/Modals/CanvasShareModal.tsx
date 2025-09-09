@@ -56,15 +56,29 @@ export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: Can
       await invalidateCanvasQueries({ canvasId, client: queryClient, targets: ["shares"] });
     },
     onError: (error: any) => {
-      const errorMessage = error.message || "캔버스 공유에 실패했습니다.";
-      const isUserNotFound = errorMessage.includes("사용자를 찾을 수 없습니다");
-      
+      const raw = error?.message || '캔버스 공유에 실패했습니다.';
+      let message = raw;
+      try {
+        // queryClient가 던진 에러 객체에 info가 붙어 있으면 우선 사용
+        const info = (error as any)?.info;
+        if (info && (info.error || info.message)) {
+          message = info.error || info.message;
+        } else {
+          const start = raw.indexOf('{');
+          const end = raw.lastIndexOf('}');
+          if (start !== -1 && end !== -1 && end > start) {
+            const obj = JSON.parse(raw.slice(start, end + 1));
+            message = obj?.error || obj?.message || raw;
+          }
+        }
+      } catch {}
+      const isUserNotFound = message.includes('사용자를 찾을 수 없습니다');
       toast({ 
-        title: "공유 실패", 
-        description: isUserNotFound 
-          ? errorMessage + " 먼저 해당 사용자가 시스템에 가입하도록 안내해주세요."
-          : errorMessage,
-        variant: "destructive"
+        title: '공유 실패', 
+        description: isUserNotFound
+          ? message + ' 먼저 해당 사용자가 시스템에 가입하도록 안내해주세요.'
+          : message,
+        variant: 'destructive'
       });
     }
   });

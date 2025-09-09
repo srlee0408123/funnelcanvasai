@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
 import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
+import { ProfileBadge } from "@/components/Canvas/CanvasHeader";
+import { useProfile } from "@/hooks/useAuth";
 import { Share, ArrowLeft, FileText, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { createClient } from "@/lib/supabase/client";
@@ -28,6 +30,9 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
   const [newCanvasTitle, setNewCanvasTitle] = useState("");
   const [showCanvasDialog, setShowCanvasDialog] = useState(false);
   const [shareCanvas, setShareCanvas] = useState<Database['public']['Tables']['canvases']['Row'] | null>(null);
+
+  // 프로필 정보 가져오기
+  const { profile } = useProfile();
 
   // Fetch workspace details
   const { data: workspace, isLoading: workspaceLoading } = useQuery<Database['public']['Tables']['workspaces']['Row']>({
@@ -111,9 +116,22 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, workspace_id: workspaceId }),
+        credentials: 'include',
       });
-      if (!response.ok) throw new Error('Failed to create canvas');
-      return response.json();
+      const text = await response.text();
+      if (!response.ok) {
+        try {
+          const data = JSON.parse(text);
+          throw new Error(data?.error || text || '캔버스 생성에 실패했습니다.');
+        } catch {
+          throw new Error(text || '캔버스 생성에 실패했습니다.');
+        }
+      }
+      try {
+        return JSON.parse(text);
+      } catch {
+        return {} as any;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["canvases", workspaceId] });
@@ -121,10 +139,22 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
       setNewCanvasTitle("");
       toast({ title: "캔버스가 생성되었습니다." });
     },
-    onError: () => {
+    onError: (error: unknown) => {
+      const raw = error instanceof Error ? error.message : String(error || '캔버스 생성에 실패했습니다.');
+      let message = raw || '캔버스 생성에 실패했습니다.';
+      // 에러 메시지에 JSON이 포함된 경우 파싱하여 사람이 읽기 쉬운 문구만 표시
+      try {
+        const start = raw.indexOf('{');
+        const end = raw.lastIndexOf('}');
+        if (start !== -1 && end !== -1 && end > start) {
+          const jsonText = raw.slice(start, end + 1);
+          const obj = JSON.parse(jsonText);
+          message = obj?.error || obj?.message || message;
+        }
+      } catch {}
       toast({ 
         title: "오류", 
-        description: "캔버스 생성에 실패했습니다.", 
+        description: message, 
         variant: "destructive" 
       });
     },
@@ -179,10 +209,7 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">
-                {user.emailAddresses[0]?.emailAddress}
-              </span>
-              <UserButton afterSignOutUrl="/" />
+              <ProfileBadge profile={profile} />
             </div>
           </div>
         </div>

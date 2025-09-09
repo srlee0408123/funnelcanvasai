@@ -199,11 +199,23 @@ export default function SidebarChat({
 
       // 대화 기록을 불러오지 않으므로 쿼리 무효화 불필요
     },
-    onError: () => {
+    onError: (error: any) => {
+      let message = '죄송합니다. 일시적인 오류가 발생했습니다. 다시 시도해 주세요.';
+      const raw = error?.message as string | undefined;
+      if (raw) {
+        try {
+          const start = raw.indexOf('{');
+          const end = raw.lastIndexOf('}');
+          if (start !== -1 && end !== -1 && end > start) {
+            const obj = JSON.parse(raw.slice(start, end + 1));
+            message = obj?.error || obj?.message || message;
+          }
+        } catch {}
+      }
       const errorMessage: ChatMessage = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: '죄송합니다. 일시적인 오류가 발생했습니다. 다시 시도해 주세요.',
+        content: message,
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);

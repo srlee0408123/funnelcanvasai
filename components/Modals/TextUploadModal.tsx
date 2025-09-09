@@ -69,8 +69,20 @@ export default function TextUploadModal({ open, onOpenChange, workspaceId, canva
       });
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err?.error || "업로드 실패");
+        // 서버의 무료 플랜 제한 메시지(JSON)도 텍스트로 노출되도록 처리
+        let msg = response.statusText;
+        try {
+          const t = await response.text();
+          if (t) {
+            try {
+              const j = JSON.parse(t);
+              msg = j?.error || j?.message || t;
+            } catch {
+              msg = t;
+            }
+          }
+        } catch {}
+        throw new Error(msg || `HTTP ${response.status}`);
       }
 
       const successMessage = createToastMessage.uploadSuccess("TEXT");
@@ -80,8 +92,18 @@ export default function TextUploadModal({ open, onOpenChange, workspaceId, canva
       onOpenChange(false);
       onComplete?.(await response.json().catch(() => null));
     } catch (error) {
-      const errorMessage = createToastMessage.uploadError(error, "text");
-      toast(errorMessage);
+      // 서버가 무료 플랜 제한 메시지를 내려주면 그대로 표시
+      const raw = error instanceof Error ? error.message : String(error || '업로드에 실패했습니다.');
+      let msg = raw;
+      try {
+        const start = raw.indexOf('{');
+        const end = raw.lastIndexOf('}');
+        if (start !== -1 && end !== -1 && end > start) {
+          const obj = JSON.parse(raw.slice(start, end + 1));
+          msg = obj?.error || obj?.message || raw;
+        }
+      } catch {}
+      toast({ title: '업로드 실패', description: msg, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }

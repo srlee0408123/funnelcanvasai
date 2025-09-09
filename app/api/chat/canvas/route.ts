@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { OpenAIService } from '@/services/openai';
 import { CanvasRAGService } from '@/services/rag';
 import { buildSystemPrompt, formatChatHistory } from '@/services/rag';
+import { isFreePlan, countUserChatQuestionsToday } from '@/lib/planLimits';
 
 /**
  * AI 채팅 API 엔드포인트 - Canvas 전용
@@ -43,6 +44,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+
+    // 무료 플랜: 하루 5개 질문 제한 (user role: user 메시지만 카운트)
+    try {
+      const free = await isFreePlan(userId);
+      if (free) {
+        const todayCount = await countUserChatQuestionsToday(userId, canvasId);
+        if (todayCount >= 5) {
+          return NextResponse.json({
+            error: '무료 플랜에서는 AI 질문을 하루 5개까지 사용할 수 있습니다. 내일 다시 시도하시거나 Pro로 업그레이드 해주세요.',
+            code: 'FREE_PLAN_CHAT_DAILY_LIMIT',
+            limit: 5
+          }, { status: 403 });
+        }
+      }
+    } catch (planErr) {
+      console.warn('Chat plan check failed:', planErr);
+    }
 
     // 서비스 클라이언트 생성 (RLS 우회)
     const supabase = createServiceClient();

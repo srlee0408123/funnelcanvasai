@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { withAuthorization } from '@/lib/auth/withAuthorization';
+import { isFreePlan } from '@/lib/planLimits';
 
 /**
  * shares/route.ts - Canvas per-user sharing (collection)
@@ -78,6 +79,19 @@ const postShare = async (
 
     if (!email) {
       return NextResponse.json({ error: '이메일이 필요합니다.' }, { status: 400 });
+    }
+
+    // 무료 플랜: 협업자 초대 금지
+    try {
+      const free = await isFreePlan(auth.userId);
+      if (free) {
+        return NextResponse.json({
+          error: '무료 플랜에서는 협업자를 초대할 수 없습니다. Pro로 업그레이드 해주세요.',
+          code: 'FREE_PLAN_NO_COLLABORATORS'
+        }, { status: 403 });
+      }
+    } catch (planErr) {
+      console.warn('Share plan check failed:', planErr);
     }
 
     // Find target user by email

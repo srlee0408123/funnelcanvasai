@@ -28,7 +28,7 @@ interface UseCanvasSyncOptions {
   debounceMs?: number;
   payloadBuilder?: (base: { nodes: any[]; edges: any[] }) => SavePayload;
   onSuccess?: () => void;
-  onError?: (error: unknown) => void;
+  onError?: (error: unknown, context?: { status?: number; info?: any }) => void;
   enabled?: boolean;
 }
 
@@ -69,14 +69,43 @@ export function useCanvasSync(canvasId: string, options: UseCanvasSyncOptions = 
         body: JSON.stringify({ flowJson: payload }),
       });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text}`);
+        let raw = '';
+        let msg = `HTTP ${res.status}`;
+        let info: any = undefined;
+        try {
+          raw = await res.text();
+          if (raw) {
+            try {
+              const j = JSON.parse(raw);
+              info = j;
+              msg = j?.error || j?.message || raw;
+            } catch {
+              const start = raw.indexOf('{');
+              const end = raw.lastIndexOf('}');
+              if (start !== -1 && end !== -1 && end > start) {
+                try {
+                  const j = JSON.parse(raw.slice(start, end + 1));
+                  info = j;
+                  msg = j?.error || j?.message || raw;
+                } catch {
+                  msg = raw;
+                }
+              } else {
+                msg = raw;
+              }
+            }
+          }
+        } catch {}
+        const err: any = new Error(msg);
+        err.status = res.status;
+        err.info = info;
+        throw err;
       }
       lastSavedHashRef.current = currentHash;
       setLastSavedAt(Date.now());
       onSuccess?.();
-    } catch (err) {
-      onError?.(err);
+    } catch (err: any) {
+      onError?.(err, { status: err?.status, info: err?.info });
       // 실패 시 해시는 갱신하지 않음 (다음 변경 또는 수동 저장에서 재시도)
     } finally {
       setSaving(false);

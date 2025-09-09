@@ -20,8 +20,45 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    let raw = '';
+    let message = res.statusText || 'Request failed';
+    let code: string | undefined;
+    let info: unknown;
+    try {
+      raw = await res.text();
+      if (raw) {
+        try {
+          const json = JSON.parse(raw);
+          info = json;
+          message = (json as any)?.error || (json as any)?.message || raw;
+          code = (json as any)?.code;
+        } catch {
+          // Fallback: extract JSON substring if prefixed with status text
+          const start = raw.indexOf('{');
+          const end = raw.lastIndexOf('}');
+          if (start !== -1 && end !== -1 && end > start) {
+            try {
+              const json = JSON.parse(raw.slice(start, end + 1));
+              info = json;
+              message = (json as any)?.error || (json as any)?.message || raw;
+              code = (json as any)?.code;
+            } catch {
+              message = raw;
+            }
+          } else {
+            message = raw;
+          }
+        }
+      }
+    } catch {
+      // keep defaults
+    }
+    const err: any = new Error(message);
+    err.status = res.status;
+    err.code = code;
+    err.raw = raw;
+    err.info = info;
+    throw err;
   }
 }
 

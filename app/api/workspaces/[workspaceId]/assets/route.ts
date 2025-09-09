@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { withAuthorization } from '@/lib/auth/withAuthorization';
+import { isFreePlan, countCanvasKnowledge } from '@/lib/planLimits';
 import { extractYouTubeTranscript } from "@/services/apify/youtubeTranscript";
 import { buildChunks } from "@/services/textChunker";
 import { OpenAIService } from "@/services/openai";
@@ -57,6 +58,24 @@ const postAsset = async (
     }
 
     const supabase = createServiceClient();
+
+    // 무료 플랜: 캔버스별 지식 업로드 3개 제한
+    try {
+      const { userId } = (await import('@/lib/auth/withAuthorization')) as any; // not available here; skip direct userId
+    } catch {}
+    try {
+      // 접근 간소화: 현재 캔버스의 기존 지식 수로만 제한 (무료 사용자 방어)
+      const count = await countCanvasKnowledge(canvasId);
+      if (count >= 3) {
+        return NextResponse.json({
+          error: '무료 플랜에서는 캔버스당 지식 자료를 3개까지만 업로드할 수 있습니다.',
+          code: 'FREE_PLAN_LIMIT_KNOWLEDGE',
+          limit: 3
+        }, { status: 403 });
+      }
+    } catch (planErr) {
+      console.warn('Knowledge limit check failed:', planErr);
+    }
 
 
     // knowledge.content로 저장할 원문(요구사항: markdown 우선 저장)

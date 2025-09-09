@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { withAuthorization } from '@/lib/auth/withAuthorization';
 import { upsertCanvasMemosKnowledge } from '@/services/rag/localIngest';
+import { isFreePlan, getCanvasItemCounts } from '@/lib/planLimits';
 
 /**
  * memos/route.ts - Canvas text memos CRUD (collection)
@@ -52,11 +53,28 @@ const getMemos = async (
 
 const postMemo = async (
   request: NextRequest,
-  { params }: { params: any }
+  { params, auth }: { params: any; auth: { userId: string } }
 ) => {
   try {
     const supabase = createServiceClient();
     const { canvasId } = await params;
+    // 무료 플랜: 노드+메모+할일 합 10개 제한 (메모 추가 전 검사)
+    try {
+      const free = await isFreePlan(auth.userId);
+      if (free) {
+        const { total } = await getCanvasItemCounts(canvasId);
+        if (total >= 10) {
+          return NextResponse.json({
+            error: '무료 플랜에서는 노드+메모+할일 합계가 10개를 초과할 수 없습니다.',
+            code: 'FREE_PLAN_LIMIT_ITEMS',
+            limit: 10,
+            details: { total }
+          }, { status: 403 });
+        }
+      }
+    } catch (e) {
+      console.warn('Memo limit pre-check failed:', e);
+    }
 
     const body = await request.json();
     const content: string = body?.content ?? '새 메모';

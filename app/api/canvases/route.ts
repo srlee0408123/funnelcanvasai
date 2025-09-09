@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getCanvasAccessInfo } from "@/lib/auth/auth-service";
 import { getCanvasById } from "@/services/canvas-service";
+import { isFreePlan, countCreatedCanvases } from "@/lib/planLimits";
 
 export async function GET() {
   const { userId } = await auth();
@@ -102,6 +103,23 @@ export async function POST(req: Request) {
       }, { status: 403 });
     }
     
+    // Free plan: allow only 1 canvas created by user
+    try {
+      const free = await isFreePlan(userId);
+      if (free) {
+        const canvasCount = await countCreatedCanvases(userId);
+        if (canvasCount >= 1) {
+          return NextResponse.json({
+            error: '무료 플랜에서는 캔버스를 1개까지만 생성할 수 있습니다.',
+            code: 'FREE_PLAN_LIMIT_CANVASES',
+            limit: 1
+          }, { status: 403 });
+        }
+      }
+    } catch (planErr) {
+      console.warn('Canvas create plan check failed:', planErr);
+    }
+
     // Create canvas
     const { data, error } = await (supabase as any)
       .from('canvases')

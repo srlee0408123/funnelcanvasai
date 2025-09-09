@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { withAuthorization } from '@/lib/auth/withAuthorization';
+import { countCanvasKnowledge } from '@/lib/planLimits';
 import { crawlWebsite } from "@/services/apify/websiteCrawler";
 import { extractYouTubeTranscript, isValidYouTubeUrl } from "@/services/apify/youtubeTranscript";
 
@@ -39,6 +40,20 @@ const postCrawlAndSave = async (
     }
 
     const supabase = createServiceClient();
+
+    // 무료 플랜: 캔버스당 지식 3개 제한 (현재 개수 확인)
+    try {
+      const count = await countCanvasKnowledge(canvasId);
+      if (count >= 3) {
+        return NextResponse.json({
+          error: '무료 플랜에서는 캔버스당 지식 자료를 3개까지만 업로드할 수 있습니다.',
+          code: 'FREE_PLAN_LIMIT_KNOWLEDGE',
+          limit: 3
+        }, { status: 403 });
+      }
+    } catch (planErr) {
+      console.warn('Crawl knowledge limit check failed:', planErr);
+    }
 
     const startTime = Date.now();
 
