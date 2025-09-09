@@ -428,9 +428,6 @@ export default function Pricing() {
               <p>
                 이미 해지를 신청하셨다면, 결제 주기 종료 시점에 자동으로 무료 플랜으로 변경됩니다.
               </p>
-              <p className="text-red-500 font-bold">
-                단 3일 이내 결제시 환불 되며, 무료 플랜으로 바로 변경 됩니다.
-              </p>
               <div className="bg-slate-50 p-3 rounded-lg">
                 <p className="font-semibold text-slate-800 mb-2">Pro 플랜 해지 방법:</p>
                 <p className="text-slate-700">

@@ -242,17 +242,6 @@ export async function POST(request: NextRequest) {
       if (isCancel) {
         const cancelDate = normalizedDate || new Date().toISOString()
         const activatedAt = latest?.activated_at || latest?.current_period_start || null
-        const isRefundWithin3Days = (() => {
-          if (!activatedAt) return false
-          const start = new Date(activatedAt).getTime()
-          const cancel = new Date(cancelDate).getTime()
-          const threeDaysMs = 3 * 24 * 60 * 60 * 1000
-          return cancel - start <= threeDaysMs
-        })()
-
-        // Determine schedule target for normal cancellation (end of current period)
-        const currentEnd = latest?.current_period_end || (activatedAt ? addMonths(activatedAt, 1) : null)
-        const willSchedule = !isRefundWithin3Days
         const updatePayload: Record<string, any> = {
           type,
           name: payment.name ?? null,
@@ -266,15 +255,14 @@ export async function POST(request: NextRequest) {
           canceled_reason: payment.canceledReason ?? null,
           option: payment.option ?? null,
           subscription_id: payment.subscriptionId ?? null,
-          // Keep existing activation/period fields if present
           activated_at: activatedAt,
           current_period_start: latest?.current_period_start || activatedAt,
-          current_period_end: latest?.current_period_end || currentEnd,
-          next_renewal_at: latest?.next_renewal_at || currentEnd,
-          cancel_at_period_end: willSchedule,
+          current_period_end: latest?.current_period_end || null,
+          next_renewal_at: latest?.next_renewal_at || null,
+          cancel_at_period_end: false,
           canceled_at: cancelDate,
-          scheduled_downgrade_at: willSchedule ? currentEnd : null,
-          scheduled_downgrade_processed: isRefundWithin3Days ? true : false,
+          scheduled_downgrade_at: null,
+          scheduled_downgrade_processed: true,
           forms: payment.forms ?? null,
           agreements: payment.agreements ?? null,
           user_agent: userAgent ?? null,
@@ -309,18 +297,12 @@ export async function POST(request: NextRequest) {
         }
 
         if (profile?.id) {
-          if (isRefundWithin3Days) {
-            // Immediate refund path: downgrade now
-            const [{ error: profErr }, { error: wsErr }] = await Promise.all([
-              (supabase as any).from('profiles').update({ plan: 'free' }).eq('id', profile.id),
-              (supabase as any).from('workspaces').update({ plan: 'free' }).eq('owner_id', profile.id),
-            ])
-            if (profErr) console.error('Profile plan downgrade error (refund):', profErr)
-            if (wsErr) console.error('Workspace plan downgrade error (refund):', wsErr)
-          } else {
-            // Scheduled cancellation: keep pro until cron downgrades at period end
-            // No immediate plan change here
-          }
+          const [{ error: profErr }, { error: wsErr }] = await Promise.all([
+            (supabase as any).from('profiles').update({ plan: 'free' }).eq('id', profile.id),
+            (supabase as any).from('workspaces').update({ plan: 'free' }).eq('owner_id', profile.id),
+          ])
+          if (profErr) console.error('Profile plan downgrade error (CANCEL):', profErr)
+          if (wsErr) console.error('Workspace plan downgrade error (CANCEL):', wsErr)
         } else {
           console.warn('No profile found for phone/email; plan not updated on CANCEL:', { phoneNumber: payment.phoneNumber, email: payment.email })
         }
