@@ -139,9 +139,18 @@ export default function YoutubeUploadModal({ open, onOpenChange, workspaceId, ca
         }, 500);
         return;
       }
-      
-      const errorMessage = createToastMessage.uploadError(error, 'youtube');
-      toast(errorMessage);
+      // 서버가 무료 플랜 제한 메시지를 내려주면 그대로 표시
+      const raw = error instanceof Error ? error.message : String(error || '업로드에 실패했습니다.');
+      let msg = raw;
+      try {
+        const start = raw.indexOf('{');
+        const end = raw.lastIndexOf('}');
+        if (start !== -1 && end !== -1 && end > start) {
+          const obj = JSON.parse(raw.slice(start, end + 1));
+          msg = obj?.error || obj?.message || raw;
+        }
+      } catch {}
+      toast({ title: '업로드 실패', description: msg, variant: 'destructive' });
     },
   });
 

@@ -100,10 +100,17 @@ export function ProfileBadge({ profile }: { profile?: { plan: 'free' | 'pro'; em
                 </div>
 
                 {profile.plan === 'free' && (
-                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-3 rounded-lg">
-                    <p className="text-xs text-blue-700 mb-2">
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-3 rounded-lg space-y-2">
+                    <p className="text-xs text-blue-700">
                       Pro 플랜으로 업그레이드하여 모든 기능을 이용해보세요!
                     </p>
+                    <ul className="text-[11px] text-blue-800 list-disc pl-4 space-y-1">
+                      <li>워크스페이스 1개, 캔버스 1개 제한</li>
+                      <li>노드+메모+할일 합계 10개 제한</li>
+                      <li>협업자 초대 불가</li>
+                      <li>AI 질문 1일 5개</li>
+                      <li>지식 업로드 캔버스당 3개</li>
+                    </ul>
                     <button
                       onClick={handleUpgrade}
                       className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-medium py-2 px-3 rounded-md hover:from-blue-700 hover:to-indigo-700 transition-colors"

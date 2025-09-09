@@ -86,7 +86,7 @@ export default function Pricing() {
     if (isSignedIn && isValidKRPhone(normalizeKRPhone(normalized))) {
       if (typeof window !== "undefined") {
         try { localStorage.setItem('upgrade_in_progress', '1'); } catch (_) {}
-        window.open("https://www.latpeed.com/products/90F0-", "_blank", "noopener,noreferrer");
+        window.open("https://www.latpeed.com/memberships/65c4b3594efe74041adac49c", "_blank", "noopener,noreferrer");
       }
       return;
     }
@@ -126,7 +126,7 @@ export default function Pricing() {
       // 저장 후 Latpeed 결제 페이지를 새 탭으로 열기
       if (typeof window !== "undefined") {
         try { localStorage.setItem('upgrade_in_progress', '1'); } catch (_) {}
-        window.open("https://www.latpeed.com/products/90F0-", "_blank", "noopener,noreferrer");
+        window.open("https://www.latpeed.com/memberships/65c4b3594efe74041adac49c", "_blank", "noopener,noreferrer");
       }
     } catch (e: any) {
       setError(e?.message || "전화번호 저장 중 오류가 발생했습니다.");
@@ -274,6 +274,14 @@ export default function Pricing() {
                   </div>
                   <span className="text-sm sm:text-base"><strong>AI 질문 5개</strong> 제한</span>
                 </li>
+                <li className="flex items-center">
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 bg-green-100 rounded-full flex items-center justify-center mr-2 sm:mr-3 flex-shrink-0">
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                    </svg>
+                  </div>
+                  <span className="text-sm sm:text-base"><strong>지식 자료 업로드 3개</strong> 제한</span>
+                </li>
               </ul>
               <Link href="/sign-up">
                 {isProActive ? (
@@ -327,6 +335,14 @@ export default function Pricing() {
                     </svg>
                   </div>
                   <span className="text-sm sm:text-base"><strong>무제한 AI 질문</strong></span>
+                </li>
+                <li className="flex items-center">
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 bg-blue-100 rounded-full flex items-center justify-center mr-2 sm:mr-3 flex-shrink-0">
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                    </svg>
+                  </div>
+                  <span className="text-sm sm:text-base"><strong>지식 자료 무제한</strong> 업로드</span>
                 </li>
               </ul>
               {isProActive ? (

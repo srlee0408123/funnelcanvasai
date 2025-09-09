@@ -97,6 +97,41 @@ export default function CanvasArea({
   // 엣지 관련 UI 상태는 CanvasEdges로 이전됨
   
 
+  // 무료 플랜 합계 제한(노드+메모+할일) 사전 검사 유틸
+  const MAX_FREE_ITEMS = 10;
+  const getCurrentTotalItems = useCallback(async () => {
+    try {
+      // 노드와 메모는 로컬 상태 기반 계산
+      const nodesCount = (useCanvasStore.getState().nodes || []).length;
+      const memosCount = memos.length;
+      // 할일 개수는 API로 간단 조회
+      const res = await fetch(`/api/canvases/${canvas.id}/todos`, { credentials: 'include' });
+      let todosCount = 0;
+      if (res.ok) {
+        try { const arr = await res.json(); todosCount = Array.isArray(arr) ? arr.length : 0; } catch {}
+      }
+      return nodesCount + memosCount + todosCount;
+    } catch {
+      // 실패 시 보수적으로 로컬만 계산
+      const nodesCount = (useCanvasStore.getState().nodes || []).length;
+      const memosCount = memos.length;
+      return nodesCount + memosCount;
+    }
+  }, [canvas.id, memos.length]);
+
+  const ensureNotOverFreeLimit = useCallback(async (adding: number) => {
+    const total = await getCurrentTotalItems();
+    if (total + adding > MAX_FREE_ITEMS) {
+      toast({
+        title: '무료 플랜 제한',
+        description: '노드+메모+할일 합계는 10개까지 가능합니다. Pro로 업그레이드 해주세요.',
+        variant: 'destructive'
+      });
+      return false;
+    }
+    return true;
+  }, [getCurrentTotalItems, toast]);
+
   
   // 임시 메모 처리용 큐/플래그
   const tempMemoPendingRef = useRef<Record<string, { position?: { x: number; y: number }; size?: { width: number; height: number }; content?: string }>>({});
@@ -281,18 +316,21 @@ export default function CanvasArea({
         manualSavePendingRef.current = false;
       }
     },
-    onError: (error) => {
-      if (manualSavePendingRef.current) {
-        const errorMessage = createToastMessage.canvasError(error, 'SAVE');
-        toast(errorMessage);
-        manualSavePendingRef.current = false;
-      }
+    onError: (error, context) => {
+      const info: any = context?.info;
+      const message = info?.error || info?.message || (error instanceof Error ? error.message : '저장 중 오류가 발생했습니다.');
+      // 무료 플랜 제한에 걸리면 사용자에게 명확히 안내
+      toast({ title: '저장 실패', description: message, variant: 'destructive' });
+      manualSavePendingRef.current = false;
     }
   });
 
   // 노드 추가 함수
-  const handleAddNodeToCanvas = useCallback((nodeType: string) => {
+  const handleAddNodeToCanvas = useCallback(async (nodeType: string) => {
     if (isReadOnly) return;
+    // 사전 제한 검사 (노드 1개 추가)
+    const ok = await ensureNotOverFreeLimit(1);
+    if (!ok) return;
 
     const getNodeConfig = (type: string) => {
       const configs = {
@@ -373,7 +411,7 @@ export default function CanvasArea({
 
     const successMessage = createToastMessage.canvasSuccess('NODE_ADD', config.title);
     toast(successMessage);
-  }, [isReadOnly, addNode, triggerSave, toast]);
+  }, [isReadOnly, addNode, triggerSave, toast, ensureNotOverFreeLimit]);
 
   // onAddNode prop이 있으면 실제 노드 추가 함수로 연결
   useEffect(() => {
@@ -517,13 +555,16 @@ export default function CanvasArea({
     e.dataTransfer.dropEffect = 'copy';
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     
     try {
       const data = JSON.parse(e.dataTransfer.getData('application/json'));
       
       if (data.type === 'node') {
+        // 사전 제한 검사 (노드 1개 추가)
+        const ok = await ensureNotOverFreeLimit(1);
+        if (!ok) return;
         // Calculate drop position relative to canvas
         const rect = (e.target as HTMLElement).closest('.canvas-content')?.getBoundingClientRect();
         if (rect) {
@@ -547,7 +588,7 @@ export default function CanvasArea({
     } catch (error) {
       console.error('Error parsing drag data:', error);
     }
-  }, [viewport.x, viewport.y, viewport.zoom, setLocalNodes, triggerSave]);
+  }, [viewport.x, viewport.y, viewport.zoom, setLocalNodes, triggerSave, ensureNotOverFreeLimit]);
 
   // Helper function to get canvas-relative coordinates
   const getCanvasCoordinates = useCallback((clientX: number, clientY: number) => {
@@ -564,6 +605,9 @@ export default function CanvasArea({
 
   // Memo management functions
   const createNewMemo = useCallback(async (x: number, y: number) => {
+    // 사전 제한 검사 (메모 1개 추가)
+    const ok = await ensureNotOverFreeLimit(1);
+    if (!ok) return;
     try {
       // 낙관적 추가: 임시 메모를 즉시 UI에 표시
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -632,7 +676,7 @@ export default function CanvasArea({
       // 에러 시 임시 메모 제거 (실패 복구)
       setMemos(prev => prev.filter(m => !m.id.startsWith('temp-')));
     }
-  }, [canvas.id]);
+  }, [canvas.id, ensureNotOverFreeLimit]);
 
   const updateMemo = useCallback(async (memoId: string, content: string) => {
     try {
@@ -942,7 +986,33 @@ export default function CanvasArea({
       } else {
         // 실패 시 임시 메모 제거
         setMemos(prev => prev.filter(m => m.id !== tempId));
-        console.error("Failed to create memo:", response.status);
+        try {
+          const text = await response.text();
+          let message = `메모 생성에 실패했습니다. (HTTP ${response.status})`;
+          if (text) {
+            try {
+              const obj = JSON.parse(text);
+              message = obj?.error || obj?.message || message;
+            } catch {
+              // queryClient 에러 형태와 유사한 접두 제거 케이스 커버
+              const start = text.indexOf('{');
+              const end = text.lastIndexOf('}');
+              if (start !== -1 && end !== -1 && end > start) {
+                try {
+                  const obj = JSON.parse(text.slice(start, end + 1));
+                  message = obj?.error || obj?.message || text;
+                } catch {
+                  message = text;
+                }
+              } else {
+                message = text;
+              }
+            }
+          }
+          toast({ title: '메모 생성 실패', description: message, variant: 'destructive' });
+        } catch {
+          toast({ title: '메모 생성 실패', description: '일시적인 오류가 발생했습니다. 다시 시도해주세요.', variant: 'destructive' });
+        }
       }
     } catch (error) {
       console.error("Error creating memo:", error);
@@ -1011,6 +1081,8 @@ export default function CanvasArea({
 
   // Handle node creation from modal  
   const handleNodeCreation = useCallback(async (nodeData: { title: string; description?: string; icon: string; color: string }) => {
+    const ok = await ensureNotOverFreeLimit(1);
+    if (!ok) return;
     const newNode: FlowNode = {
       id: `${nodeData.title.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`,
       type: "custom", // All nodes are now custom type

@@ -108,4 +108,22 @@ export async function countCanvasKnowledge(canvasId: string): Promise<number> {
   return typeof count === 'number' ? count : 0
 }
 
+export async function countCanvasMemos(canvasId: string): Promise<number> {
+  const supabase = createServiceClient()
+  const { count } = await (supabase as any)
+    .from('text_memos')
+    .select('id', { count: 'exact', head: true })
+    .eq('canvas_id', canvasId)
+  return typeof count === 'number' ? count : 0
+}
+
+export async function countCanvasTodos(canvasId: string): Promise<number> {
+  const supabase = createServiceClient()
+  const { count } = await (supabase as any)
+    .from('canvas_todos')
+    .select('id', { count: 'exact', head: true })
+    .eq('canvas_id', canvasId)
+  return typeof count === 'number' ? count : 0
+}
+
 

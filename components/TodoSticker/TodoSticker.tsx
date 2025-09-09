@@ -4,6 +4,7 @@ import { Button } from '@/components/Ui/buttons';
 import { Input } from '@/components/Ui/form-controls';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, invalidateCanvasQueries } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
 import { createClient } from '@/lib/supabase/client';
 
 interface TodoItem {
@@ -106,11 +107,26 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
   const supabaseClient = useRef(createClient());
 
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   // Fetch todos from API (스티커가 보일 때만 활성화, read-only 모드에서 initialTodos 제공 시 비활성화)
   const { data: todos = [], isLoading } = useQuery<TodoItem[]>({
     queryKey: [`/api/canvases/${canvasId}/todos`],
     queryFn: () => apiRequest('GET', `/api/canvases/${canvasId}/todos`).then(res => res.json()),
+    enabled: !!canvasId && !isReadOnly && isVisible
+  });
+
+  // Fetch memos count (UI 가드용)
+  const { data: memos = [] } = useQuery<any[]>({
+    queryKey: [`/api/canvases/${canvasId}/memos`],
+    queryFn: () => apiRequest('GET', `/api/canvases/${canvasId}/memos`).then(res => res.json()),
+    enabled: !!canvasId && !isReadOnly && isVisible
+  });
+
+  // Fetch latest state to get nodes count (UI 가드용)
+  const { data: latestState } = useQuery<any>({
+    queryKey: ["/api/canvases", canvasId, "state", "latest"],
+    queryFn: () => apiRequest('GET', `/api/canvases/${canvasId}/state/latest`).then(res => res.json()),
     enabled: !!canvasId && !isReadOnly && isVisible
   });
 
@@ -151,6 +167,10 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
   }, [todos, optimisticTodos, pendingOperations, isReadOnly, initialTodos]);
 
   const activeTodos = mergedTodos();
+  const nodesCount = Array.isArray(latestState?.state?.nodes) ? latestState.state.nodes.length : 0;
+  const memosCount = Array.isArray(memos) ? memos.length : 0;
+  const totalItems = nodesCount + memosCount + activeTodos.length;
+  const limitReached = totalItems >= 10;
 
   // 노드 동기화는 완전히 제거됨
   useEffect(() => {}, []);
@@ -345,6 +365,18 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       // 입력 텍스트 복원
       setNewTodoText(text);
       console.error('Failed to create todo:', error);
+      // 서버 JSON 에러 문구(무료 플랜 제한 등)를 토스트로 노출
+      const raw = error instanceof Error ? error.message : String(error || '할일 생성에 실패했습니다.');
+      let msg = raw;
+      try {
+        const start = raw.indexOf('{');
+        const end = raw.lastIndexOf('}');
+        if (start !== -1 && end !== -1 && end > start) {
+          const obj = JSON.parse(raw.slice(start, end + 1));
+          msg = obj?.error || obj?.message || raw;
+        }
+      } catch {}
+      toast({ title: '할일 생성 실패', description: msg, variant: 'destructive' });
     }
   });
 
@@ -465,6 +497,10 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
 
   const addTodo = () => {
     if (!newTodoText.trim()) return;
+    if (limitReached) {
+      toast({ title: '무료 플랜 제한', description: '노드+메모+할일 합계는 10개까지 가능합니다. Pro로 업그레이드 해주세요.', variant: 'destructive' });
+      return;
+    }
     createTodoMutation.mutate(newTodoText.trim());
   };
 
@@ -749,6 +785,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
               <Button
                 onClick={addTodo}
                 size="sm"
+                title={limitReached ? '무료 플랜에서는 합계 10개까지 가능합니다.' : '할일 추가'}
                 className="bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-4 py-2 shadow-sm transition-all duration-200"
               >
                 <Plus className="w-4 h-4" />
@@ -930,6 +967,9 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
                   : `${Math.round((completedCount / totalCount) * 100)}% 완료`
                 }
               </p>
+              {limitReached && (
+                <p className="text-xs text-red-600 text-center mt-2">무료 플랜 제한: 노드+메모+할일 합계 10개 초과 불가</p>
+              )}
             </div>
           )}
         </div>

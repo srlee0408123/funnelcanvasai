@@ -4,6 +4,7 @@ import type { Database } from '@/lib/database.types';
 import { getCanvasAccessInfo } from '@/lib/auth/auth-service';
 import { getLatestCanvasState, insertCanvasState, getCanvasById } from '@/services/canvas-service';
 import { createServiceClient } from '@/lib/supabase/service';
+import { isFreePlan, getCanvasItemCounts } from '@/lib/planLimits';
 // RAG 동기화는 상태 저장과 분리하여 업로드 시로 제한
 
 /**
@@ -61,6 +62,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const statePayload = body?.flowJson ?? body?.state;
     if (typeof statePayload === 'undefined') {
       return NextResponse.json({ error: 'Missing flowJson in body' }, { status: 400 });
+    }
+
+    // 무료 플랜: 노드+메모+할일 합 10개 제한
+    try {
+      const free = await isFreePlan(userId);
+      if (free) {
+        // statePayload가 없으면 저장 거부
+        const newNodesCount = Array.isArray(statePayload?.nodes) ? statePayload.nodes.length : 0;
+        // 최신 상태 기반 기존 카운트 계산
+        const existing = await getCanvasItemCounts(canvasId);
+        const total = newNodesCount + existing.memosCount + existing.todosCount;
+        if (total > 10) {
+          return NextResponse.json({
+            error: '무료 플랜에서는 노드+메모+할일 합계가 10개를 초과할 수 없습니다.',
+            code: 'FREE_PLAN_LIMIT_ITEMS',
+            limit: 10,
+            details: { newNodesCount, memosCount: existing.memosCount, todosCount: existing.todosCount, total }
+          }, { status: 403 });
+        }
+      }
+    } catch (planErr) {
+      console.warn('Canvas state plan check failed:', planErr);
     }
 
     const inserted = await insertCanvasState(canvasId, statePayload, userId);
