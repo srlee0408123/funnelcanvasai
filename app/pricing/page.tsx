@@ -25,9 +25,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/Ui/buttons";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useToast } from "@/hooks/use-toast";
 import { createToastMessage } from "@/lib/messages";
+import { ProfileBadge } from "@/components/Canvas/CanvasHeader";
+import { useProfile } from "@/hooks/useAuth";
+import { ArrowLeft } from "lucide-react";
 
 // 전화번호 노멀라이즈: 숫자만 남기고 010으로 시작하는 11자리 형태 유지
 function normalizeKRPhone(input: string): string {
@@ -46,7 +50,8 @@ function isValidKRPhone(digitsOnly: string): boolean {
 }
 
 export default function Pricing() {
-  const { isSignedIn } = useUser();
+  const { isSignedIn, user } = useUser();
+  const router = useRouter();
   const { toast } = useToast();
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [phone, setPhone] = useState("");
@@ -56,7 +61,10 @@ export default function Pricing() {
   const [isProActive, setIsProActive] = useState<boolean | null>(null);
   const [showDowngradeModal, setShowDowngradeModal] = useState(false);
 
-  // 로그인 상태일 때 기존 전화번호 불러오기
+  // 프로필 정보 가져오기
+  const { profile } = useProfile();
+
+  // 로그인 상태일 때 기존 전화번호/플랜 정보 불러오기
   useEffect(() => {
     (async () => {
       try {
@@ -73,6 +81,15 @@ export default function Pricing() {
 
   const onClickPro = () => {
     setError(null);
+    const normalized = normalizeKRPhone(phone);
+    // 이미 로그인 & 전화번호 등록되어 있으면 바로 결제 탭으로 이동 (모달 생략)
+    if (isSignedIn && isValidKRPhone(normalizeKRPhone(normalized))) {
+      if (typeof window !== "undefined") {
+        try { localStorage.setItem('upgrade_in_progress', '1'); } catch (_) {}
+        window.open("https://www.latpeed.com/products/90F0-", "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
     setShowPhoneModal(true);
   };
 
@@ -108,6 +125,7 @@ export default function Pricing() {
       setShowPhoneModal(false);
       // 저장 후 Latpeed 결제 페이지를 새 탭으로 열기
       if (typeof window !== "undefined") {
+        try { localStorage.setItem('upgrade_in_progress', '1'); } catch (_) {}
         window.open("https://www.latpeed.com/products/90F0-", "_blank", "noopener,noreferrer");
       }
     } catch (e: any) {
@@ -129,7 +147,13 @@ export default function Pricing() {
         if (!res.ok) return;
         const data = await res.json();
         setIsProActive(Boolean(data?.success));
-        if (data?.success && !hasShownSuccessRef.current) {
+        const shouldShowToast = Boolean(
+          data?.success &&
+          !hasShownSuccessRef.current &&
+          // 업그레이드 플로우를 통해 돌아온 경우에만 토스트 노출
+          (typeof window !== 'undefined' && localStorage.getItem('upgrade_in_progress'))
+        );
+        if (shouldShowToast) {
           hasShownSuccessRef.current = true;
           const msg = createToastMessage.custom(
             "결제가 완료되었습니다",
@@ -137,7 +161,10 @@ export default function Pricing() {
             "default"
           );
           toast(msg);
-          // 성공 시 추가 폴링 중단
+          // 성공 시 로컬 플래그 제거 및 추가 폴링 중단
+          if (typeof window !== 'undefined') {
+            try { localStorage.removeItem('upgrade_in_progress'); } catch (_) {}
+          }
           if (intervalId) clearInterval(intervalId);
           if (typeof document !== "undefined") {
             document.removeEventListener("visibilitychange", visibilityHandler);
@@ -175,6 +202,37 @@ export default function Pricing() {
 
   return (
     <div className="min-h-screen bg-white">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-6">
+            <div className="flex items-center space-x-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push('/dashboard')}
+                className="hover:bg-gray-100"
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                대시보드로 돌아가기
+              </Button>
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">Canvas AI</h1>
+                <p className="text-sm text-gray-600">요금제</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              {isSignedIn && <ProfileBadge profile={profile} />}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Pricing Section */}
       <div className="py-16 sm:py-24 bg-slate-50">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
