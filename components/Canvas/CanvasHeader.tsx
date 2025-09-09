@@ -6,7 +6,6 @@ import {
   X,
   Edit,
   Clock,
-  Share,
   Plus,
   Minus,
   Save,
@@ -20,7 +19,7 @@ import type { Canvas, CanvasState } from "@shared/schema";
  * 
  * 주요 역할:
  * 1. 캔버스 제목 표시 및 인라인 편집
- * 2. 저장/공유/줌 컨트롤 버튼 제공
+ * 2. 저장/줌 컨트롤 버튼 제공
  * 3. 노드 추가(모달 오픈 트리거) 및 뷰포트 제어
  * 
  * 핵심 특징:
@@ -38,8 +37,6 @@ export interface CanvasHeaderProps {
   isReadOnly?: boolean;
   viewport: { x: number; y: number; zoom: number };
   setViewport: (v: { x: number; y: number; zoom: number }) => void;
-  canShare?: boolean;
-  onOpenShareModal?: () => void;
   onOpenCreateNode: () => void;
   onManualSave: () => void;
   onUpdateTitle: (newTitle: string) => Promise<void> | void;
@@ -54,8 +51,6 @@ export function CanvasHeader({
   isReadOnly = false,
   viewport,
   setViewport,
-  canShare,
-  onOpenShareModal,
   onOpenCreateNode,
   onManualSave,
   onUpdateTitle,
@@ -202,16 +197,6 @@ export function CanvasHeader({
               ) : (
                 <Save className="h-4 w-4" />
               )}
-            </Button>
-          )}
-          {(typeof canShare === 'boolean' ? canShare : !isReadOnly) && (
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={() => onOpenShareModal?.()}
-              title="캔버스 사용자 공유"
-            >
-              <Share className="h-4 w-4" />
             </Button>
           )}
           <div className="w-px h-6 bg-gray-200"></div>

@@ -29,10 +29,11 @@ interface UseCanvasSyncOptions {
   payloadBuilder?: (base: { nodes: any[]; edges: any[] }) => SavePayload;
   onSuccess?: () => void;
   onError?: (error: unknown) => void;
+  enabled?: boolean;
 }
 
 export function useCanvasSync(canvasId: string, options: UseCanvasSyncOptions = {}) {
-  const { debounceMs = 1000, payloadBuilder, onSuccess, onError } = options;
+  const { debounceMs = 1000, payloadBuilder, onSuccess, onError, enabled = true } = options;
 
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
@@ -54,6 +55,7 @@ export function useCanvasSync(canvasId: string, options: UseCanvasSyncOptions = 
   }, [nodes, edges, nodePositions, payloadBuilder]);
 
   const doSave = useCallback(async (force = false) => {
+    if (!enabled) return;
     const payload = buildPayload();
     const currentHash = JSON.stringify(payload);
     if (!force && currentHash === lastSavedHashRef.current) return;
@@ -79,28 +81,37 @@ export function useCanvasSync(canvasId: string, options: UseCanvasSyncOptions = 
     } finally {
       setSaving(false);
     }
-  }, [buildPayload, canvasId, onSuccess, onError]);
+  }, [buildPayload, canvasId, onSuccess, onError, enabled]);
 
   const scheduleSave = useCallback(() => {
+    if (!enabled) return;
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       doSave(false);
     }, debounceMs);
-  }, [doSave, debounceMs]);
+  }, [doSave, debounceMs, enabled]);
 
   // 상태 변화 감지 → 디바운스 저장
   useEffect(() => {
+    if (!enabled) {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      return;
+    }
     scheduleSave();
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [nodes, edges, nodePositions, scheduleSave]);
+  }, [nodes, edges, nodePositions, scheduleSave, enabled]);
 
   // 외부에서 호출 가능한 저장 트리거
   const triggerSave = useCallback(
     async (_reason?: string, immediate = false) => {
+      if (!enabled) return;
       if (immediate) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         await doSave(true);
@@ -108,7 +119,7 @@ export function useCanvasSync(canvasId: string, options: UseCanvasSyncOptions = 
         scheduleSave();
       }
     },
-    [doSave, scheduleSave]
+    [doSave, scheduleSave, enabled]
   );
 
   return {

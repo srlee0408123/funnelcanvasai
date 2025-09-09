@@ -25,8 +25,6 @@ interface CanvasAreaProps {
   onAddNode?: (nodeType: string) => void;
   isReadOnly?: boolean;
   externalMemos?: TextMemoData[];
-  canShare?: boolean;
-  onOpenShareModal?: () => void;
 }
 
 // Node 타입은 types/canvas.ts의 FlowNode를 사용
@@ -49,8 +47,7 @@ export default function CanvasArea({
   onAddNode,
   isReadOnly = false,
   externalMemos,
-  canShare,
-  onOpenShareModal
+  
 }: CanvasAreaProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -270,6 +267,7 @@ export default function CanvasArea({
   const manualSavePendingRef = useRef(false);
   const { triggerSave, saving, lastSavedAt } = useCanvasSync(canvas.id, {
     debounceMs: 1000,
+    enabled: !isReadOnly,
     onSuccess: () => {
       // 최신 상태 쿼리 무효화
       invalidateCanvasQueries({ canvasId: canvas.id, client: queryClient, targets: ["state"] });
@@ -1119,8 +1117,6 @@ export default function CanvasArea({
         isReadOnly={isReadOnly}
         viewport={viewport}
         setViewport={setViewport}
-        canShare={canShare}
-        onOpenShareModal={onOpenShareModal}
         onOpenCreateNode={() => {
           const canvasRect = canvasRef.current?.getBoundingClientRect();
           if (canvasRect) {
