@@ -418,7 +418,7 @@ export default function Pricing() {
               <div className="bg-slate-50 p-3 rounded-lg">
                 <p className="font-semibold text-slate-800 mb-2">Pro 플랜 해지 방법:</p>
                 <p className="text-slate-700">
-                  카카오톡으로 래피드 검색 → 멤버십 상품 검색 → "구독 내역 확인하기" 클릭 → 맨 상단의 멤버십 관리 토글 클릭 → "해지" 선택
+                  카카오톡으로 래피드 검색 → 멤버십 상품 검색 → &quot;구독 내역 확인하기&quot; 클릭 → 맨 상단의 멤버십 관리 토글 클릭 → &quot;해지&quot; 선택
                 </p>
               </div>
             </div>
