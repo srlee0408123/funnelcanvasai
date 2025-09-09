@@ -40,11 +40,10 @@ export function CanvasShareModal({ isOpen, onClose, canvasId, canvasTitle }: Can
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch canvas shares
-  const { data: shares = [], isLoading } = useQuery({
-    queryKey: ['canvas-shares', canvasId],
-    queryFn: () => fetch(`/api/canvases/${canvasId}/shares`, { credentials: 'include' }).then(r => r.json()),
-    enabled: isOpen
+  // Fetch canvas shares (standardized query key to work with invalidateCanvasQueries)
+  const { data: shares = [], isLoading } = useQuery<CanvasShare[]>({
+    queryKey: ["/api/canvases", canvasId, "shares"],
+    enabled: isOpen,
   });
 
   // Share canvas mutation

@@ -373,7 +373,7 @@ export default function Sidebar({
       {/* Workspace Management */}
       {onOpenMembersModal && (
         <div className="p-4 border-b border-gray-100">
-          <h3 className="font-medium text-foreground mb-3">워크스페이스 관리</h3>
+          <h3 className="font-medium text-foreground mb-3">캔버스 관리</h3>
           <button
             onClick={onOpenMembersModal}
             className="w-full p-3 border-2 border-dashed border-border rounded-lg hover:border-primary hover:bg-accent transition-colors text-left"
