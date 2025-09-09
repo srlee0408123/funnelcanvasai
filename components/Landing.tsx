@@ -64,21 +64,22 @@ export default function Landing() {
               </Link>
             </div>
 
-            {/* Software Screenshot Placeholder */}
+            {/* Canvas AI Demo Video */}
             <div className="relative px-4">
               <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl p-4 sm:p-8 max-w-6xl mx-auto border-2 border-slate-100">
-                <div className="aspect-video bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl sm:rounded-2xl border-2 border-dashed border-slate-300 flex items-center justify-center">
-                  <div className="text-center px-4">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-navy-900 rounded-xl flex items-center justify-center mx-auto mb-4 sm:mb-6">
-                      <svg className="w-8 h-8 sm:w-10 sm:h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M3 3h18v18H3V3zm16 16V5H5v14h14z"/>
-                        <circle cx="8" cy="8" r="2"/>
-                        <path d="M16 10l-3-3-4 4-2-2-2 2v6h12v-7z"/>
-                      </svg>
-                    </div>
-                    <h3 className="text-navy-900 text-xl sm:text-2xl font-bold mb-2">Canvas AI 실제 화면</h3>
-                    <p className="text-slate-500 text-base sm:text-lg">드래그 앤 드롭으로 수익 구조를 시각화하세요</p>
-                  </div>
+                <div className="aspect-video rounded-xl sm:rounded-2xl overflow-hidden border-2 border-slate-200">
+                  <iframe
+                    src="https://www.youtube.com/embed/eE1EsQkgy-A"
+                    title="Canvas AI 실제 화면 데모"
+                    className="w-full h-full"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  ></iframe>
+                </div>
+                <div className="text-center mt-4 sm:mt-6">
+                  <h3 className="text-navy-900 text-xl sm:text-2xl font-bold mb-2">Canvas AI 실제 화면</h3>
+                  <p className="text-slate-500 text-base sm:text-lg">드래그 앤 드롭으로 수익 구조를 시각화하세요</p>
                 </div>
               </div>
             </div>
