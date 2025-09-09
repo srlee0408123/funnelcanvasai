@@ -10,7 +10,6 @@ import NodeDetailsPanel from "@/components/Node/NodeDetailsPanel";
 import SidebarChat from "@/components/Chat/SidebarChat";
 import TodoSticker, { TodoStickerToggle } from "@/components/TodoSticker/TodoSticker";
 import UploadModal from "@/components/Modals/UploadModal";
-import { WorkspaceMembersModal } from "@/components/Modals/WorkspaceMembersModal";
 import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
 import { useCanvasRole } from "@/hooks/useCanvasRole";
 import type { CanvasViewProps, CanvasAreaCanvas, FlowNode } from "@/types/canvas";
@@ -40,7 +39,7 @@ import { toCanvasAreaCanvas } from "@/types/canvas";
 
 export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = false }: CanvasViewProps) {
   const { toast } = useToast();
-  const { canShare, canEdit } = useCanvasRole(canvas.id);
+  const { role, canEdit } = useCanvasRole(canvas.id);
   
   // UI State - Canvas.tsx와 동일한 구조
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -48,7 +47,6 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   
   const [showRightPanel, setShowRightPanel] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showMembersModal, setShowMembersModal] = useState(false);
   const [showCanvasShareModal, setShowCanvasShareModal] = useState(false);
   const [uploadType, setUploadType] = useState<"pdf" | "youtube" | "url" | "text">("pdf");
   
@@ -90,7 +88,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   };
 
   const handleOpenMembersModal = () => {
-    setShowMembersModal(true);
+    setShowCanvasShareModal(true);
   };
 
 
@@ -98,9 +96,7 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
     setChatCollapsed(!chatCollapsed);
   };
 
-  const handleOpenCanvasShareModal = () => {
-    setShowCanvasShareModal(true);
-  };
+  
 
 
 
@@ -174,6 +170,8 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         showNodeDetails={showNodeDetails}
         onCloseNodeDetails={handleCloseNodeDetails}
         onAssetDeleted={handleAssetDeleted}
+        disableKnowledgeUpload={role === 'viewer'}
+        disableCanvasManage={role === 'viewer' || role === 'editor'}
       />
 
       {/* Main Canvas Area */}
@@ -184,8 +182,6 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         onNodeSelect={handleNodeSelect}
         onNodeDoubleClick={handleNodeDoubleClick}
         isReadOnly={isPublic || !canEdit}
-        canShare={canShare}
-        onOpenShareModal={handleOpenCanvasShareModal}
       />
 
       {/* Right Panel - 노드가 선택된 경우 우선 표시 */}
@@ -226,15 +222,6 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         uploadType={uploadType}
         workspaceId={canvas.workspaceId || canvas.workspace_id || ''}
         canvasId={canvas.id}
-      />
-
-
-
-      <WorkspaceMembersModal
-        isOpen={showMembersModal}
-        onClose={() => setShowMembersModal(false)}
-        workspaceId={canvas.workspaceId || canvas.workspace_id || ''}
-        workspaceName={canvas.title}
       />
 
       <CanvasShareModal

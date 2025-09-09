@@ -57,6 +57,8 @@ interface SidebarProps {
   showNodeDetails?: boolean;
   onCloseNodeDetails?: () => void;
   onAssetDeleted?: (assetId: string) => void;
+  disableKnowledgeUpload?: boolean;
+  disableCanvasManage?: boolean;
 }
 
 export default function Sidebar({
@@ -72,6 +74,8 @@ export default function Sidebar({
   showNodeDetails = false,
   onCloseNodeDetails,
   onAssetDeleted,
+  disableKnowledgeUpload = false,
+  disableCanvasManage = false,
 }: SidebarProps) {
   const { toast } = useToast();
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -331,7 +335,9 @@ export default function Sidebar({
         <div className="space-y-2">
           <button
             onClick={() => onOpenUploadModal("pdf")}
-            className="w-full p-3 border-2 border-dashed border-border rounded-lg hover:border-primary hover:bg-accent transition-colors text-left"
+            disabled={disableKnowledgeUpload}
+            className={`w-full p-3 border-2 border-dashed border-border rounded-lg transition-colors text-left ${disableKnowledgeUpload ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary hover:bg-accent'}`}
+            title={disableKnowledgeUpload ? '권한이 없어 업로드할 수 없습니다' : undefined}
           >
             <div className="flex items-center space-x-3">
               <FileText className="h-4 w-4 text-red-500" />
@@ -341,7 +347,9 @@ export default function Sidebar({
           
           <button
             onClick={() => onOpenUploadModal("youtube")}
-            className="w-full p-3 border-2 border-dashed border-border rounded-lg hover:border-primary hover:bg-accent transition-colors text-left"
+            disabled={disableKnowledgeUpload}
+            className={`w-full p-3 border-2 border-dashed border-border rounded-lg transition-colors text-left ${disableKnowledgeUpload ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary hover:bg-accent'}`}
+            title={disableKnowledgeUpload ? '권한이 없어 업로드할 수 없습니다' : undefined}
           >
             <div className="flex items-center space-x-3">
               <Play className="h-4 w-4 text-red-600" />
@@ -351,7 +359,9 @@ export default function Sidebar({
           
           <button
             onClick={() => onOpenUploadModal("url")}
-            className="w-full p-3 border-2 border-dashed border-border rounded-lg hover:border-primary hover:bg-accent transition-colors text-left"
+            disabled={disableKnowledgeUpload}
+            className={`w-full p-3 border-2 border-dashed border-border rounded-lg transition-colors text-left ${disableKnowledgeUpload ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary hover:bg-accent'}`}
+            title={disableKnowledgeUpload ? '권한이 없어 업로드할 수 없습니다' : undefined}
           >
             <div className="flex items-center space-x-3">
               <Link2 className="h-4 w-4 text-blue-500" />
@@ -361,7 +371,9 @@ export default function Sidebar({
 
           <button
             onClick={() => onOpenUploadModal("text")}
-            className="w-full p-3 border-2 border-dashed border-border rounded-lg hover:border-primary hover:bg-accent transition-colors text-left"
+            disabled={disableKnowledgeUpload}
+            className={`w-full p-3 border-2 border-dashed border-border rounded-lg transition-colors text-left ${disableKnowledgeUpload ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary hover:bg-accent'}`}
+            title={disableKnowledgeUpload ? '권한이 없어 업로드할 수 없습니다' : undefined}
           >
             <div className="flex items-center space-x-3">
               <FileText className="h-4 w-4 text-green-600" />
@@ -373,10 +385,12 @@ export default function Sidebar({
       {/* Workspace Management */}
       {onOpenMembersModal && (
         <div className="p-4 border-b border-gray-100">
-          <h3 className="font-medium text-foreground mb-3">워크스페이스 관리</h3>
+          <h3 className="font-medium text-foreground mb-3">켄버스 관리</h3>
           <button
             onClick={onOpenMembersModal}
-            className="w-full p-3 border-2 border-dashed border-border rounded-lg hover:border-primary hover:bg-accent transition-colors text-left"
+            disabled={disableCanvasManage}
+            className={`w-full p-3 border-2 border-dashed border-border rounded-lg transition-colors text-left ${disableCanvasManage ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary hover:bg-accent'}`}
+            title={disableCanvasManage ? '권한이 없어 관리할 수 없습니다' : undefined}
           >
             <div className="flex items-center space-x-3">
               <Users className="h-4 w-4 text-orange-500" />
