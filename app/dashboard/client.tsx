@@ -34,21 +34,20 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
   const { profile } = useProfile();
 
   // Fetch workspaces directly from Supabase for real-time updates
-  const { data: workspaces, isLoading: workspacesLoading } = useQuery<Database['public']['Tables']['workspaces']['Row'][]>({
+  const { data: workspaces, isLoading: workspacesLoading } = useQuery<Pick<Database['public']['Tables']['workspaces']['Row'], 'id' | 'name' | 'created_at' | 'updated_at'>[]>({
     queryKey: ["workspaces", userId],
     queryFn: async () => {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('workspaces')
-        .select('*')
+        .select('id, name, created_at, updated_at')
         .eq('owner_id', userId)
         .order('created_at', { ascending: false });
-      
       if (error) {
         console.error('Error fetching workspaces:', error);
         throw error;
       }
-      return data || [];
+      return (data || []) as any;
     },
     enabled: !!userId,
     refetchInterval: false,

@@ -12,6 +12,7 @@ export async function GET() {
     }
 
     const workspaces = await getUserWorkspaces(userId);
+    // 안전 필드만 반환 (id, name, created_at, updated_at)
     return NextResponse.json(workspaces);
   } catch (error) {
     console.error('Failed to fetch user workspaces:', error);
@@ -52,7 +53,14 @@ export async function POST(req: Request) {
     if (!created) {
       return NextResponse.json({ error: 'Failed to create workspace' }, { status: 500 });
     }
-    return NextResponse.json(created);
+    // 생성 응답도 안전 필드만 반환
+    const safe = {
+      id: (created as any).id,
+      name: (created as any).name,
+      created_at: (created as any).created_at,
+      updated_at: (created as any).updated_at,
+    }
+    return NextResponse.json(safe);
   } catch (error) {
     console.error("Unexpected error in POST /api/workspaces:", error);
     return NextResponse.json({ 

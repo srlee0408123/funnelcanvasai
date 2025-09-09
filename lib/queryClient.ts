@@ -53,10 +53,11 @@ async function throwIfResNotOk(res: Response) {
     } catch {
       // keep defaults
     }
+    // Avoid attaching raw response body to error to reduce risk of leaking sensitive data
     const err: any = new Error(message);
     err.status = res.status;
     err.code = code;
-    err.raw = raw;
+    // Intentionally omit err.raw contents
     err.info = info;
     throw err;
   }
@@ -105,7 +106,7 @@ export const getQueryFn: <T>(options: {
       return JSON.parse(text);
     } catch (error) {
       console.error(`JSON parse error for ${queryKey.join("/")}:`, error);
-      console.error(`Response text was:`, text);
+      // Do not log full response text to avoid leaking sensitive payloads
       throw new Error(`Invalid JSON response from ${queryKey.join("/")}`);
     }
   };

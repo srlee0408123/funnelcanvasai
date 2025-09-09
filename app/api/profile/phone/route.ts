@@ -13,10 +13,25 @@ function isValidKRPhone(digitsOnly: string): boolean {
   return /^010\d{8}$/.test(digitsOnly)
 }
 
+function maskKRPhone(digitsOnly: string | null): string | null {
+  if (!digitsOnly) return null
+  const d = normalizeKRPhone(digitsOnly)
+  if (d.length < 7) return null
+  return `${d.slice(0, 3)}****${d.slice(7)}`
+}
+
+function maskEmail(email: string | null): string | null {
+  if (!email) return null
+  const [local, domain] = email.split('@')
+  if (!local || !domain) return null
+  const visible = local.slice(0, 1)
+  return `${visible}${'*'.repeat(Math.max(1, local.length - 1))}@${domain}`
+}
+
 export async function GET() {
   try {
     const { userId } = await auth()
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: { 'Cache-Control': 'no-store' } })
     const supabase = createServiceClient()
     const { data, error } = await supabase
       .from('profiles')
@@ -25,30 +40,33 @@ export async function GET() {
       .maybeSingle()
     if (error) {
       console.error('Fetch phone error:', error)
-      return NextResponse.json({ error: 'Failed to fetch phone' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to fetch phone' }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
     }
     const normalized = (data as any)?.phone_number ? normalizeKRPhone(String((data as any).phone_number)) : null
+    const maskedPhone = maskKRPhone(normalized)
+    const maskedEmail = maskEmail((data as any)?.email || null)
     return NextResponse.json({
-      phoneNumber: normalized,
+      hasPhone: Boolean(normalized),
+      phoneMasked: maskedPhone,
       plan: (data as any)?.plan || 'free',
-      email: (data as any)?.email || null
-    })
+      emailMasked: maskedEmail,
+    }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e) {
     console.error('GET /api/profile/phone error:', e)
-    return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
+    return NextResponse.json({ error: 'Unexpected error' }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await auth()
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: { 'Cache-Control': 'no-store' } })
 
     const body = await request.json().catch(() => null)
     const raw = body?.phoneNumber as string | undefined
     const normalized = normalizeKRPhone(raw || '')
     if (!isValidKRPhone(normalized)) {
-      return NextResponse.json({ error: 'Invalid phone format. Expected 010XXXXXXXX' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid phone format. Expected 010XXXXXXXX' }, { status: 400, headers: { 'Cache-Control': 'no-store' } })
     }
 
     const supabase = createServiceClient()
@@ -58,11 +76,12 @@ export async function POST(request: NextRequest) {
       .eq('id', userId)
     if (error) {
       console.error('Update phone error:', error)
-      return NextResponse.json({ error: 'Failed to update phone' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to update phone' }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
     }
-    return NextResponse.json({ ok: true, phoneNumber: normalized })
+    // Do not echo back raw phone number
+    return NextResponse.json({ ok: true, phoneMasked: maskKRPhone(normalized) }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e) {
     console.error('POST /api/profile/phone error:', e)
-    return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
+    return NextResponse.json({ error: 'Unexpected error' }, { status: 500, headers: { 'Cache-Control': 'no-store' } })
   }
 }
