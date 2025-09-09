@@ -17,6 +17,7 @@ import { Share, ArrowLeft, FileText, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/database.types";
+import { useWorkspaceRole } from "@/hooks/useWorkspaceRole";
 
 interface WorkspaceClientProps {
   workspaceId: string;
@@ -33,20 +34,20 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
 
   // 프로필 정보 가져오기
   const { profile } = useProfile();
+  const { isOwner } = useWorkspaceRole(workspaceId);
 
   // Fetch workspace details
-  const { data: workspace, isLoading: workspaceLoading } = useQuery<Database['public']['Tables']['workspaces']['Row']>({
+  const { data: workspace, isLoading: workspaceLoading } = useQuery<Pick<Database['public']['Tables']['workspaces']['Row'], 'id' | 'name' | 'created_at' | 'updated_at'>>({
     queryKey: ["workspace", workspaceId],
     queryFn: async () => {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('workspaces')
-        .select('*')
+        .select('id, name, created_at, updated_at')
         .eq('id', workspaceId)
         .single();
-      
       if (error) throw error;
-      return data;
+      return data as any;
     },
     enabled: !!workspaceId,
   });
@@ -296,7 +297,7 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
                       >
                         <Share className="h-4 w-4" />
                       </Button>
-                      {workspace?.owner_id === userId && (
+                      {isOwner && (
                         <Button
                           variant="ghost"
                           size="sm"

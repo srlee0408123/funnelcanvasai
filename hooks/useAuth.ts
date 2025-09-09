@@ -38,7 +38,7 @@ export function useProfile() {
   // 프로필 정보를 ProfileBadge 형식으로 변환
   const profile = profileData ? {
     plan: profileData.plan || 'free',
-    email: profileData.email,
+    email: profileData.emailMasked || profileData.email,
   } : null;
 
   return {

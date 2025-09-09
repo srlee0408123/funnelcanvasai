@@ -60,11 +60,12 @@ export default function Pricing() {
   const hasShownSuccessRef = useRef(false);
   const [isProActive, setIsProActive] = useState<boolean | null>(null);
   const [showDowngradeModal, setShowDowngradeModal] = useState(false);
+  const [hasPhoneProfile, setHasPhoneProfile] = useState(false);
 
   // 프로필 정보 가져오기
   const { profile } = useProfile();
 
-  // 로그인 상태일 때 기존 전화번호/플랜 정보 불러오기
+  // 로그인 상태일 때 기존 전화번호 보유 여부 불러오기 (원문 전화 미노출)
   useEffect(() => {
     (async () => {
       try {
@@ -72,18 +73,15 @@ export default function Pricing() {
         const res = await fetch("/api/profile/phone", { method: "GET" });
         if (!res.ok) return;
         const data = await res.json();
-        if (data?.phoneNumber) {
-          setPhone(normalizeKRPhone(String(data.phoneNumber)));
-        }
+        setHasPhoneProfile(Boolean(data?.hasPhone));
       } catch (_) {}
     })();
   }, [isSignedIn]);
 
   const onClickPro = () => {
     setError(null);
-    const normalized = normalizeKRPhone(phone);
     // 이미 로그인 & 전화번호 등록되어 있으면 바로 결제 탭으로 이동 (모달 생략)
-    if (isSignedIn && isValidKRPhone(normalizeKRPhone(normalized))) {
+    if (isSignedIn && hasPhoneProfile) {
       if (typeof window !== "undefined") {
         try { localStorage.setItem('upgrade_in_progress', '1'); } catch (_) {}
         window.open("https://www.latpeed.com/memberships/65c4b3594efe74041adac49c", "_blank", "noopener,noreferrer");

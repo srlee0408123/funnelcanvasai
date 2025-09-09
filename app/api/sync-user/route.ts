@@ -27,8 +27,8 @@ export async function POST() {
     // Save user to Supabase using service role client
     const supabase = createServiceClient();
     
-    // First, upsert the user profile
-    const { data: profile, error: profileError } = await (supabase as any)
+    // First, upsert the user profile (no select to avoid returning PII)
+    const { error: profileError } = await (supabase as any)
       .from('profiles')
       .upsert({
         id: userId,
@@ -38,9 +38,7 @@ export async function POST() {
         updated_at: new Date().toISOString(),
       }, {
         onConflict: 'id'
-      })
-      .select()
-      .single();
+      });
     
     if (profileError) {
       console.error("Error saving user profile:", profileError);
@@ -52,12 +50,8 @@ export async function POST() {
     
     
     // Just sync the user profile, don't create any workspace
-    
-    return NextResponse.json({ 
-      success: true, 
-      profile,
-      message: "User synced successfully" 
-    });
+    // Return no content to avoid exposing PII in network responses
+    return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
     
   } catch (error) {
     console.error("Error syncing user:", error);

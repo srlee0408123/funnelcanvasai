@@ -6,17 +6,17 @@ import type { Database } from '@/lib/database.types'
 
 type WorkspaceRow = Database['public']['Tables']['workspaces']['Row']
 
-export async function getUserWorkspaces(userId: string): Promise<WorkspaceRow[]> {
+export async function getUserWorkspaces(userId: string): Promise<Pick<WorkspaceRow, 'id' | 'name' | 'created_at' | 'updated_at'>[]> {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('workspaces')
-    .select('*')
+    .select('id, name, created_at, updated_at')
     .eq('owner_id', userId)
   if (error) {
     console.error('Error fetching user workspaces:', error)
     return []
   }
-  return (data || []) as WorkspaceRow[]
+  return (data || []) as Pick<WorkspaceRow, 'id' | 'name' | 'created_at' | 'updated_at'>[]
 }
 
 export async function createWorkspace(userId: string, name: string): Promise<WorkspaceRow | null> {

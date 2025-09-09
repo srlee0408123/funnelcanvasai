@@ -15,7 +15,7 @@ import {useMemo, useState, useCallback } from "react";
 import type { Canvas, CanvasState } from "@shared/schema";
 import { Crown, User, ChevronDown, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useClerk } from "@clerk/nextjs";
+import { useClerk, useUser } from "@clerk/nextjs";
 
 /**
  * ProfileBadge 컴포넌트
@@ -25,6 +25,11 @@ export function ProfileBadge({ profile }: { profile?: { plan: 'free' | 'pro'; em
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouter();
   const { signOut } = useClerk();
+  const { user } = useUser();
+  const emailToShow = user?.primaryEmailAddress?.emailAddress
+    || (user?.emailAddresses && user.emailAddresses[0]?.emailAddress)
+    || profile?.email
+    || "";
 
   if (!profile) return null;
 
@@ -47,7 +52,7 @@ export function ProfileBadge({ profile }: { profile?: { plan: 'free' | 'pro'; em
         <div className="flex items-center space-x-1">
           <User className="h-4 w-4 text-gray-600" />
           <span className="text-sm text-gray-700 max-w-32 truncate">
-            {profile.email}
+            {emailToShow}
           </span>
         </div>
         <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${
@@ -76,7 +81,7 @@ export function ProfileBadge({ profile }: { profile?: { plan: 'free' | 'pro'; em
               <div className="flex items-center space-x-2">
                 <User className="h-5 w-5 text-gray-600" />
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{profile.email}</p>
+                  <p className="text-sm font-medium text-gray-900">{emailToShow}</p>
                   <p className="text-xs text-gray-500">
                     {profile.plan === 'pro' ? 'Pro 플랜' : '무료 플랜'}
                   </p>
