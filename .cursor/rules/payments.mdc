@@ -1,0 +1,88 @@
+---
+description: "결제 및 멤버십 관리 시 참고하세요 - 웹훅 처리, 구독 상태 관리, 3일 환불 규칙, 스케줄 다운그레이드 기능"
+---
+
+## 3. 결제 및 멤버십 (Payments & Membership)
+
+### 라우터
+* `POST /api/webhooks/payments`: 외부 결제 서비스(Latpeed)에서 오는 웹훅을 처리하여 결제 상태를 저장하고 멤버십을 관리합니다.
+* `GET /api/payments/status`: 현재 로그인 사용자의 활성 멤버십 상태를 조회합니다. (전화번호/이메일 매칭 기반)
+* `GET /api/profile/phone`: 사용자의 등록된 전화번호를 조회합니다.
+* `POST /api/profile/phone`: 사용자의 전화번호를 등록/수정합니다. (한국 표준 형식: 010XXXXXXXX)
+
+### UI 컴포넌트
+* `app/pricing/page.tsx`: 결제 플랜 선택 및 결제 페이지 UI
+* `components/Modals/PaymentModal.tsx`: 결제 처리 모달 (필요 시 구현)
+* 결제 상태 표시: 대시보드나 헤더에서 멤버십 상태를 토스트나 배지로 표시
+
+### 데이터베이스 스키마
+
+#### payments 테이블
+* **기본 정보**: `id`, `type`(NORMAL_PAYMENT/MEMBERSHIP_PAYMENT), `name`, `email`, `phone_number`, `amount`, `status`(SUCCESS/CANCEL)
+* **구독 관련**: `subscription_id`, `subscription_status`(ACTIVE/CANCELED/PAST_DUE/TRIALING/UNPAID)
+* **기간 관리**: `activated_at`, `current_period_start`, `current_period_end`, `next_renewal_at`
+* **취소 관리**: `cancel_at_period_end`, `canceled_at`, `canceled_reason`
+* **스케줄 다운그레이드**: `scheduled_downgrade_at`, `scheduled_downgrade_processed`
+* **메타데이터**: `date`, `method`, `option`, `forms`(JSONB), `agreements`(JSONB), `user_agent`, `raw`(JSONB)
+* **인덱스**: email, phone_number, status, subscription_id, next_renewal_at, scheduled_downgrade_at
+
+#### profiles 테이블 (확장)
+* `phone_number`: 전화번호 (UNIQUE, 한국 표준 형식)
+* `plan`: 멤버십 플랜 (free/pro, 기본값: free)
+
+#### workspaces 테이블 (확장)
+* `plan`: 워크스페이스 플랜 (free/pro, 기본값: free)
+
+### 서비스 함수/훅
+
+#### 웹훅 처리 로직
+* **MEMBERSHIP_PAYMENT 처리**: 
+  - SUCCESS: 기간 계산(1개월), profiles/workspaces를 pro로 업그레이드
+  - CANCEL: 3일 환불 규칙 적용 (즉시 다운그레이드 vs 기간말 스케줄)
+* **전화번호 정규화**: `normalizeKRPhone()` - 010XXXXXXXX 형식으로 통일
+* **기간 계산**: `addMonths()` - 월말 처리 포함한 정확한 1개월 후 계산
+* **Upsert 전략**: 최신 멤버십 레코드를 전화번호(우선)/이메일(보조)로 찾아 업데이트
+
+#### 스케줄 다운그레이드
+* **Supabase Edge Function**: `supabase/functions/scheduled-downgrade/index.ts`
+* **실행 주기**: 5분~1시간 간격 (cron 설정)
+* **처리 로직**: `scheduled_downgrade_at <= now` + `processed=false` 레코드 조회 → profiles/workspaces를 free로 다운그레이드 → `processed=true` 마킹
+
+#### 상태 조회 API
+* **활성 멤버십 판단**:
+  - SUCCESS + ACTIVE + now < current_period_end
+  - 또는 CANCEL + CANCELED + cancel_at_period_end=true + now < current_period_end + scheduled_downgrade_processed=false
+
+### 비즈니스 규칙
+
+#### 3일 환불 규칙
+* **즉시 환불**: 결제 후 3일 이내 취소 → 즉시 free로 다운그레이드, scheduled_downgrade_processed=true
+* **기간말 취소**: 3일 이후 취소 → 기간 종료까지 pro 유지, scheduled_downgrade_at에 다운그레이드 스케줄
+
+#### 멤버십 상태 전환
+* **결제 성공**: profiles.plan + 모든 소유 workspaces.plan → 'pro'
+* **즉시 취소**: profiles.plan + 모든 소유 workspaces.plan → 'free'
+* **스케줄 취소**: 기간 종료 시점에 자동 다운그레이드
+
+### 마이그레이션 파일
+* `00020_payments.sql`: payments 테이블 생성, workspaces.plan 추가
+* `00021_add_profile_phone_number.sql`: profiles.phone_number 추가
+* `00022_add_profiles_plan.sql`: profiles.plan 추가
+* `00023_phone_fk_and_view.sql`: 전화번호 FK, v_payments_with_profile 뷰
+* `00024_payments_backfill_and_defaults.sql`: 기존 데이터 백필, 기본값 설정
+
+### 사용자 워크플로우
+1. **전화번호 등록**: 프로필에서 전화번호 입력 → 한국 표준 형식 검증 → 저장
+2. **결제 진행**: pricing 페이지에서 플랜 선택 → 외부 결제 서비스 연동 → 결제 완료
+3. **웹훅 처리**: 결제 서비스에서 웹훅 발송 → 자동으로 멤버십 활성화 → UI 상태 갱신
+4. **멤버십 확인**: API 호출로 활성 상태 확인 → 토스트/배지로 사용자에게 표시
+5. **취소 처리**: 결제 서비스에서 취소 웹훅 → 3일 규칙에 따라 즉시/스케줄 처리
+
+### 핵심 특징
+* **전화번호 기반 매칭**: 한국 표준 형식(010XXXXXXXX)으로 정규화하여 정확한 사용자 식별
+* **Upsert 전략**: MEMBERSHIP_PAYMENT는 기존 레코드 업데이트, 일반 결제는 append-only
+* **자동 기간 계산**: 결제 시점 기준으로 정확한 1개월 후 갱신일 계산
+* **스케줄 다운그레이드**: 기간말 취소 시 자동 다운그레이드로 사용자 경험 향상
+* **3일 환불 보장**: 결제 후 3일 이내 취소 시 즉시 환불 처리
+* **이중 플랜 관리**: profiles.plan(개인) + workspaces.plan(워크스페이스) 동시 관리
+* **감사 추적**: raw JSONB로 원본 웹훅 데이터 보존, 모든 변경 이력 추적 가능
