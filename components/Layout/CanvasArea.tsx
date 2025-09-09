@@ -1,6 +1,7 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { CanvasHeader } from "@/components/Canvas/CanvasHeader";
+import { CanvasHeader, ProfileBadge } from "@/components/Canvas/CanvasHeader";
+import { useProfile } from "@/hooks/useAuth";
 import { CanvasEdges } from "@/components/Canvas/CanvasEdges";
 import FunnelNode from "@/components/Canvas/FunnelNode";
 import NodeCreationModal from "@/components/Canvas/NodeCreationModal";
@@ -52,6 +53,9 @@ export default function CanvasArea({
   const canvasRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  // 프로필 정보 가져오기
+  const { profile } = useProfile();
   
   // Canvas viewport state for zoom and pan (Zustand)
   const viewport = useCanvasStore(s => s.viewport);
@@ -1147,6 +1151,7 @@ export default function CanvasArea({
         }}
         lastSavedAt={lastSavedAt}
         isSaving={saving}
+        profile={profile}
       />
 
       {/* Canvas Content */}

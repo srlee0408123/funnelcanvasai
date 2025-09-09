@@ -20,7 +20,7 @@ export async function GET() {
     const supabase = createServiceClient()
     const { data, error } = await supabase
       .from('profiles')
-      .select('phone_number')
+      .select('phone_number, plan, email')
       .eq('id', userId)
       .maybeSingle()
     if (error) {
@@ -28,7 +28,11 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to fetch phone' }, { status: 500 })
     }
     const normalized = (data as any)?.phone_number ? normalizeKRPhone(String((data as any).phone_number)) : null
-    return NextResponse.json({ phoneNumber: normalized })
+    return NextResponse.json({
+      phoneNumber: normalized,
+      plan: (data as any)?.plan || 'free',
+      email: (data as any)?.email || null
+    })
   } catch (e) {
     console.error('GET /api/profile/phone error:', e)
     return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })

@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
 import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
+import { ProfileBadge } from "@/components/Canvas/CanvasHeader";
+import { useProfile } from "@/hooks/useAuth";
 import { Share, ArrowLeft, FileText, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { createClient } from "@/lib/supabase/client";
@@ -28,6 +30,9 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
   const [newCanvasTitle, setNewCanvasTitle] = useState("");
   const [showCanvasDialog, setShowCanvasDialog] = useState(false);
   const [shareCanvas, setShareCanvas] = useState<Database['public']['Tables']['canvases']['Row'] | null>(null);
+
+  // 프로필 정보 가져오기
+  const { profile } = useProfile();
 
   // Fetch workspace details
   const { data: workspace, isLoading: workspaceLoading } = useQuery<Database['public']['Tables']['workspaces']['Row']>({
@@ -179,10 +184,7 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">
-                {user.emailAddresses[0]?.emailAddress}
-              </span>
-              <UserButton afterSignOutUrl="/" />
+              <ProfileBadge profile={profile} />
             </div>
           </div>
         </div>

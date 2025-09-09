@@ -10,6 +10,8 @@ import { Button } from "@/components/Ui/buttons";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/Ui/data-display";
 import { Input, Label } from "@/components/Ui/form-controls";
 import { useToast } from "@/hooks/use-toast";
+import { ProfileBadge } from "@/components/Canvas/CanvasHeader";
+import { useProfile } from "@/hooks/useAuth";
 import { queryClient } from "@/lib/queryClient";
 import { createToastMessage } from "@/lib/messages/toast-utils";
 import { FolderOpen, Users, Calendar, Trash2 } from "lucide-react";
@@ -27,6 +29,9 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
   const { toast } = useToast();
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [showWorkspaceDialog, setShowWorkspaceDialog] = useState(false);
+
+  // 프로필 정보 가져오기
+  const { profile } = useProfile();
 
   // Fetch workspaces directly from Supabase for real-time updates
   const { data: workspaces, isLoading: workspacesLoading } = useQuery<Database['public']['Tables']['workspaces']['Row'][]>({
@@ -184,10 +189,7 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">
-                {user.emailAddresses[0]?.emailAddress}
-              </span>
-              <UserButton afterSignOutUrl="/" />
+              <ProfileBadge profile={profile} />
             </div>
           </div>
         </div>
