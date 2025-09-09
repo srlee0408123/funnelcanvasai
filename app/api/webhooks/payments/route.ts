@@ -114,6 +114,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+    console.log('body', body)
     if (!isValidBody(body)) {
       return NextResponse.json({ error: 'Invalid webhook payload' }, { status: 400 })
     }
@@ -132,7 +133,7 @@ export async function POST(request: NextRequest) {
     // Normalize phone for consistent matching with profile
     const normalizedPhone = normalizeKRPhone(payment.phoneNumber)
 
-    // MEMBERSHIP_PAYMENT: update-first strategy, compute periods, handle 3-day refund rule
+    // MEMBERSHIP_PAYMENT: update-first strategy, compute periods, cancel always schedules downgrade at period end
     if (type === 'MEMBERSHIP_PAYMENT') {
       const isSuccess = payment.status === 'SUCCESS'
       const isCancel = payment.status === 'CANCEL'
@@ -242,6 +243,8 @@ export async function POST(request: NextRequest) {
       if (isCancel) {
         const cancelDate = normalizedDate || new Date().toISOString()
         const activatedAt = latest?.activated_at || latest?.current_period_start || null
+        // Determine schedule target for cancellation (always end of current period)
+        const currentEnd = latest?.current_period_end || (activatedAt ? addMonths(activatedAt, 1) : null)
         const updatePayload: Record<string, any> = {
           type,
           name: payment.name ?? null,
@@ -255,14 +258,15 @@ export async function POST(request: NextRequest) {
           canceled_reason: payment.canceledReason ?? null,
           option: payment.option ?? null,
           subscription_id: payment.subscriptionId ?? null,
+          // Keep existing activation/period fields if present
           activated_at: activatedAt,
           current_period_start: latest?.current_period_start || activatedAt,
-          current_period_end: latest?.current_period_end || null,
-          next_renewal_at: latest?.next_renewal_at || null,
-          cancel_at_period_end: false,
+          current_period_end: latest?.current_period_end || currentEnd,
+          next_renewal_at: latest?.next_renewal_at || currentEnd,
+          cancel_at_period_end: true,
           canceled_at: cancelDate,
-          scheduled_downgrade_at: null,
-          scheduled_downgrade_processed: true,
+          scheduled_downgrade_at: currentEnd,
+          scheduled_downgrade_processed: false,
           forms: payment.forms ?? null,
           agreements: payment.agreements ?? null,
           user_agent: userAgent ?? null,
@@ -296,14 +300,7 @@ export async function POST(request: NextRequest) {
           savedId = inserted?.id
         }
 
-        if (profile?.id) {
-          const [{ error: profErr }, { error: wsErr }] = await Promise.all([
-            (supabase as any).from('profiles').update({ plan: 'free' }).eq('id', profile.id),
-            (supabase as any).from('workspaces').update({ plan: 'free' }).eq('owner_id', profile.id),
-          ])
-          if (profErr) console.error('Profile plan downgrade error (CANCEL):', profErr)
-          if (wsErr) console.error('Workspace plan downgrade error (CANCEL):', wsErr)
-        } else {
+        if (!profile?.id) {
           console.warn('No profile found for phone/email; plan not updated on CANCEL:', { phoneNumber: payment.phoneNumber, email: payment.email })
         }
 
