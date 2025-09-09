@@ -124,13 +124,8 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
   // Create workspace mutation
   const createWorkspaceMutation = useMutation({
     mutationFn: async (name: string) => {
-      const response = await fetch('/api/workspaces', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      if (!response.ok) throw new Error('Failed to create workspace');
-      return response.json();
+      const res = await apiRequest("POST", "/api/workspaces", { name });
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
@@ -139,9 +134,14 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
       const successMessage = createToastMessage.custom("워크스페이스 생성 완료", "새 워크스페이스가 생성되었습니다.", "default");
       toast(successMessage);
     },
-    onError: (error) => {
-      const errorMessage = createToastMessage.custom("워크스페이스 생성 실패", "워크스페이스 생성에 실패했습니다.", "destructive", "다시 시도해주세요");
-      toast(errorMessage);
+    onError: (error: any) => {
+      const serverMessage = (error && error.message) ? String(error.message) : "워크스페이스 생성에 실패했습니다.";
+      const code = error?.code as string | undefined;
+      if (code === 'FREE_PLAN_LIMIT_WORKSPACES' || /1개까지만 생성할 수 있습니다/.test(serverMessage)) {
+        toast(createToastMessage.custom("무료 플랜 제한", serverMessage, "destructive"));
+        return;
+      }
+      toast(createToastMessage.custom("워크스페이스 생성 실패", serverMessage, "destructive", "다시 시도해주세요"));
     },
   });
 
