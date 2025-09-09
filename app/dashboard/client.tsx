@@ -63,7 +63,6 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
             console.error('Failed to sync user');
           } else {
             console.log('User synced successfully');
-            queryClient.invalidateQueries({ queryKey: ["workspaces"] });
           }
         } catch (error) {
           console.error('Error syncing user:', error);
@@ -94,7 +93,7 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
         },
         (payload) => {
           console.log('Workspace change received:', payload);
-          queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+          queryClient.invalidateQueries({ queryKey: ["workspaces", userId] });
         }
       )
       .subscribe((status) => {
@@ -127,7 +126,7 @@ export default function DashboardClient({ userId }: DashboardClientProps) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["workspaces", userId] });
       setShowWorkspaceDialog(false);
       setNewWorkspaceName("");
       const successMessage = createToastMessage.custom("워크스페이스 생성 완료", "새 워크스페이스가 생성되었습니다.", "default");
