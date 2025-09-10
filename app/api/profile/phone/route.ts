@@ -17,7 +17,7 @@ function maskKRPhone(digitsOnly: string | null): string | null {
   if (!digitsOnly) return null
   const d = normalizeKRPhone(digitsOnly)
   if (d.length < 7) return null
-  return `${d.slice(0, 3)}****${d.slice(7)}`
+  return `010********`
 }
 
 function maskEmail(email: string | null): string | null {
@@ -25,7 +25,7 @@ function maskEmail(email: string | null): string | null {
   const [local, domain] = email.split('@')
   if (!local || !domain) return null
   const visible = local.slice(0, 1)
-  return `${visible}${'*'.repeat(Math.max(1, local.length - 1))}@${domain}`
+  return `${visible}${'*'.repeat(local.length - 1)}@${domain}`
 }
 
 export async function GET() {

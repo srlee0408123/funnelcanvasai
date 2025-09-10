@@ -1,3 +1,21 @@
+/**
+ * payments webhook (secret path) - Latpeed 결제 웹훅 처리 + 비밀 경로 검증
+ * 
+ * 주요 역할:
+ * 1. 비밀 경로 검증으로 엔드포인트 은닉
+ * 2. 멤버십 결제/취소 처리 및 Supabase 저장
+ * 3. 프로필/워크스페이스 플랜 업데이트
+ * 
+ * 핵심 특징:
+ * - 동적 경로 params.secret_path를 환경변수와 비교하여 불일치 시 404 반환
+ * - JSON Content-Type 검증 및 payload 스키마 최소 검증
+ * - 멱등성 유지를 위해 최근 레코드 기반 update-first 전략 적용
+ * 
+ * 주의사항:
+ * - PAYMENT_WEBHOOK_SECRET_PATH 환경변수 필수 설정
+ * - 민감 정보 로그 금지 (요청 본문 전체 로깅 지양)
+ * - 추후 시그니처 검증(HMAC 등) 추가 권장
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 
@@ -105,7 +123,16 @@ async function findLatestMembershipByIdentity(supabase: any, phone: string | nul
   return null
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ secret_path: string }> }
+) {
+  const { secret_path } = await context.params
+  const expectedSecretPath = process.env.PAYMENT_WEBHOOK_SECRET_PATH
+  if (!expectedSecretPath || secret_path !== expectedSecretPath) {
+    return new Response('Not Found', { status: 404 })
+  }
+
   try {
     const userAgent = request.headers.get('user-agent') || undefined
     const contentType = request.headers.get('content-type') || ''
@@ -114,7 +141,6 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    console.log('body', body)
     if (!isValidBody(body)) {
       return NextResponse.json({ error: 'Invalid webhook payload' }, { status: 400 })
     }
@@ -355,7 +381,15 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(
+  _request: NextRequest,
+  context: { params: Promise<{ secret_path: string }> }
+) {
+  const { secret_path } = await context.params
+  const expectedSecretPath = process.env.PAYMENT_WEBHOOK_SECRET_PATH
+  if (!expectedSecretPath || secret_path !== expectedSecretPath) {
+    return new Response('Not Found', { status: 404 })
+  }
   // Optional: simple health check endpoint
   return NextResponse.json({ ok: true })
 }
