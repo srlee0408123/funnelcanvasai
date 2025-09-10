@@ -3,7 +3,8 @@ import { auth } from '@clerk/nextjs/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { OpenAIService } from '@/services/openai';
 import { CanvasRAGService } from '@/services/rag';
-import { buildSystemPrompt, formatChatHistory } from '@/services/rag';
+import { ragPromptService } from '@/services/ragPromptService';
+import { buildSystemPrompt } from '@/services/rag';
 import { isFreePlan, countUserChatQuestionsToday } from '@/lib/planLimits';
 
 /**
@@ -98,7 +99,9 @@ export async function POST(request: NextRequest) {
     });
 
     // 시스템 프롬프트 구성 및 이중 단계 의사결정 (KB 우선 / KB+웹)
-    const historyText = formatChatHistory([...chatHistory].reverse());
+    const historyText = [...chatHistory].reverse().map((h: any) => `${h.role === 'user' ? '사용자' : 'Canvas AI'}: ${h.content}`).join('\n');
+    // 관리자 설정 외부 지시문(프롬프트) 로드 - 비어있으면 기본만 사용
+    const externalInstruction = await ragPromptService.getActiveInstruction();
     let aiMessage = '';
     let webCitationsFinal = webCitations;
 
@@ -106,9 +109,9 @@ export async function POST(request: NextRequest) {
     const kbEnough = await canvasRAG.decideUseKnowledgeFirst(knowledgeContext, message);
 
     if (kbEnough) {
-      aiMessage = await canvasRAG.answerFromKnowledgeOnly({ knowledgeContext, historyText, message });
+      aiMessage = await canvasRAG.answerFromKnowledgeOnly({ knowledgeContext, historyText, message, externalInstruction });
     } else {
-      const result = await canvasRAG.answerFromKnowledgeAndWeb({ knowledgeContext, historyText, message, webCitations, webContext });
+      const result = await canvasRAG.answerFromKnowledgeAndWeb({ knowledgeContext, historyText, message, webCitations, webContext, externalInstruction });
       aiMessage = result.content;
       webCitationsFinal = result.webCitations;
     }

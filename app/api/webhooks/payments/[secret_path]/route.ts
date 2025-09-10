@@ -18,6 +18,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { slackNotify } from '@/services/slackNotify'
 
 type WebhookType = 'NORMAL_PAYMENT' | 'MEMBERSHIP_PAYMENT'
 type PaymentStatus = 'SUCCESS' | 'CANCEL'
@@ -137,11 +138,13 @@ export async function POST(
     const userAgent = request.headers.get('user-agent') || undefined
     const contentType = request.headers.get('content-type') || ''
     if (!contentType.includes('application/json')) {
+      await safeNotify('warn', '결제 웹훅 Content-Type 오류', { contentType })
       return NextResponse.json({ error: 'Content-Type must be application/json' }, { status: 400 })
     }
 
     const body = await request.json()
     if (!isValidBody(body)) {
+      await safeNotify('warn', '결제 웹훅 payload 검증 실패', { receivedKeys: Object.keys(body || {}), ua: userAgent })
       return NextResponse.json({ error: 'Invalid webhook payload' }, { status: 400 })
     }
 
@@ -235,6 +238,7 @@ export async function POST(
             .single()
           if (upErr) {
             console.error('Membership update error:', upErr)
+            await safeNotify('error', '멤버십 결제 업데이트 실패', { email: payment.email, phone: normalizedPhone, err: upErr?.message || String(upErr) })
             return NextResponse.json({ error: 'Failed to update membership payment' }, { status: 500 })
           }
           savedId = updated?.id
@@ -246,6 +250,7 @@ export async function POST(
             .single()
           if (insErr) {
             console.error('Membership insert error:', insErr)
+            await safeNotify('error', '멤버십 결제 저장 실패', { email: payment.email, phone: normalizedPhone, err: insErr?.message || String(insErr) })
             return NextResponse.json({ error: 'Failed to record membership payment' }, { status: 500 })
           }
           savedId = inserted?.id
@@ -263,6 +268,15 @@ export async function POST(
           console.warn('No profile found for phone/email; plan not updated on SUCCESS:', { phoneNumber: payment.phoneNumber, email: payment.email })
         }
 
+        await safeNotify('info', '멤버십 결제 성공', {
+          email: payment.email,
+          phone: normalizedPhone,
+          amount: updatePayload.amount,
+          periodStart: updatePayload.current_period_start,
+          periodEnd: updatePayload.current_period_end,
+          savedId,
+          method: updatePayload.method,
+        })
         return NextResponse.json({ ok: true, id: savedId })
       }
 
@@ -310,6 +324,7 @@ export async function POST(
             .single()
           if (upErr) {
             console.error('Membership cancel update error:', upErr)
+            await safeNotify('error', '멤버십 결제 취소 업데이트 실패', { email: payment.email, phone: normalizedPhone, err: upErr?.message || String(upErr) })
             return NextResponse.json({ error: 'Failed to update cancellation' }, { status: 500 })
           }
           savedId = updated?.id
@@ -321,6 +336,7 @@ export async function POST(
             .single()
           if (insErr) {
             console.error('Membership cancel insert error:', insErr)
+            await safeNotify('error', '멤버십 결제 취소 저장 실패', { email: payment.email, phone: normalizedPhone, err: insErr?.message || String(insErr) })
             return NextResponse.json({ error: 'Failed to record cancellation' }, { status: 500 })
           }
           savedId = inserted?.id
@@ -330,6 +346,13 @@ export async function POST(
           console.warn('No profile found for phone/email; plan not updated on CANCEL:', { phoneNumber: payment.phoneNumber, email: payment.email })
         }
 
+        await safeNotify('info', '멤버십 결제 취소 접수', {
+          email: payment.email,
+          phone: normalizedPhone,
+          periodEnd: updatePayload.current_period_end,
+          savedId,
+          reason: updatePayload.canceled_reason,
+        })
         return NextResponse.json({ ok: true, id: savedId })
       }
     }
@@ -368,12 +391,15 @@ export async function POST(
 
     if (insertError) {
       console.error('Payment insert error:', insertError)
+      await safeNotify('error', '일반 결제 저장 실패', { email: payment.email, phone: normalizedPhone, status: payment.status, err: insertError?.message || String(insertError) })
       return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 })
     }
 
+    await safeNotify('info', '일반 결제 이벤트', { email: payment.email, phone: normalizedPhone, status: payment.status, amount: insertPayload.amount, savedId: saved?.id })
     return NextResponse.json({ ok: true, id: saved?.id })
   } catch (error) {
     console.error('Payments webhook error:', error)
+    await safeNotify('error', '결제 웹훅 처리 중 오류', { message: error instanceof Error ? error.message : String(error) })
     return NextResponse.json(
       { error: 'Unexpected server error', details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
@@ -392,4 +418,13 @@ export async function GET(
   }
   // Optional: simple health check endpoint
   return NextResponse.json({ ok: true })
+}
+
+// Slack notifier wrapper that never throws
+async function safeNotify(level: 'info' | 'warn' | 'error', title: string, context?: unknown) {
+  try {
+    await slackNotify({ level, title, context });
+  } catch {
+    // Ignore errors from Slack reporting to avoid breaking main flow
+  }
 }

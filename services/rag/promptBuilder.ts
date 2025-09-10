@@ -15,79 +15,28 @@
  * - 비즈니스 규칙 변경 시 여기서만 수정
  */
 
-export function buildSystemPrompt(knowledgeContext: string, historyText: string): string {
-  return `당신은 데이터 전문가 "Canvas AI" 입니다.
-
-역할과 책임:
-1. 사용자가 궁금해하는 질문에 전문적이고 실용적인 답변 제공
-2. 제공된 지식 베이스와 최신 웹 정보를 활용하여 정확한 정보 제공
-3. 한국어로 명확하고 이해하기 쉬운 답변 작성
-
-답변 규칙:
-- 제공된 컨텍스트 정보를 우선적으로 활용
-- 컨텍스트에 없는 정보는 웹 검색 결과 활용
-- 마크다운 형식 사용 금지 (별표, 해시태그, 백틱, 대시 등)
-
-현재 참고 가능한 정보:
-${knowledgeContext || '컨텍스트가 충분하지 않습니다. 사용자의 질문을 명확히 하기 위해 필요한 추가 정보를 요청하세요.'}
-
-최근 대화 맥락:
-${historyText || '대화 히스토리가 없습니다.'}`;
-}
-
-export function formatChatHistory(chatHistory: Array<{ role: string; content: string }>): string {
-  if (!Array.isArray(chatHistory) || chatHistory.length === 0) return '';
-  return chatHistory
-    .map(h => `${h.role === 'user' ? '사용자' : 'Canvas AI'}: ${h.content}`)
-    .join('\n');
-}
-
-
 /**
- * KB 전용 시스템 프롬프트 - 외부 웹 검색 금지, 제공된 지식 컨텍스트만 활용
+ * 지식 우선 사용 여부 판정을 위한 시스템 프롬프트
+ * - 목표: 웹 검색을 최소화하고 지식 베이스 활용을 극대화
+ * - 응답 형식: 반드시 'TRUE' 또는 'FALSE' 한 단어
  */
-export function buildKBOnlySystemPrompt(knowledgeContext: string, historyText: string): string {
-  return `당신은 데이터 전문가 "Canvas AI" 입니다.
+export function buildKnowledgeFirstDecisionPrompt(): string {
+  return `당신은 '지식 베이스 활용 극대화 에이전트'입니다. 당신의 임무는 웹 검색(FALSE)을 최소화하고, 주어진 지식(TRUE)을 최대한 활용하도록 유도하는 것입니다. 지식 컨텍스트를 사용해서 답변의 '실마리'라도 제공할 수 있다면 무조건 TRUE를 반환하세요. 질문과 컨텍스트의 주제가 완전히 딴판이라 전혀 도움이 되지 않을 때만 FALSE를 반환하세요. 단, 사용자가 '최신' 또는 '실시간' 정보를 명확히 요구할 때는 예외적으로 FALSE를 고려할 수 있습니다. 응답은 반드시 'TRUE' 또는 'FALSE' 한 단어로만 하십시오.`;
+}
 
-역할과 책임:
-1. 제공된 지식 컨텍스트만 사용하여 답변
-2. 외부 웹 검색, 추측, 임의 인용 금지
-3. 한국어로 명확하고 이해하기 쉬운 답변 작성
-
-답변 규칙:
-- 지식 컨텍스트 내의 정보만 근거로 사용
-- 컨텍스트에 근거가 없으면 "컨텍스트에 정보가 없습니다"라고 답변
-- 마크다운 형식 사용 금지 (별표, 해시태그, 백틱, 대시 등)
-
-지식 컨텍스트:
-${knowledgeContext || '컨텍스트가 비어 있습니다.'}
+export function buildSystemPrompt(knowledgeContext: string, historyText: string, externalInstruction?: string): string {
+  const instruction = (externalInstruction || '').trim();
+  const safeInstruction = instruction.length > 0 ? `${instruction}\n\n` : '';
+  // 사용자 프롬프트(외부 지시문) + 고정 하단(컨텍스트/히스토리)
+  return `${safeInstruction}참고 컨텍스트(지식 및 웹 요약 포함 가능):
+${knowledgeContext || '컨텍스트가 충분하지 않습니다. 필요한 추가 정보를 요청하세요.'}
 
 최근 대화 맥락:
 ${historyText || '대화 히스토리가 없습니다.'}`;
 }
 
-/**
- * KB+웹 시스템 프롬프트 - 지식 우선, 부족 시 웹 검색 결과 활용
- */
-export function buildKBAndWebSystemPrompt(knowledgeContext: string, webContext: string, historyText: string): string {
-  return `당신은 데이터 전문가 "Canvas AI" 입니다.
+// (내부용) 히스토리 포맷터는 다른 모듈에서 정의/사용하도록 정리
 
-역할과 책임:
-1. 제공된 지식 컨텍스트를 우선 활용
-2. 지식이 부족한 영역은 최신 웹 검색 결과를 근거로 보완
-3. 한국어로 명확하고 이해하기 쉬운 답변 작성
 
-답변 규칙:
-- 지식 컨텍스트의 정보를 먼저 사용하고, 부족한 부분만 웹 결과로 보강
-- 마크다운 형식 사용 금지 (별표, 해시태그, 백틱, 대시 등)
-
-지식 컨텍스트:
-${knowledgeContext || '컨텍스트 없음'}
-
-웹 검색 결과:
-${webContext || '웹 검색 결과 없음'}
-
-최근 대화 맥락:
-${historyText || '대화 히스토리가 없습니다.'}`;
-}
+// Deprecated 분기형 빌더 제거: 단일 buildSystemPrompt만 사용
 
