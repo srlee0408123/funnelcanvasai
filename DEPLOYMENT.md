@@ -203,6 +203,37 @@ npx @sentry/wizard@latest -i nextjs
 - Uptime Robot: https://uptimerobot.com
 - Better Uptime: https://betteruptime.com
 
+### 4. Slack 알림 (Supabase Edge Function)
+
+결제 웹훅 이벤트 및 서버 오류를 Slack으로 전송합니다. 다음을 설정하세요.
+
+1) Supabase Functions 환경변수 설정 (Project → Functions → Config):
+
+- `SLACK_WEBHOOK_URL`: Incoming Webhook URL (옵션)
+- `SLACK_BOT_TOKEN`: `xoxb-...` Bot 토큰 (옵션)
+- `SLACK_DEFAULT_CHANNEL`: Bot 토큰 사용 시 필수. 예: `#alerts`
+
+위 중 하나의 방식만 선택: Webhook 또는 Bot 토큰(+기본 채널).
+
+2) 함수 배포:
+
+```bash
+supabase functions deploy slack-notify --project-ref $SUPABASE_PROJECT_ID
+```
+
+3) Next.js 서버 환경변수 (API 라우트에서 함수 호출):
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+서버는 `POST ${NEXT_PUBLIC_SUPABASE_URL}/functions/v1/slack-notify` 로 호출하며, `Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}` 를 보냅니다.
+
+4) 확인 사항:
+
+- 멤버십 결제 성공/취소, 일반 결제 저장 시 Slack 메시지 전송
+- 오류 발생 시 level=error로 Slack 전송
+- 메시지가 오지 않으면 Supabase → Logs → Functions에서 함수 로그 확인
+
 ## 배포 자동화
 
 ### GitHub Actions

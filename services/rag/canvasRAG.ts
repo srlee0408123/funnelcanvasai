@@ -20,7 +20,7 @@ import { OpenAIService } from '@/services/openai';
 import { WebSearchService } from '@/services/webSearch';
 import { PerplexityService } from '@/services/perplexity';
 import { BuildContextResult, KnowledgeChunk, KnowledgeCitation, WebCitation } from '@/types/rag';
-import { buildKBOnlySystemPrompt, buildKBAndWebSystemPrompt } from '@/services/rag';
+import { buildSystemPrompt, buildKnowledgeFirstDecisionPrompt } from '@/services/rag';
 
 interface BuildContextParams {
   supabase: any;
@@ -85,7 +85,7 @@ export class CanvasRAGService {
    */
   async decideUseKnowledgeFirst(knowledgeContext: string, userMessage: string): Promise<boolean> {
     try {
-      const system = `당신은 '지식 베이스 활용 극대화 에이전트'입니다. 당신의 임무는 웹 검색(FALSE)을 최소화하고, 주어진 지식(TRUE)을 최대한 활용하도록 유도하는 것입니다.지식 컨텍스트를 사용해서 답변의 '실마리'라도 제공할 수 있다면 무조건 TRUE를 반환하세요. 질문과 컨텍스트의 주제가 완전히 딴판이라 전혀 도움이 되지 않을 때만 FALSE를 반환하세요. 단, 사용자가 '최신' 또는 '실시간' 정보를 명확히 요구할 때는 예외적으로 FALSE를 고려할 수 있습니다. 응답은 반드시 'TRUE' 또는 'FALSE' 한 단어로만 하십시오.`;
+      const system = buildKnowledgeFirstDecisionPrompt();
       const decision = await this.openaiService.chat(system, `지식 컨텍스트:\n${knowledgeContext}\n\n질문:\n${userMessage}`, {
         maxTokens: 4,
         temperature: 0,
@@ -103,9 +103,9 @@ export class CanvasRAGService {
   /**
    * 지식 전용 답변 생성 (웹 검색 금지)
    */
-  async answerFromKnowledgeOnly(params: { knowledgeContext: string; historyText: string; message: string; }): Promise<string> {
+  async answerFromKnowledgeOnly(params: { knowledgeContext: string; historyText: string; message: string; externalInstruction?: string; }): Promise<string> {
     const { knowledgeContext, historyText, message } = params;
-    const system = buildKBOnlySystemPrompt(knowledgeContext, historyText);
+    const system = buildSystemPrompt(knowledgeContext, historyText, params.externalInstruction);
     return this.openaiService.chat(system, message, {
       maxTokens: 2500,
       temperature: 0.2,
@@ -117,7 +117,7 @@ export class CanvasRAGService {
   /**
    * 지식+웹 답변 생성 (Perplexity 에이전트 포함)
    */
-  async answerFromKnowledgeAndWeb(params: { knowledgeContext: string; historyText: string; message: string; webCitations?: WebCitation[]; webContext?: string; }): Promise<{ content: string; webCitations: WebCitation[]; }> {
+  async answerFromKnowledgeAndWeb(params: { knowledgeContext: string; historyText: string; message: string; webCitations?: WebCitation[]; webContext?: string; externalInstruction?: string; }): Promise<{ content: string; webCitations: WebCitation[]; }> {
     const { knowledgeContext, historyText, message } = params;
     
     // console.log('🔄 [답변 생성] 지식+웹 답변 생성 시작');
@@ -139,7 +139,9 @@ export class CanvasRAGService {
     } else {
       // console.log(`♻️ [검색 결과 재사용] 기존 웹 검색 결과 활용 (${webCitations.length}개 인용, ${webContext.length}자 컨텍스트)`);
     }
-    const system = buildKBAndWebSystemPrompt(knowledgeContext, webContext, historyText);
+    // 단일 시스템 프롬프트로 통합: 웹 컨텍스트가 있으면 지식 컨텍스트에 결합
+    const mergedContext = knowledgeContext + (webContext ? `\n\n[웹 검색 결과]\n${webContext}` : '');
+    const system = buildSystemPrompt(mergedContext, historyText, params.externalInstruction);
 
     // Perplexity 우선 시도 (검색+답변)
     try {
