@@ -32,6 +32,7 @@ import { createToastMessage } from "@/lib/messages";
 import { ProfileBadge } from "@/components/Canvas/CanvasHeader";
 import { useProfile } from "@/hooks/useAuth";
 import { ArrowLeft } from "lucide-react";
+import { queryClient } from "@/lib/queryClient";
 
 // 전화번호 노멀라이즈: 숫자만 남기고 010으로 시작하는 11자리 형태 유지
 function normalizeKRPhone(input: string): string {
@@ -159,6 +160,11 @@ export default function Pricing() {
             "default"
           );
           toast(msg);
+          // 결제 성공 시 프로필 즉시 갱신
+          try {
+            await queryClient.invalidateQueries({ queryKey: ['profile'] });
+            await queryClient.refetchQueries({ queryKey: ['profile'] });
+          } catch (_) {}
           // 성공 시 로컬 플래그 제거 및 추가 폴링 중단
           if (typeof window !== 'undefined') {
             try { localStorage.removeItem('upgrade_in_progress'); } catch (_) {}
