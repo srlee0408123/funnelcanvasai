@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorization } from "@/lib/auth/withAuthorization";
 import { createServiceClient } from "@/lib/supabase/service";
-import { countCanvasKnowledge } from '@/lib/planLimits';
+import { isFreePlan, countCanvasKnowledge } from '@/lib/planLimits';
 import { buildChunks } from "@/services/textChunker";
 import { OpenAIService } from "@/services/openai";
 import { extractPdfText } from "@/services/pdf";
@@ -28,7 +28,7 @@ import { extractPdfText } from "@/services/pdf";
 
 const BUCKET_ID = "canvas-assets";
 
-async function handlePost(request: NextRequest, { params }: { params: { workspaceId: string } }) {
+async function handlePost(request: NextRequest, { params, auth }: { params: { workspaceId: string }; auth: { userId: string } }) {
   try {
     const { workspaceId } = params;
     const formData = await request.formData();
@@ -52,16 +52,19 @@ async function handlePost(request: NextRequest, { params }: { params: { workspac
 
     const supabase = createServiceClient();
 
-    // 무료 플랜: 캔버스당 지식 3개 제한 (현재 개수 확인)
+    // 무료 플랜: 캔버스당 지식 3개 제한 (Pro는 제한 없음)
     try {
       if (canvasId) {
-        const count = await countCanvasKnowledge(canvasId);
-        if (count >= 3) {
-          return NextResponse.json({
-            error: '무료 플랜에서는 캔버스당 지식 자료를 3개까지만 업로드할 수 있습니다.',
-            code: 'FREE_PLAN_LIMIT_KNOWLEDGE',
-            limit: 3
-          }, { status: 403 });
+        const free = await isFreePlan(auth.userId);
+        if (free) {
+          const count = await countCanvasKnowledge(canvasId);
+          if (count >= 3) {
+            return NextResponse.json({
+              error: '무료 플랜에서는 캔버스당 지식 자료를 3개까지만 업로드할 수 있습니다.',
+              code: 'FREE_PLAN_LIMIT_KNOWLEDGE',
+              limit: 3
+            }, { status: 403 });
+          }
         }
       }
     } catch (planErr) {

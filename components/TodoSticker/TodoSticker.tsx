@@ -5,6 +5,7 @@ import { Input } from '@/components/Ui/form-controls';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, invalidateCanvasQueries } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { useProfile } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 
 interface TodoItem {
@@ -108,6 +109,8 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { profile } = useProfile();
+  const isPro = profile?.plan === 'pro';
 
   // Fetch todos from API (스티커가 보일 때만 활성화, read-only 모드에서 initialTodos 제공 시 비활성화)
   const { data: todos = [], isLoading } = useQuery<TodoItem[]>({
@@ -170,7 +173,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
   const nodesCount = Array.isArray(latestState?.state?.nodes) ? latestState.state.nodes.length : 0;
   const memosCount = Array.isArray(memos) ? memos.length : 0;
   const totalItems = nodesCount + memosCount + activeTodos.length;
-  const limitReached = totalItems >= 10;
+  const limitReached = !isPro && totalItems >= 10;
 
   // 노드 동기화는 완전히 제거됨
   useEffect(() => {}, []);

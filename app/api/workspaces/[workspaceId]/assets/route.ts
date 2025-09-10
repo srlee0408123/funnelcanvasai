@@ -30,7 +30,7 @@ import { firecrawlService } from "@/services/firecrawl";
 
 const postAsset = async (
   request: NextRequest,
-  { params }: { params: any }
+  { params, auth }: { params: any; auth: { userId: string } }
 ) => {
   try {
     const { workspaceId } = await params;
@@ -59,19 +59,18 @@ const postAsset = async (
 
     const supabase = createServiceClient();
 
-    // 무료 플랜: 캔버스별 지식 업로드 3개 제한
+    // 무료 플랜: 캔버스별 지식 업로드 3개 제한 (Pro는 제한 없음)
     try {
-      const { userId } = (await import('@/lib/auth/withAuthorization')) as any; // not available here; skip direct userId
-    } catch {}
-    try {
-      // 접근 간소화: 현재 캔버스의 기존 지식 수로만 제한 (무료 사용자 방어)
-      const count = await countCanvasKnowledge(canvasId);
-      if (count >= 3) {
-        return NextResponse.json({
-          error: '무료 플랜에서는 캔버스당 지식 자료를 3개까지만 업로드할 수 있습니다.',
-          code: 'FREE_PLAN_LIMIT_KNOWLEDGE',
-          limit: 3
-        }, { status: 403 });
+      const free = await isFreePlan(auth.userId);
+      if (free) {
+        const count = await countCanvasKnowledge(canvasId);
+        if (count >= 3) {
+          return NextResponse.json({
+            error: '무료 플랜에서는 캔버스당 지식 자료를 3개까지만 업로드할 수 있습니다.',
+            code: 'FREE_PLAN_LIMIT_KNOWLEDGE',
+            limit: 3
+          }, { status: 403 });
+        }
       }
     } catch (planErr) {
       console.warn('Knowledge limit check failed:', planErr);
