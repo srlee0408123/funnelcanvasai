@@ -56,6 +56,7 @@ export default function CanvasArea({
 
   // 프로필 정보 가져오기
   const { profile } = useProfile();
+  const isPro = profile?.plan === 'pro';
   
   // Canvas viewport state for zoom and pan (Zustand)
   const viewport = useCanvasStore(s => s.viewport);
@@ -120,6 +121,8 @@ export default function CanvasArea({
   }, [canvas.id, memos.length]);
 
   const ensureNotOverFreeLimit = useCallback(async (adding: number) => {
+    // Pro 플랜은 제한 없음
+    if (isPro) return true;
     const total = await getCurrentTotalItems();
     if (total + adding > MAX_FREE_ITEMS) {
       toast({
@@ -130,7 +133,7 @@ export default function CanvasArea({
       return false;
     }
     return true;
-  }, [getCurrentTotalItems, toast]);
+  }, [getCurrentTotalItems, toast, isPro]);
 
   
   // 임시 메모 처리용 큐/플래그
