@@ -45,17 +45,14 @@ export class CanvasRAGService {
    */
   async buildContext(params: BuildContextParams): Promise<BuildContextResult> {
     const { supabase, canvasId, message, historyText } = params;
-
-    // console.log('🔍 [RAG 시작] 지식 베이스 검색 실행');
+    
     const { matchedChunks, ragSuccess } = await this.searchKnowledge({ supabase, canvasId, message });
-
-    // console.log('📚 [지식 컨텍스트] 캔버스 + 글로벌 지식 구성');
+    
     const knowledgeContext = await this.composeKnowledgeContext({ supabase, canvasId, matchedChunks, ragSuccess });
 
     // 추가: 글로벌 지식 매칭 및 컨텍스트 결합
     const globalContext = await this.composeGlobalKnowledgeContext({ supabase, message });
-
-    // console.log('⚖️ [지식 충분성 판정] 웹 검색 필요 여부 결정');
+    
     // 지식 우선: 충분하면 웹 검색 생략, 부족하면 검색
     const { webCitations, webContext, actionDecision } = await this.maybeSearchWeb(message, {
       ragSuccess,
@@ -111,14 +108,11 @@ export class CanvasRAGService {
   async answerFromKnowledgeAndWeb(params: { knowledgeContext: string; historyText: string; message: string; webCitations?: WebCitation[]; webContext?: string; externalInstruction?: string; }): Promise<{ content: string; webCitations: WebCitation[]; }> {
     const { knowledgeContext, historyText, message } = params;
     
-    // console.log('🔄 [답변 생성] 지식+웹 답변 생성 시작');
-
     // 중복 검색 방지: 기존 검색 결과 재사용, 없으면 최소 조건으로 검색 시도
     let webCitations: WebCitation[] = Array.isArray(params.webCitations) ? params.webCitations : [];
     let webContext: string = typeof params.webContext === 'string' ? params.webContext : '';
 
     if (webContext.length === 0 && webCitations.length === 0) {
-      // console.log('🔍 [중복 검색 방지] 기존 검색 결과 없음, 추가 검색 시도');
       const searched = await this.maybeSearchWeb(message, {
         ragSuccess: false,
         matchedChunks: [],
@@ -127,8 +121,6 @@ export class CanvasRAGService {
       });
       webCitations = searched.webCitations;
       webContext = searched.webContext;
-    } else {
-      // console.log(`♻️ [검색 결과 재사용] 기존 웹 검색 결과 활용 (${webCitations.length}개 인용, ${webContext.length}자 컨텍스트)`);
     }
     // 단일 시스템 프롬프트로 통합: 웹 컨텍스트가 있으면 지식 컨텍스트에 결합
     const mergedContext = knowledgeContext + (webContext ? `\n\n[웹 검색 결과]\n${webContext}` : '');
@@ -234,9 +226,8 @@ export class CanvasRAGService {
         const top = combined.slice(0, 20);
         return { matchedChunks: top, ragSuccess: true };
       }
-    } catch (error) {
+    } catch {
       // RAG 실패는 폴백으로 처리하므로 로깅만 하고 진행
-      console.warn('RAG embedding or match failed:', error);
     }
     return { matchedChunks: [], ragSuccess: false };
   }
@@ -254,7 +245,6 @@ export class CanvasRAGService {
         .in('id', uniqueKnowledgeIds);
 
       if (knowledgeError) {
-        console.error('Error fetching RAG-matched knowledge:', knowledgeError);
         return knowledgeContext;
       }
 
@@ -276,8 +266,6 @@ export class CanvasRAGService {
           const doc = knowledgeById.get(chunk.knowledge_id);
           const docTitle = doc?.title || '지식 항목';
           const similarityPercentage = this.convertToPercentage(chunk.similarity);
-          // console.log(`   ${idx + 1}. [${docTitle}] 유사도: ${similarityPercentage.toFixed(1)}%`);
-          // console.log(`      내용 미리보기: ${chunk.text.substring(0, 100)}...`);
           return `${idx + 1}. [${docTitle}] (유사도: ${similarityPercentage.toFixed(1)}%)\n${chunk.text}`;
         })
         .join('\n\n');
@@ -294,7 +282,6 @@ export class CanvasRAGService {
       .limit(8);
 
     if (fallbackError) {
-      console.error('Error in fallback knowledge retrieval:', fallbackError);
       return knowledgeContext;
     }
 
@@ -347,8 +334,7 @@ export class CanvasRAGService {
       });
 
       return lines.join('\n\n');
-    } catch (e) {
-      console.warn('Global knowledge compose failed:', e);
+    } catch {
       return '';
     }
   }
@@ -361,38 +347,19 @@ export class CanvasRAGService {
       if ((context.globalContext || '').trim().length > 0) parts.push(context.globalContext.trim());
       if ((historyText || '').trim().length > 0) parts.push(`🗣️ 최근 대화 맥락:\n${historyText!.trim()}`);
       const knowledgeSnippet = parts.join('\n\n');
-      console.log('🤖 [액션 결정] 사용자 질문:', message);
-      console.log('📚 [액션 결정] 지식 스니펫 길이:', knowledgeSnippet.length, '자');
-      console.log('📚 [액션 결정] 지식 스니펫 미리보기:', knowledgeSnippet.substring(0, 200) + '...');
       
       const system = buildOptimalActionDecisionPrompt(message, knowledgeSnippet);
       const decisionRaw = await this.openaiService.chat(system, '위 지시에 따라 JSON만 응답하세요.', { maxTokens: 200, temperature: 0 });
       
-      console.log('🔍 [액션 결정] 모델 원본 응답:', decisionRaw);
-      
       let parsed: OptimalActionDecisionResponse | null = null;
       try {
         parsed = JSON.parse(decisionRaw) as OptimalActionDecisionResponse;
-        console.log('✅ [액션 결정] 파싱 성공:', {
-          action: parsed.action,
-          reason: parsed.reason,
-          searchQuery: parsed.searchQuery,
-          clarificationQuestion: parsed.clarificationQuestion
-        });
       } catch (parseError) {
-        console.log('❌ [액션 결정] JSON 파싱 실패, 폴백 로직 실행:', parseError);
-        console.log('🔄 [액션 결정] 지식 충분성으로 대체 판단');
-        
         // JSON 파싱 실패 시 웹 검색 보수적 폴백: 지식 충분성으로 대체 판단
         const hasKnowledge = this.hasSufficientKnowledge(context);
-        console.log('📊 [액션 결정] 지식 충분성 판정:', hasKnowledge);
-        
         if (hasKnowledge) {
-          console.log('✅ [액션 결정] 지식 충분, 웹 검색 생략');
           return { webCitations: [], webContext: '', actionDecision: { action: 'KNOWLEDGE_ONLY', reason: 'Knowledge sufficient by heuristic', searchQuery: null, clarificationQuestion: null } };
         }
-        
-        console.log('🌐 [액션 결정] 지식 부족, 사용자 메시지로 웹 검색 실행');
         // 검색어는 사용자 메시지를 그대로 활용
         const searchResponse = await this.webSearchService.searchWeb(message, 5);
         const webCitations: WebCitation[] = (searchResponse.results || [])
@@ -406,22 +373,18 @@ export class CanvasRAGService {
             relevanceScore: typeof r.relevanceScore === 'number' ? r.relevanceScore : null,
           }));
         const webContext = this.webSearchService.formatSearchResults(searchResponse.results);
-        console.log('🌐 [액션 결정] 폴백 웹 검색 완료:', { citations: webCitations.length, contextLength: webContext.length });
         return { webCitations, webContext, actionDecision: { action: 'WEB_SEARCH', reason: 'JSON parse failed; fallback search by user message', searchQuery: message, clarificationQuestion: null } };
       }
 
       const action: OptimalAction = parsed?.action || 'CLARIFY';
-      console.log('🎯 [액션 결정] 최종 액션:', action);
       
       if (action === 'KNOWLEDGE_ONLY' || action === 'CLARIFY' || action === 'CONVERSATION_SUMMARY' || action === 'KNOWLEDGE_SUMMARY') {
-        console.log('📚 [액션 결정] 지식만 사용 또는 질문 명확화 필요, 웹 검색 생략');
         // Clarify는 상위 호출부에서 후속질문을 유도하도록 처리 가능. 여기서는 검색 생략
         return { webCitations: [], webContext: '', actionDecision: parsed ?? { action, reason: 'Knowledge only/clarify/summary', searchQuery: null, clarificationQuestion: null } };
       }
 
       // WEB_SEARCH: 검색 실행
       const query = (parsed?.searchQuery && parsed.searchQuery.trim().length > 0) ? parsed.searchQuery : message;
-      console.log('🔍 [액션 결정] 웹 검색 실행:', { action, query, originalMessage: message });
       
       const searchResponse = await this.webSearchService.searchWeb(query, 5);
       const webCitations: WebCitation[] = (searchResponse.results || [])
@@ -436,15 +399,8 @@ export class CanvasRAGService {
         }));
 
       const webContext = this.webSearchService.formatSearchResults(searchResponse.results);
-      console.log('🌐 [액션 결정] 웹 검색 완료:', { 
-        action, 
-        citations: webCitations.length, 
-        contextLength: webContext.length,
-        searchQuery: query 
-      });
       return { webCitations, webContext, actionDecision: parsed ?? { action: 'WEB_SEARCH', reason: 'Search executed', searchQuery: query, clarificationQuestion: null } };
-    } catch (error) {
-      console.error('❌ [웹 검색 실패]', error);
+    } catch {
       return { webCitations: [], webContext: '', actionDecision: { action: 'KNOWLEDGE_ONLY', reason: 'Search failed; fallback to knowledge', searchQuery: null, clarificationQuestion: null } };
     }
   }
@@ -517,8 +473,7 @@ export class CanvasRAGService {
               parts.push(globalTexts.join('\n\n'));
             }
           }
-        } catch (e) {
-          console.warn('Global summary context build failed:', e);
+        } catch {
         }
       }
 
@@ -526,8 +481,7 @@ export class CanvasRAGService {
       if ((historyText || '').trim().length > 0) {
         parts.push(`🗣️ 최근 대화 맥락:\n${historyText!.trim()}`);
       }
-    } catch (e) {
-      console.warn('Full summary context build failed:', e);
+    } catch {
     }
 
     return parts.join('\n\n');
@@ -546,15 +500,15 @@ export class CanvasRAGService {
   private hasSufficientKnowledge(context: { ragSuccess: boolean; matchedChunks: KnowledgeChunk[]; knowledgeContext: string; globalContext: string; }): boolean {
     const { ragSuccess, matchedChunks, knowledgeContext, globalContext } = context;
 
-    // console.log('📊 [지식 충분성 판정] 시작');
+    
 
     if (!ragSuccess) {
-      // console.log('❌ [지식 부족] RAG 검색 실패');
+      
       return false;
     }
 
     if (!Array.isArray(matchedChunks) || matchedChunks.length < 3) {
-      // console.log(`❌ [지식 부족] 매칭된 청크 부족 (${matchedChunks.length}개)`);
+      
       return false;
     }
 
@@ -570,14 +524,14 @@ export class CanvasRAGService {
     const totalContextLength = (knowledgeContext || '').length + (globalContext || '').length;
     const hasEnoughContext = totalContextLength >= 300;
 
-    // console.log(`📝 [컨텍스트 분석] 총 길이: ${totalContextLength}자 (최소 300자 필요)`);
+    
 
     const isSufficient = hasHighSimilarity && hasEnoughContext;
 
     if (isSufficient) {
-      // console.log('✅ [지식 충분] 웹 검색 생략 결정');
+      
     } else {
-      // console.log('❌ [지식 부족] 웹 검색 필요');
+      
     }
 
     return isSufficient;
