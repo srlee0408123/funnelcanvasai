@@ -6,7 +6,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/Ui/buttons";
 import { Input, Textarea, Label } from "@/components/Ui/form-controls";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/Ui/layout";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/Ui/data-display";
+import { Tabs, TabsContent, TabsList, TabsTrigger, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/Ui/data-display";
 import { Brain } from "lucide-react";
 import Link from "next/link";
 import UploadButtons from "@/components/Admin/UploadButtons";
@@ -36,6 +36,71 @@ export default function AdminClient() {
   const [uploadType, setUploadType] = useState<"pdf" | "youtube" | "url" | "text">("pdf");
   
   const { toast } = useToast();
+
+  // Users tab state
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersLimit] = useState(10);
+  const [appliedQuery, setAppliedQuery] = useState("");
+  const [appliedPlan, setAppliedPlan] = useState<"all" | "free" | "pro">("all");
+  type UsersApiResponse = { success: boolean; data: any[]; page: number; limit: number; total: number; totalPages: number } | null;
+  const { data: usersPayload, refetch: refetchUsers, isLoading: isUsersLoading } = useQuery<UsersApiResponse>({
+    queryKey: ["/api/admin/users", usersPage, usersLimit, appliedQuery, appliedPlan],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("page", String(usersPage));
+      params.set("limit", String(usersLimit));
+      if (appliedQuery) params.set("q", appliedQuery);
+      if (appliedPlan !== "all") params.set("plan", appliedPlan);
+      const res = await apiRequest("GET", `/api/admin/users?${params.toString()}`);
+      const json = await res.json();
+      return json;
+    },
+    enabled: activeTab === "users",
+    // keepPreviousData avoids UI flicker when moving pages
+    // and makes pagination smoother
+    // @ts-ignore
+    keepPreviousData: true,
+  });
+  const usersMeta = usersPayload as any;
+  const usersData = Array.isArray(usersMeta?.data) ? usersMeta.data : [];
+
+  useEffect(() => {
+    if (activeTab === "users") {
+      refetchUsers();
+    }
+  }, [activeTab, refetchUsers]);
+
+  // When page or applied filters change and users tab is active, refetch
+  useEffect(() => {
+    if (activeTab === "users") {
+      refetchUsers();
+    }
+  }, [usersPage, usersLimit, appliedQuery, appliedPlan, activeTab, refetchUsers]);
+
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ userId, updates }: { userId: string; updates: any }) => {
+      const res = await apiRequest("PATCH", `/api/admin/users/${userId}`, updates);
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "사용자 정보가 업데이트되었습니다." });
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      refetchUsers();
+    },
+    onError: () => {
+      toast({ title: "업데이트 실패", description: "사용자 업데이트 중 오류가 발생했습니다.", variant: "destructive" });
+    }
+  });
+
+  // Filters for Users tab
+  const [userQuery, setUserQuery] = useState("");
+  const [userPlan, setUserPlan] = useState<"all" | "free" | "pro">("all");
+
+  const handleSearchUsers = () => {
+    setAppliedQuery(userQuery.trim());
+    setAppliedPlan(userPlan);
+    setUsersPage(1);
+  };
 
   // RAG 프롬프트 목록 로드
   const { data: ragPrompts = [], refetch: refetchRagPrompts, isLoading: isRagLoading } = useQuery<any[]>({
@@ -255,7 +320,105 @@ export default function AdminClient() {
                 <CardTitle>사용자 관리</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-gray-600">사용자 목록 및 관리 기능이 여기에 표시됩니다.</p>
+                <div className="mb-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="col-span-1 md:col-span-2 flex items-center space-x-2">
+                    <Input
+                      placeholder="이메일 검색"
+                      value={userQuery}
+                      onChange={(e) => {
+                        setUserQuery(e.target.value);
+                        setAppliedQuery(e.target.value.trim());
+                        setUsersPage(1);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <Select value={userPlan} onValueChange={(v: any) => { setUserPlan(v); setAppliedPlan(v); setUsersPage(1); }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="플랜" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">모든 플랜</SelectItem>
+                        <SelectItem value="free">free</SelectItem>
+                        <SelectItem value="pro">pro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center justify-end">
+                    <Button variant="outline" size="sm" onClick={() => refetchUsers()}>새로고침</Button>
+                  </div>
+                </div>
+                {
+                  isUsersLoading ? (
+                    <div className="text-sm text-gray-500">불러오는 중...</div>
+                  ) : usersData.length === 0 ? (
+                    <div className="text-sm text-gray-500">사용자가 없습니다.</div>
+                  ) : (
+                    <div className="overflow-x-auto text-xs">
+                      <Table className="text-xs">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>이메일</TableHead>
+                            <TableHead>전화번호(마스킹)</TableHead>
+                            <TableHead>플랜</TableHead>
+                            <TableHead>가입일</TableHead>
+                            <TableHead>멤버십 상태</TableHead>
+                            <TableHead>현재 기간 시작</TableHead>
+                            <TableHead>현재 기간 종료</TableHead>
+                            <TableHead>다음 갱신 예정</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {usersData.map((u: any) => (
+                            <TableRow key={u.email}>
+                              <TableCell className="font-mono text-[11px]">{u.email}</TableCell>
+                              <TableCell className="text-[11px] whitespace-nowrap">{u.phoneMasked || '-'}</TableCell>
+                              <TableCell className="w-32">
+                                <Select
+                                  defaultValue={u.plan || 'free'}
+                                  onValueChange={(value) => updateUserMutation.mutate({ userId: u.id, updates: { plan: value } })}
+                                  disabled={updateUserMutation.isPending}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="플랜 선택" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="free">free</SelectItem>
+                                    <SelectItem value="pro">pro</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell className="text-[11px] whitespace-nowrap">{u.createdAt ? new Date(u.createdAt).toLocaleDateString('ko-KR') : '-'}</TableCell>
+                              <TableCell className="text-[11px] whitespace-nowrap">{u.membership?.status || '-'}</TableCell>
+                              <TableCell className="text-[11px] whitespace-nowrap">{u.membership?.current_period_start ? new Date(u.membership.current_period_start).toLocaleString('ko-KR') : '-'}</TableCell>
+                              <TableCell className="text-[11px] whitespace-nowrap">{u.membership?.current_period_end ? new Date(u.membership.current_period_end).toLocaleString('ko-KR') : '-'}</TableCell>
+                              <TableCell className="text-[11px] whitespace-nowrap">{u.membership?.next_renewal_at ? new Date(u.membership.next_renewal_at).toLocaleString('ko-KR') : '-'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      <div className="flex items-center justify-between mt-3">
+                        <div className="text-[11px] text-gray-500">
+                          페이지 {(usersMeta && usersMeta.page) || 1} / {(usersMeta && usersMeta.totalPages) || 1} · 총 {(usersMeta && usersMeta.total) || 0}명
+                        </div>
+                        <div className="space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={((usersMeta && usersMeta.page) || 1) <= 1 || isUsersLoading}
+                            onClick={() => { setUsersPage((p) => Math.max(1, p - 1)); }}
+                          >이전</Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={((usersMeta && usersMeta.page) || 1) >= ((usersMeta && usersMeta.totalPages) || 1) || isUsersLoading}
+                            onClick={() => { setUsersPage((p) => p + 1); }}
+                          >다음</Button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
               </CardContent>
             </Card>
           </TabsContent>
@@ -476,6 +639,67 @@ export default function AdminClient() {
           isGlobalKnowledge={true}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * InlinePhoneEdit - 전화번호 인라인 편집 컴포넌트(관리자 전용)
+ * 
+ * 주요 역할:
+ * 1. 마스킹된 전화번호를 표시하고, 편집 버튼 클릭 시 입력 필드로 전환
+ * 2. 한국 표준형(010XXXXXXXX) 유효성 검사 후 저장 트리거
+ * 3. 저장 시 원본 번호는 네트워크 응답에 포함하지 않고(서버에서 마스킹) UI만 갱신
+ */
+function InlinePhoneEdit({
+  userId,
+  phoneMasked,
+  onSave,
+  saving,
+}: {
+  userId: string;
+  phoneMasked: string | null;
+  onSave: (phoneNumber: string) => void;
+  saving?: boolean;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const validate = (raw: string): boolean => {
+    const digits = (raw || '').replace(/\D/g, '');
+    const normalized = digits.length === 8 ? `010${digits}` : digits.startsWith('010') ? digits.slice(0, 11) : digits;
+    const ok = /^010\d{8}$/.test(normalized);
+    setError(ok ? null : '형식: 010XXXXXXXX');
+    return ok;
+  };
+
+  const handleSave = () => {
+    if (!validate(value)) return;
+    onSave(value);
+    setIsEditing(false);
+  };
+
+  if (!isEditing) {
+    return (
+      <div className="flex items-center space-x-2">
+        <span className="text-sm text-gray-700">{phoneMasked || '-'}</span>
+        <Button variant="outline" size="sm" onClick={() => { setIsEditing(true); setValue(''); }} disabled={saving}>수정</Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center space-x-2">
+      <Input
+        placeholder="010XXXXXXXX"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="w-40"
+      />
+      <Button variant="outline" size="sm" onClick={() => setIsEditing(false)} disabled={saving}>취소</Button>
+      <Button variant="outline" size="sm" onClick={handleSave} disabled={saving}>저장</Button>
+      {error && <span className="text-xs text-red-600 ml-1">{error}</span>}
     </div>
   );
 }
