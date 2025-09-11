@@ -17,6 +17,7 @@ export const POST = withAdmin(async (req, { auth }) => {
     const body = await req.json()
     const name = String(body?.name || '').trim()
     const content = String(body?.content || '').trim()
+    const description = typeof body?.description === 'string' ? String(body.description) : undefined
     const is_active = typeof body?.is_active === 'boolean' ? body.is_active : true
     const version = Number.isFinite(Number(body?.version)) ? Number(body.version) : 1
 

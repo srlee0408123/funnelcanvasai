@@ -91,28 +91,33 @@ export default function AdminClient() {
   const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [editingContent, setEditingContent] = useState("");
+  const [editingDescription, setEditingDescription] = useState("");
 
   const handleStartEdit = (p: any) => {
     setEditingPromptId(p.id);
     setEditingName(String(p.name || ""));
     setEditingContent(String(p.content || ""));
+    setEditingDescription(String(p.description || ""));
   };
 
   const handleCancelEdit = () => {
     setEditingPromptId(null);
     setEditingName("");
     setEditingContent("");
+    setEditingDescription("");
   };
 
   const handleSaveEdit = async () => {
     if (!editingPromptId) return;
     await (updatePromptMutation as any).mutateAsync({
       id: editingPromptId,
-      updates: { name: editingName.trim(), content: editingContent.trim() }
+      // 이름 변경 금지: content만 업데이트
+      updates: { content: editingContent.trim(), description: editingDescription.trim() }
     });
     setEditingPromptId(null);
     setEditingName("");
     setEditingContent("");
+    setEditingDescription("");
   };
 
   // Fetch admin stats
@@ -367,8 +372,8 @@ export default function AdminClient() {
                                   <Input
                                     id={`editName-${p.id}`}
                                     value={editingName}
-                                    onChange={(e) => setEditingName(e.target.value)}
-                                    className="w-full"
+                                    disabled
+                                    className="w-full bg-gray-100 cursor-not-allowed"
                                   />
                                 </div>
                                 <div>
@@ -379,6 +384,17 @@ export default function AdminClient() {
                                     onChange={(e) => setEditingContent(e.target.value)}
                                     rows={10}
                                     className="w-full resize-none"
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor={`editDescription-${p.id}`}>설명 (관리자용)</Label>
+                                  <Textarea
+                                    id={`editDescription-${p.id}`}
+                                    value={editingDescription}
+                                    onChange={(e) => setEditingDescription(e.target.value)}
+                                    rows={4}
+                                    className="w-full resize-none"
+                                    placeholder="이 프롬프트의 의도/사용 상황/주의사항 등을 정리하세요."
                                   />
                                 </div>
                               </div>
@@ -396,6 +412,9 @@ export default function AdminClient() {
                                     <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">비활성</span>
                                   )}
                                 </div>
+                                {p.description && (
+                                  <p className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{String(p.description)}</p>
+                                )}
                                 <pre className="text-sm text-gray-700 whitespace-pre-wrap mt-2">{String(p.content || '').substring(0, 400)}</pre>
                                 <div className="text-xs text-gray-500 mt-1">버전 {p.version} · 업데이트 {new Date(p.updated_at).toLocaleString('ko-KR')}</div>
                               </div>

@@ -13,6 +13,7 @@ export const PATCH = withAdmin(async (req, { auth }) => {
     const updates: any = {}
     if (typeof body?.name === 'string') updates.name = String(body.name)
     if (typeof body?.content === 'string') updates.content = String(body.content)
+    if (typeof body?.description === 'string') updates.description = String(body.description)
     if (typeof body?.is_active === 'boolean') updates.is_active = Boolean(body.is_active)
     if (Number.isFinite(Number(body?.version))) updates.version = Number(body.version)
 

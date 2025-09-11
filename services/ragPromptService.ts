@@ -18,6 +18,7 @@ export type RagPrompt = {
   id: string
   name: string
   content: string
+  description?: string
   is_active: boolean
   version: number
   created_by: string | null
@@ -44,6 +45,22 @@ export class RagPromptService {
     return content
   }
 
+  /** 이름으로 프롬프트 content 조회 (정확 일치). 없으면 빈 문자열 */
+  async getInstructionByName(name: string): Promise<string> {
+    const { data, error } = await (this.supabase as any)
+      .from('rag_prompts')
+      .select('content')
+      .eq('name', name)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+    if (error) {
+      console.error('Failed to load rag prompt by name:', name, error)
+      return ''
+    }
+    const content = Array.isArray(data) && data[0]?.content ? String(data[0].content) : ''
+    return content
+  }
+
   /** 목록 조회 (관리자용) */
   async list(): Promise<RagPrompt[]> {
     const { data, error } = await (this.supabase as any)
@@ -55,6 +72,7 @@ export class RagPromptService {
       id: String(d.id),
       name: String(d.name),
       content: String(d.content),
+      description: d.description ? String(d.description) : undefined,
       is_active: Boolean(d.is_active),
       version: Number(d.version || 1),
       created_by: d.created_by ? String(d.created_by) : null,
@@ -82,6 +100,7 @@ export class RagPromptService {
       id: String(data.id),
       name: String(data.name),
       content: String(data.content),
+      description: data.description ? String(data.description) : undefined,
       is_active: Boolean(data.is_active),
       version: Number(data.version || 1),
       created_by: data.created_by ? String(data.created_by) : null,
@@ -93,7 +112,7 @@ export class RagPromptService {
   /** 업데이트 (관리자용) */
   async update(
     id: string,
-    params: Partial<Pick<RagPrompt, 'name' | 'content' | 'version'>>,
+    params: Partial<Pick<RagPrompt, 'name' | 'content' | 'version' | 'description'>>,
     changedBy?: string
   ): Promise<RagPrompt> {
     // 이전 값 조회 (로그용)
@@ -137,6 +156,7 @@ export class RagPromptService {
       id: String(data.id),
       name: String(data.name),
       content: String(data.content),
+      description: data.description ? String(data.description) : undefined,
       is_active: Boolean(data.is_active),
       version: Number(data.version || 1),
       created_by: data.created_by ? String(data.created_by) : null,
