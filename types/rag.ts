@@ -52,6 +52,12 @@ export interface BuildContextResult {
   webCitations: WebCitation[];
   webContext: string;
   ragUsed: RAGUsedMeta;
+  actionDecision?: {
+    action: 'KNOWLEDGE_ONLY' | 'WEB_SEARCH' | 'CLARIFY' | 'CONVERSATION_SUMMARY' | 'KNOWLEDGE_SUMMARY';
+    reason?: string;
+    searchQuery?: string | null;
+    clarificationQuestion?: string | null;
+  };
 }
 
 

@@ -6,7 +6,10 @@ import type {
 } from "@/components/Ui/notifications"
 
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+// 토스트가 닫힌 뒤 실제 상태에서 제거되기까지의 지연 (애니메이션 고려)
+const TOAST_REMOVE_DELAY = 1000
+// 기본 토스트 표시 시간 (자동 닫힘)
+const DEFAULT_TOAST_DURATION_MS = 4000
 
 type ToasterToast = ToastProps & {
   id: string
@@ -154,6 +157,8 @@ function toast({ ...props }: Toast) {
     toast: {
       ...props,
       id,
+      // 개별 토스트에 duration이 지정되지 않았다면 기본값 적용
+      duration: (props as any).duration ?? DEFAULT_TOAST_DURATION_MS,
       open: true,
       onOpenChange: (open) => {
         if (!open) dismiss()
@@ -179,7 +184,7 @@ function useToast() {
         listeners.splice(index, 1)
       }
     }
-  }, [state])
+  }, [])
 
   return {
     ...state,
