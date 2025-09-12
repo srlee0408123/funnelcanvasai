@@ -460,6 +460,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       
       // 낙관적 삭제: 즉시 UI에서 제거
       setPendingOperations(prev => new Set([...prev, `delete-${id}`]));
+      setOptimisticTodos(prev => prev.filter(t => t.id !== id));
       
       return { previousTodos, todoToDelete };
     },
