@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Plus, Check, Trash2, ChevronDown, ChevronUp, Circle } from 'lucide-react';
+import { X, Plus, Check, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/Ui/buttons';
 import { Input } from '@/components/Ui/form-controls';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -460,6 +460,7 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
       
       // 낙관적 삭제: 즉시 UI에서 제거
       setPendingOperations(prev => new Set([...prev, `delete-${id}`]));
+      setOptimisticTodos(prev => prev.filter(t => t.id !== id));
       
       return { previousTodos, todoToDelete };
     },
@@ -845,7 +846,6 @@ export default function TodoSticker({ canvasId, onHide, isReadOnly = false, init
                             />
                           ) : (
                             <div className="flex items-center gap-2 flex-1">
-                              <Circle className="w-3 h-3 text-amber-600 flex-shrink-0" />
                               <span 
                                 className="text-sm todo-text-primary cursor-pointer hover:bg-amber-100 px-2 py-1 rounded-lg transition-colors flex-1"
                                 onDoubleClick={() => startEditing(todo)}

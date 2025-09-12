@@ -270,9 +270,9 @@ export function CanvasHeader({
       <div className="flex items-center justify-between group">
         <div className="flex items-center space-x-4">
           <Link
-            href="/"
+            href={`/workspace/${canvas.workspaceId}`}
             className="p-2 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-colors"
-            title="워크스페이스로 돌아가기"
+            title="워크스페이스의 캔버스 목록으로 돌아가기"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
