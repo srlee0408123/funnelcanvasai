@@ -54,8 +54,29 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   const [showNodeDetails, setShowNodeDetails] = useState(false);
   const [selectedNodeDetails, setSelectedNodeDetails] = useState<FlowNode | null>(null);
   
-  // Todo sticker state
-  const [showTodoSticker, setShowTodoSticker] = useState(true);
+  // Todo sticker state - 기본은 닫힘. 사용자 설정을 localStorage에서 복원
+  const [showTodoSticker, setShowTodoSticker] = useState(false);
+
+  // 첫 로드 시 저장된 가시성 상태 복원 (캔버스별)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`todo-visible-${canvas.id}`);
+      if (stored !== null) {
+        setShowTodoSticker(stored === 'true');
+      }
+    } catch (_) {
+      // ignore storage errors
+    }
+  }, [canvas.id]);
+
+  // 상태 변경 시 저장
+  useEffect(() => {
+    try {
+      localStorage.setItem(`todo-visible-${canvas.id}`, String(showTodoSticker));
+    } catch (_) {
+      // ignore storage errors
+    }
+  }, [showTodoSticker, canvas.id]);
   
   // Chat sidebar state - 기본은 닫힌 상태로 시작
   const [chatCollapsed, setChatCollapsed] = useState(true);
