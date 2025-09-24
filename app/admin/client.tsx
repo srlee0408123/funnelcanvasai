@@ -14,6 +14,7 @@ import KnowledgeList from "@/components/Admin/KnowledgeList";
 import UploadModal from "@/components/Modals/UploadModal";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
+import { DEFAULT_ONBOARDING_SYSTEM_PROMPT } from "@/services/onboardingPrompt";
 
 interface AdminStats {
   totalUsers: number;
@@ -111,6 +112,45 @@ export default function AdminClient() {
       return Array.isArray(json?.data) ? json.data : [];
     },
     enabled: false,
+  });
+  // 온보딩 프롬프트 편집 상태
+  const [onboardingContent, setOnboardingContent] = useState("");
+  const [onboardingInitial, setOnboardingInitial] = useState("");
+
+  // ragPrompts 로드 시 온보딩 프롬프트 내용 초기화
+  useEffect(() => {
+    const onboarding = (ragPrompts as any[])?.find((p) => String(p.name) === "ONBOARDING_SYSTEM_PROMPT");
+    const content = String(onboarding?.content || DEFAULT_ONBOARDING_SYSTEM_PROMPT || "");
+    setOnboardingContent(content);
+    setOnboardingInitial(content);
+  }, [ragPrompts]);
+
+  // 온보딩 프롬프트 저장 (있으면 PATCH, 없으면 POST) - UI는 "편집만" 노출
+  const saveOnboardingPromptMutation = useMutation({
+    mutationFn: async () => {
+      const onboarding = (ragPrompts as any[])?.find((p) => String(p.name) === "ONBOARDING_SYSTEM_PROMPT");
+      if (onboarding && onboarding.id) {
+        const res = await apiRequest("PATCH", `/api/admin/rag-prompts/${onboarding.id}`, {
+          content: onboardingContent,
+        });
+        return res.json();
+      }
+      const res = await apiRequest("POST", "/api/admin/rag-prompts", {
+        name: "ONBOARDING_SYSTEM_PROMPT",
+        content: onboardingContent,
+        is_active: true,
+        version: 1,
+      });
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({ title: "온보딩 프롬프트가 저장되었습니다." });
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/rag-prompts"] });
+      refetchRagPrompts();
+    },
+    onError: () => {
+      toast({ title: "저장 실패", description: "온보딩 프롬프트 저장 중 오류가 발생했습니다.", variant: "destructive" });
+    }
   });
 
   // 선택된 프롬프트 로그 (최신 10개)
@@ -492,6 +532,46 @@ export default function AdminClient() {
                 </div>
                 {/* 생성 버튼 제거 */}
               </div>
+
+              {/* 온보딩 프롬프트 빠른 액세스/생성 섹션 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Brain className="h-5 w-5 mr-2 text-emerald-600" />
+                    온보딩 프롬프트
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* 현재 사용 중인 프롬프트를 그대로 편집만 가능 */}
+                  <div className="space-y-3">
+                    <Textarea
+                      value={onboardingContent}
+                      onChange={(e) => setOnboardingContent(e.target.value)}
+                      rows={12}
+                      className="w-full resize-none"
+                    />
+                    <div className="flex items-center justify-end space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setOnboardingContent(onboardingInitial)}
+                        disabled={saveOnboardingPromptMutation.isPending}
+                      >
+                        되돌리기
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => (saveOnboardingPromptMutation as any).mutate()}
+                        disabled={saveOnboardingPromptMutation.isPending || !onboardingContent.trim()}
+                      >
+                        저장
+                      </Button>
+                    </div>
+                    <div className="text-xs text-gray-500">현재 탭에서 편집한 내용이 온보딩 시스템에 즉시 반영됩니다.</div>
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* 시스템 프롬프트만 표시 (설정 섹션 제거) */}
               <Card>

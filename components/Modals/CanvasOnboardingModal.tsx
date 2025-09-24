@@ -138,7 +138,7 @@ export default function CanvasOnboardingModal(props: CanvasOnboardingModalProps)
             </div>
 
             <div className="flex items-center justify-between">
-              <div className="text-xs text-gray-500">대화가 충분히 정리되면 AI가 &quot;노드를 생성할까요?&quot;라고 물어봅니다.</div>
+              <div className="text-xs text-gray-500">대화가 충분히 정리되면 AI가 &quot;노드를 생성할까요?&quot;라고 물어봅니다. 또는 노드를 생성을 요청해주세요. </div>
               <div className="flex items-center gap-2">
                 <Button onClick={onFinalize} disabled={isFinalizing || !assistantSuggestedFinalize} variant={assistantSuggestedFinalize ? 'default' : 'outline'}>
                   대화 종료 & 초안 만들기
