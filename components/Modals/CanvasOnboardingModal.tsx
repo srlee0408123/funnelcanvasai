@@ -20,7 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/Ui/buttons';
 
-type Step = 'intro' | 'chat' | 'summary';
+type Step = 'intro' | 'chat';
 
 interface ChatMessageProps {
   role: 'user' | 'assistant';
@@ -43,18 +43,13 @@ interface CanvasOnboardingModalProps {
   assistantSuggestedFinalize: boolean;
   onFinalize: () => void;
   isFinalizing: boolean;
-
-  summary: string;
-  isCreateEnabled: boolean;
-  onCreateDraft: () => void;
 }
 
 export default function CanvasOnboardingModal(props: CanvasOnboardingModalProps) {
   const {
     isOpen, step, onClose, onSkip, onStartChat,
     messages, inputText, onChangeInput, onSendMessage, isSending, isTyping,
-    assistantSuggestedFinalize, onFinalize, isFinalizing,
-    summary, isCreateEnabled, onCreateDraft
+    assistantSuggestedFinalize, onFinalize, isFinalizing
   } = props;
 
   const [isComposing, setIsComposing] = useState(false);
@@ -151,17 +146,7 @@ export default function CanvasOnboardingModal(props: CanvasOnboardingModalProps)
           </div>
         )}
 
-        {step === 'summary' && (
-          <div className="space-y-4 flex-1 min-h-0 flex flex-col">
-            <div className="border rounded-md p-3 bg-white flex-1 min-h-0 overflow-y-auto">
-              <pre className="whitespace-pre-wrap text-sm">{summary || '요약이 없습니다.'}</pre>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button onClick={onCreateDraft} disabled={!isCreateEnabled}>초안 노드 생성</Button>
-              <Button variant="outline" onClick={onClose}>닫기</Button>
-            </div>
-          </div>
-        )}
+        {/* summary 단계 제거: finalize 시 즉시 적용 */}
       </DialogContent>
     </Dialog>
   );

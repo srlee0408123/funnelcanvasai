@@ -10,7 +10,9 @@ import {
   Minus,
   Save,
   Loader2,
+  Trash2,
 } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import {useMemo, useState, useCallback } from "react";
 import type { Canvas, CanvasState } from "@shared/schema";
 import { Crown, User, ChevronDown, LogOut } from "lucide-react";
@@ -201,6 +203,9 @@ export interface CanvasHeaderProps {
   lastSavedAt?: number | null;
   isSaving?: boolean;
   profile?: ProfileInfo | null;
+  canDelete?: boolean;
+  onDeleteCanvas?: () => void;
+  onOpenOnboarding?: () => void;
 }
 
 export function CanvasHeader({
@@ -216,6 +221,9 @@ export function CanvasHeader({
   lastSavedAt,
   isSaving = false,
   profile,
+  canDelete,
+  onDeleteCanvas,
+  onOpenOnboarding,
 }: CanvasHeaderProps) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState("");
@@ -335,6 +343,17 @@ export function CanvasHeader({
             <Button
               variant="ghost"
               size="sm"
+              onClick={onOpenOnboarding}
+              title="온보딩 도움 받기"
+              className="hover:bg-blue-50 hover:text-blue-600"
+            >
+              <Sparkles className="h-4 w-4" />
+            </Button>
+          )}
+          {!isReadOnly && (
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={onOpenCreateNode}
               title="노드 추가"
               className="hover:bg-blue-50 hover:text-blue-600"
@@ -405,6 +424,20 @@ export function CanvasHeader({
             </Button>
           </div>
           <div className="w-px h-6 bg-gray-200"></div>
+          {!isReadOnly && canDelete && onDeleteCanvas && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onDeleteCanvas}
+                title="캔버스 삭제"
+                className="hover:bg-red-50 hover:text-red-600"
+              >
+                <Trash2 className="h-4 w-4 text-red-500" />
+              </Button>
+              <div className="w-px h-6 bg-gray-200"></div>
+            </>
+          )}
           {/* 프로필 정보 표시 */}
           <ProfileBadge profile={profile} />
         </div>

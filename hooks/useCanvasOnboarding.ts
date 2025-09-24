@@ -2,9 +2,9 @@
  * useCanvasOnboarding - 캔버스 최초 온보딩(초기 AI 가이드) 상태 관리 훅
  * 
  * 주요 역할:
- * 1. 온보딩 모달 열림/단계(intro/chat/summary) 상태 관리
- * 2. AI 대화(chat) 진행 및 종료(finalize) 후 초안 Flow 수신
- * 3. 초안 Flow를 캔버스에 적용(setNodes/setEdges)
+ * 1. 온보딩 모달 열림/단계(intro/chat) 상태 관리
+ * 2. AI 대화(chat) 진행 및 종료(finalize) 시 즉시 노드/엣지 적용
+ * 3. 적용 즉시 모달 닫기 및 저장 훅이 자동 감지
  * 
  * 핵심 특징:
  * - LocalStorage 플래그로 최초 1회 모달 자동 표시 제어(onboarding-shown-<canvasId>)
@@ -20,7 +20,7 @@ import { canvasOnboardingService, type OnboardingChatMessage } from '@/services/
 import { useCanvasStore } from '@/hooks/useCanvasStore';
 import type { FlowNode, FlowEdge } from '@/types/canvas';
 
-type Step = 'intro' | 'chat' | 'summary';
+type Step = 'intro' | 'chat';
 
 interface UseCanvasOnboardingOptions {
   autoOpenIfFirstTime?: boolean;
@@ -48,10 +48,7 @@ export function useCanvasOnboarding(canvasId: string, options: UseCanvasOnboardi
   const [isTyping, setIsTyping] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [assistantSuggestedFinalize, setAssistantSuggestedFinalize] = useState(false);
-  const [summary, setSummary] = useState('');
-  const [draftNodes, setDraftNodes] = useState<FlowNode[]>([]);
-  const [draftEdges, setDraftEdges] = useState<FlowEdge[]>([]);
-  const [isCreateEnabled, setIsCreateEnabled] = useState(false);
+  // 요약/초안 중간 단계 제거: 바로 적용
 
   const setNodes = useCanvasStore((s) => s.setNodes);
   const setEdges = useCanvasStore((s) => s.setEdges);
@@ -129,38 +126,20 @@ export function useCanvasOnboarding(canvasId: string, options: UseCanvasOnboardi
     setIsFinalizing(true);
     try {
       const result = await canvasOnboardingService.finalize(canvasId, messages);
-      setSummary(result.summary || '');
-      setDraftNodes(result.flow.nodes || []);
-      setDraftEdges(result.flow.edges || []);
-      setIsCreateEnabled(true);
-      setStep('summary');
-      // 스크롤 하단 이동 (요약 화면에서도 보장)
-      try {
-        const el = document.getElementById('onboarding-chat-scroll');
-        if (el) {
-          el.scrollTop = el.scrollHeight;
-        }
-      } catch {}
+      const nodes = result.flow.nodes || [];
+      const edges = result.flow.edges || [];
+      setNodes(nodes);
+      setEdges(edges);
+      markShown();
+      setIsOpen(false);
     } catch (err) {
-      setSummary('초안 생성에 실패했습니다. 메시지를 조금 더 구체화한 뒤 다시 시도해 주세요.');
-      setDraftNodes([]);
-      setDraftEdges([]);
-      setIsCreateEnabled(false);
-      setStep('summary');
+      setMessages((prev) => [...prev, { role: 'assistant', content: '초안 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.' }]);
     } finally {
       setIsFinalizing(false);
     }
-  }, [canvasId, messages, isFinalizing]);
+  }, [isFinalizing, canvasId, messages, setNodes, setEdges, markShown]);
 
-  const applyDraftToCanvas = useCallback(() => {
-    if (!isCreateEnabled) return false;
-    // 기본 동작: 기존 상태를 초안으로 대체(최초 캔버스 가정)
-    setNodes(draftNodes);
-    setEdges(draftEdges);
-    markShown();
-    setIsOpen(false);
-    return true;
-  }, [isCreateEnabled, draftNodes, draftEdges, setNodes, setEdges, markShown]);
+  // 중간 적용 단계 제거로 불필요
 
   return {
     // modal
@@ -183,11 +162,7 @@ export function useCanvasOnboarding(canvasId: string, options: UseCanvasOnboardi
     // finalize
     isFinalizing,
     finalize,
-    summary,
-    draftNodes,
-    draftEdges,
-    isCreateEnabled,
-    applyDraftToCanvas,
+    // 즉시 적용 구조로 요약/초안 상태는 제공하지 않음
   } as const;
 }
 

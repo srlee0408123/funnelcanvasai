@@ -100,14 +100,20 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
     sendMessage: sendOnboardingMessage,
     isFinalizing: isOnboardingFinalizing,
     finalize: finalizeOnboarding,
-    summary: onboardingSummary,
-    isCreateEnabled: isOnboardingCreateEnabled,
-    applyDraftToCanvas,
   } = useCanvasOnboarding(canvas.id, {
     autoOpenIfFirstTime: true,
     canEdit,
     hasInitialState: Boolean(((canvasState as any)?.state?.nodes?.length) || 0),
   });
+
+  // 헤더의 온보딩 버튼 클릭 시 모달 오픈 이벤트 연결
+  useEffect(() => {
+    const handler = () => {
+      try { openOnboarding(); } catch {}
+    };
+    window.addEventListener('open-onboarding', handler as any);
+    return () => window.removeEventListener('open-onboarding', handler as any);
+  }, [openOnboarding]);
 
   // Handlers - Canvas.tsx와 동일한 구조
   const handleNodeSelect = (nodeId: string) => {
@@ -297,9 +303,6 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
           assistantSuggestedFinalize={assistantSuggestedFinalize}
           onFinalize={finalizeOnboarding}
           isFinalizing={isOnboardingFinalizing}
-          summary={onboardingSummary}
-          isCreateEnabled={isOnboardingCreateEnabled}
-          onCreateDraft={applyDraftToCanvas}
         />
       )}
     </div>

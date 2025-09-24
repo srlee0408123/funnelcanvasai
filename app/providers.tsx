@@ -9,7 +9,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} forcedTheme="light">
-        <TooltipProvider>
+        <TooltipProvider delayDuration={50} skipDelayDuration={0}>
           {children}
           <Toaster />
         </TooltipProvider>
