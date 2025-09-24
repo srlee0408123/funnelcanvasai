@@ -1,0 +1,194 @@
+/**
+ * useCanvasOnboarding - 캔버스 최초 온보딩(초기 AI 가이드) 상태 관리 훅
+ * 
+ * 주요 역할:
+ * 1. 온보딩 모달 열림/단계(intro/chat/summary) 상태 관리
+ * 2. AI 대화(chat) 진행 및 종료(finalize) 후 초안 Flow 수신
+ * 3. 초안 Flow를 캔버스에 적용(setNodes/setEdges)
+ * 
+ * 핵심 특징:
+ * - LocalStorage 플래그로 최초 1회 모달 자동 표시 제어(onboarding-shown-<canvasId>)
+ * - 서비스 계층(canvasOnboardingService)로 API 호출 분리
+ * - 간단한 규칙으로 종료 질문("노드를 생성할까요?") 감지
+ * 
+ * 주의사항:
+ * - 저장은 CanvasArea의 useCanvasSync가 감지하여 처리(본 훅은 setNodes/setEdges만 수행)
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { canvasOnboardingService, type OnboardingChatMessage } from '@/services/canvasOnboardingService';
+import { useCanvasStore } from '@/hooks/useCanvasStore';
+import type { FlowNode, FlowEdge } from '@/types/canvas';
+
+type Step = 'intro' | 'chat' | 'summary';
+
+interface UseCanvasOnboardingOptions {
+  autoOpenIfFirstTime?: boolean;
+  canEdit?: boolean;
+  hasInitialState?: boolean;
+}
+
+export function useCanvasOnboarding(canvasId: string, options: UseCanvasOnboardingOptions = {}) {
+  const { autoOpenIfFirstTime = true, canEdit = true, hasInitialState = false } = options;
+
+  const [isOpen, setIsOpen] = useState(false);
+  const [step, setStep] = useState<Step>('intro');
+  const [messages, setMessages] = useState<OnboardingChatMessage[]>([
+    { 
+      role: 'assistant', 
+      content: [
+        '안녕하세요! 저는 크리에이터를 위한 비즈니스 아키텍트 AI입니다.',
+        '유튜브와 콘텐츠 비즈니스가 완전히 처음이어도 괜찮습니다. 저는 여러분이 체계적이고 확실한 로드맵을 따라 강력한 브랜드를 구축할 수 있도록 도와드리는 전문가이자 코치 역할을 합니다.',
+        '유튜브 채널의 기획 단계인지 아니면 운영 단계인지 편하게 말씀해 주세요.',
+      ].join('\n')
+    }
+  ]);
+  const [inputText, setInputText] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const [assistantSuggestedFinalize, setAssistantSuggestedFinalize] = useState(false);
+  const [summary, setSummary] = useState('');
+  const [draftNodes, setDraftNodes] = useState<FlowNode[]>([]);
+  const [draftEdges, setDraftEdges] = useState<FlowEdge[]>([]);
+  const [isCreateEnabled, setIsCreateEnabled] = useState(false);
+
+  const setNodes = useCanvasStore((s) => s.setNodes);
+  const setEdges = useCanvasStore((s) => s.setEdges);
+
+  const storageKey = useMemo(() => `onboarding-shown-${canvasId}`, [canvasId]);
+
+  // 최초 1회 자동 오픈(새 캔버스이고, 편집 가능, 로컬 플래그 없음)
+  useEffect(() => {
+    if (!autoOpenIfFirstTime) return;
+    if (!canEdit) return;
+    if (!canvasId) return;
+
+    try {
+      const shown = localStorage.getItem(storageKey);
+      if (shown !== 'true' && !hasInitialState) {
+        setIsOpen(true);
+        setStep('intro');
+      }
+    } catch {}
+  }, [autoOpenIfFirstTime, canEdit, canvasId, hasInitialState, storageKey]);
+
+  const markShown = useCallback(() => {
+    try { localStorage.setItem(storageKey, 'true'); } catch {}
+  }, [storageKey]);
+
+  const open = useCallback(() => { setIsOpen(true); }, []);
+  const close = useCallback(() => { setIsOpen(false); }, []);
+
+  const startChat = useCallback(() => {
+    setStep('chat');
+  }, []);
+
+  const skipOnboarding = useCallback(() => {
+    markShown();
+    setIsOpen(false);
+  }, [markShown]);
+
+  const detectFinalizeSuggestion = useCallback((assistantReply: string) => {
+    const text = (assistantReply || '').toLowerCase();
+    return text.includes('노드를 생성할까요') || text.includes('노드 생성할까요') || text.includes('초안') || text.includes('생성해 드릴까요');
+  }, []);
+
+  const sendMessage = useCallback(async () => {
+    const content = inputText.trim();
+    if (!content || isSending) return;
+    setIsSending(true);
+    setIsTyping(true);
+    const userMsg: OnboardingChatMessage = { role: 'user', content };
+    setMessages((prev) => [...prev, userMsg]);
+    setInputText('');
+    try {
+      const reply = await canvasOnboardingService.chat(canvasId, [...messages, userMsg]);
+      const assistantMsg: OnboardingChatMessage = { role: 'assistant', content: reply || '추가로 도와드릴 내용이 있을까요?' };
+      setMessages((prev) => [...prev, assistantMsg]);
+      // 스크롤 하단 이동
+      try {
+        const el = document.getElementById('onboarding-chat-scroll');
+        if (el) {
+          el.scrollTop = el.scrollHeight;
+        }
+      } catch {}
+      if (detectFinalizeSuggestion(assistantMsg.content)) {
+        setAssistantSuggestedFinalize(true);
+      }
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: '죄송합니다. 잠시 후 다시 시도해 주세요.' }]);
+    } finally {
+      setIsSending(false);
+      setIsTyping(false);
+    }
+  }, [canvasId, inputText, isSending, messages, detectFinalizeSuggestion]);
+
+  const finalize = useCallback(async () => {
+    if (isFinalizing) return;
+    setIsFinalizing(true);
+    try {
+      const result = await canvasOnboardingService.finalize(canvasId, messages);
+      setSummary(result.summary || '');
+      setDraftNodes(result.flow.nodes || []);
+      setDraftEdges(result.flow.edges || []);
+      setIsCreateEnabled(true);
+      setStep('summary');
+      // 스크롤 하단 이동 (요약 화면에서도 보장)
+      try {
+        const el = document.getElementById('onboarding-chat-scroll');
+        if (el) {
+          el.scrollTop = el.scrollHeight;
+        }
+      } catch {}
+    } catch (err) {
+      setSummary('초안 생성에 실패했습니다. 메시지를 조금 더 구체화한 뒤 다시 시도해 주세요.');
+      setDraftNodes([]);
+      setDraftEdges([]);
+      setIsCreateEnabled(false);
+      setStep('summary');
+    } finally {
+      setIsFinalizing(false);
+    }
+  }, [canvasId, messages, isFinalizing]);
+
+  const applyDraftToCanvas = useCallback(() => {
+    if (!isCreateEnabled) return false;
+    // 기본 동작: 기존 상태를 초안으로 대체(최초 캔버스 가정)
+    setNodes(draftNodes);
+    setEdges(draftEdges);
+    markShown();
+    setIsOpen(false);
+    return true;
+  }, [isCreateEnabled, draftNodes, draftEdges, setNodes, setEdges, markShown]);
+
+  return {
+    // modal
+    isOpen,
+    step,
+    open,
+    close,
+    startChat,
+    skipOnboarding,
+
+    // chat
+    messages,
+    inputText,
+    setInputText,
+    isSending,
+    isTyping,
+    assistantSuggestedFinalize,
+    sendMessage,
+
+    // finalize
+    isFinalizing,
+    finalize,
+    summary,
+    draftNodes,
+    draftEdges,
+    isCreateEnabled,
+    applyDraftToCanvas,
+  } as const;
+}
+
+

@@ -11,7 +11,9 @@ import SidebarChat from "@/components/Chat/SidebarChat";
 import TodoSticker, { TodoStickerToggle } from "@/components/TodoSticker/TodoSticker";
 import UploadModal from "@/components/Modals/UploadModal";
 import { CanvasShareModal } from "@/components/Modals/CanvasShareModal";
+import CanvasOnboardingModal from "@/components/Modals/CanvasOnboardingModal";
 import { useCanvasRole } from "@/hooks/useCanvasRole";
+import { useCanvasOnboarding } from "@/hooks/useCanvasOnboarding";
 import type { CanvasViewProps, CanvasAreaCanvas, FlowNode } from "@/types/canvas";
 import type { Asset } from "@shared/schema";
 import { toCanvasAreaCanvas } from "@/types/canvas";
@@ -80,6 +82,32 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
   
   // Chat sidebar state - 기본은 닫힌 상태로 시작
   const [chatCollapsed, setChatCollapsed] = useState(true);
+
+  // Onboarding state (auto open on first canvas creation)
+  const {
+    isOpen: isOnboardingOpen,
+    step: onboardingStep,
+    open: openOnboarding,
+    close: closeOnboarding,
+    startChat: startOnboardingChat,
+    skipOnboarding,
+    messages: onboardingMessages,
+    inputText: onboardingInput,
+    setInputText: setOnboardingInput,
+    isSending: isOnboardingSending,
+    isTyping: isOnboardingTyping,
+    assistantSuggestedFinalize,
+    sendMessage: sendOnboardingMessage,
+    isFinalizing: isOnboardingFinalizing,
+    finalize: finalizeOnboarding,
+    summary: onboardingSummary,
+    isCreateEnabled: isOnboardingCreateEnabled,
+    applyDraftToCanvas,
+  } = useCanvasOnboarding(canvas.id, {
+    autoOpenIfFirstTime: true,
+    canEdit,
+    hasInitialState: Boolean(((canvasState as any)?.state?.nodes?.length) || 0),
+  });
 
   // Handlers - Canvas.tsx와 동일한 구조
   const handleNodeSelect = (nodeId: string) => {
@@ -251,6 +279,29 @@ export function CanvasView({ canvas, canvasState, isPublic = false, readOnly = f
         canvasId={canvas.id}
         canvasTitle={canvas.title}
       />
+
+      {/* Onboarding Modal - 최초 생성 시 */}
+      {!isPublic && canEdit && (
+        <CanvasOnboardingModal
+          isOpen={isOnboardingOpen}
+          step={onboardingStep as any}
+          onClose={closeOnboarding}
+          onSkip={skipOnboarding}
+          onStartChat={startOnboardingChat}
+          messages={onboardingMessages as any}
+          inputText={onboardingInput}
+          onChangeInput={setOnboardingInput}
+          onSendMessage={sendOnboardingMessage}
+          isSending={isOnboardingSending}
+          isTyping={isOnboardingTyping}
+          assistantSuggestedFinalize={assistantSuggestedFinalize}
+          onFinalize={finalizeOnboarding}
+          isFinalizing={isOnboardingFinalizing}
+          summary={onboardingSummary}
+          isCreateEnabled={isOnboardingCreateEnabled}
+          onCreateDraft={applyDraftToCanvas}
+        />
+      )}
     </div>
   );
 }
