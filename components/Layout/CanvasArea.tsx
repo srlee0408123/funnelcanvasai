@@ -140,6 +140,11 @@ export default function CanvasArea({
     return true;
   }, [getCurrentTotalItems, toast, isPro]);
 
+  // Stable primitives for dependencies
+  const canvasIdStable = canvas.id;
+  const canvasTitleStable = canvas.title;
+  const canvasWsIdStable = (canvas as any).workspaceId || (canvas as any).workspace_id;
+
   
   // 임시 메모 처리용 큐/플래그
   const tempMemoPendingRef = useRef<Record<string, { position?: { x: number; y: number }; size?: { width: number; height: number }; content?: string }>>({});
@@ -148,9 +153,9 @@ export default function CanvasArea({
   // Title 업데이트 콜백 (헤더에 전달)
   const updateCanvasTitle = useCallback(async (newTitle: string) => {
     const trimmed = newTitle.trim();
-    if (!trimmed || trimmed === canvas.title) return;
+    if (!trimmed || trimmed === canvasTitleStable) return;
     try {
-      const response = await fetch(`/api/canvases/${canvas.id}`, {
+      const response = await fetch(`/api/canvases/${canvasIdStable}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -162,7 +167,7 @@ export default function CanvasArea({
         const { data: updatedRow, error } = await (supabase as any)
           .from('canvases')
           .update({ title: trimmed })
-          .eq('id', canvas.id)
+          .eq('id', canvasIdStable)
           .select('*')
           .single();
         if (error || !updatedRow) {
@@ -170,10 +175,10 @@ export default function CanvasArea({
         }
       }
       // 성공 시 관련 목록/상세 쿼리 무효화
-      await queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvas.id] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/canvases", canvasIdStable] });
       await queryClient.invalidateQueries({ queryKey: ["/api/workspaces", canvas.workspaceId, "canvases"] });
       // 최종적으로 상세 재조회 트리거(있다면)
-      await queryClient.refetchQueries({ queryKey: ["/api/canvases", canvas.id] });
+      await queryClient.refetchQueries({ queryKey: ["/api/canvases", canvasIdStable] });
       // 사용자 피드백
       const successMessage = createToastMessage.canvasSuccess('TITLE_UPDATE', trimmed);
       toast(successMessage);
@@ -184,24 +189,24 @@ export default function CanvasArea({
       // 상위 컴포넌트가 편집 상태를 유지하도록 에러 전파
       throw error;
     }
-  }, [canvas.id, canvas.title, canvas.workspaceId, queryClient, toast]);
+  }, [canvasIdStable, canvasTitleStable, canvas.workspaceId, queryClient, toast]);
 
   const handleDeleteCanvas = useCallback(async () => {
     if (isReadOnly || !canDeleteCanvas) return;
-    const confirmed = confirm(`"${canvas.title}" 캔버스를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`);
+    const confirmed = confirm(`"${canvasTitleStable}" 캔버스를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`);
     if (!confirmed) return;
     try {
-      await apiRequest("DELETE", `/api/canvases/${canvas.id}`);
-      await invalidateCanvasQueries({ canvasId: canvas.id, client: queryClient, targets: ["all"] });
-      await queryClient.invalidateQueries({ queryKey: ["canvases", (canvas as any).workspaceId || (canvas as any).workspace_id] }).catch(() => {});
+      await apiRequest("DELETE", `/api/canvases/${canvasIdStable}`);
+      await invalidateCanvasQueries({ canvasId: canvasIdStable, client: queryClient, targets: ["all"] });
+      await queryClient.invalidateQueries({ queryKey: ["canvases", canvasWsIdStable] }).catch(() => {});
       toast({ title: "캔버스가 삭제되었습니다." });
-      const wsId = (canvas as any).workspaceId || (canvas as any).workspace_id;
+      const wsId = canvasWsIdStable;
       router.push(wsId ? `/workspace/${wsId}` : `/dashboard`);
     } catch (error) {
       console.error("Failed to delete canvas:", error);
       toast({ title: "오류", description: "캔버스 삭제에 실패했습니다.", variant: "destructive" });
     }
-  }, [isReadOnly, canDeleteCanvas, canvas.id, canvas.title, queryClient, router, toast, canvas]);
+  }, [isReadOnly, canDeleteCanvas, canvasIdStable, canvasTitleStable, canvasWsIdStable, queryClient, router, toast]);
 
 
 
@@ -1044,7 +1049,7 @@ export default function CanvasArea({
       // 에러 시 임시 메모 제거
       setMemos(prev => prev.filter(m => !m.id.startsWith('temp-')));
     }
-  }, [canvas.id]);
+  }, [canvas.id, toast]);
 
   // Load memos when canvas changes
   useEffect(() => {

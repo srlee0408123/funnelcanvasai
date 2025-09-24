@@ -263,42 +263,22 @@ export class CanvasUtils {
     if (flow.nodes.length === 0) return flow;
 
     const arrangedNodes: CanvasNode[] = [];
-    const visited = new Set<string>();
     const startX = options?.startX ?? 200;
     const startY = options?.startY ?? 120;
-    const xSpacing = options?.xSpacing ?? 280;
-    const ySpacing = options?.ySpacing ?? 200;
+    const xSpacing = options?.xSpacing ?? 300;
 
-    // Find root nodes (nodes with no incoming edges)
-    const rootNodes = flow.nodes.filter(node =>
-      !flow.edges.some(edge => edge.target === node.id)
-    );
-
-    // If no root nodes, use the first node
-    if (rootNodes.length === 0 && flow.nodes.length > 0) {
-      rootNodes.push(flow.nodes[0]);
-    }
-
-    let currentY = startY;
-
-    // Arrange nodes level by level
-    rootNodes.forEach((rootNode, rootIndex) => {
-      const levelY = currentY + (rootIndex * ySpacing);
-      this.arrangeNodeHierarchy(
-        rootNode,
-        flow,
-        { x: startX, y: levelY },
-        xSpacing,
-        ySpacing,
-        arrangedNodes,
-        visited
-      );
+    // 간단 수평 배치: 입력 순서를 유지하며 x만 증가, y는 동일
+    flow.nodes.forEach((node, index) => {
+      arrangedNodes.push({
+        ...node,
+        position: {
+          x: startX + index * xSpacing,
+          y: startY,
+        },
+      });
     });
 
-    return {
-      ...flow,
-      nodes: arrangedNodes,
-    };
+    return { ...flow, nodes: arrangedNodes };
   }
 
   private static arrangeNodeHierarchy(
