@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAdmin } from '@/lib/auth/withAuthorization'
 import { ragPromptService } from '@/services/ragPromptService'
+import { onboardingPromptLogService } from '@/services/onboardingPromptLogService'
 
 export const GET = withAdmin(async () => {
   try {
@@ -26,6 +27,10 @@ export const POST = withAdmin(async (req, { auth }) => {
     }
 
     const created = await ragPromptService.create({ name, content, is_active, version, created_by: auth.userId })
+    // 온보딩 프롬프트라면 온보딩 전용 로그에 스냅샷 적재
+    if (created.name === 'ONBOARDING_SYSTEM_PROMPT') {
+      try { await onboardingPromptLogService.appendSnapshot(created.content, auth.userId) } catch {}
+    }
     return NextResponse.json({ success: true, data: created })
   } catch (error) {
     console.error('RAG prompts create error:', error)

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAdmin } from '@/lib/auth/withAuthorization'
 import { ragPromptService } from '@/services/ragPromptService'
+import { onboardingPromptLogService } from '@/services/onboardingPromptLogService'
 
 export const PATCH = withAdmin(async (req, { auth }) => {
   try {
@@ -18,6 +19,10 @@ export const PATCH = withAdmin(async (req, { auth }) => {
     if (Number.isFinite(Number(body?.version))) updates.version = Number(body.version)
 
     const updated = await ragPromptService.update(id, updates, auth.userId)
+    // 온보딩 프롬프트라면 온보딩 전용 로그에 스냅샷 적재
+    if (updated.name === 'ONBOARDING_SYSTEM_PROMPT' && typeof updates?.content === 'string') {
+      try { await onboardingPromptLogService.appendSnapshot(updated.content, auth.userId) } catch {}
+    }
     return NextResponse.json({ success: true, data: updated })
   } catch (error) {
     console.error('RAG prompts update error:', error)
