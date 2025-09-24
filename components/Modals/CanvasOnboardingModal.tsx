@@ -92,7 +92,7 @@ export default function CanvasOnboardingModal(props: CanvasOnboardingModalProps)
         )}
 
         {step === 'chat' && (
-          <div className="flex flex-col gap-3 h-full min-h-0">
+          <div className="flex flex-col gap-3 h-full min-h-0 relative">
             <div className="flex-1 min-h-0 overflow-y-auto border rounded-md p-3 bg-white" id="onboarding-chat-scroll" ref={scrollRef}>
               {messages.map((m, idx) => (
                 <div key={idx} className={m.role === 'user' ? 'text-right' : 'text-left'}>
@@ -139,9 +139,14 @@ export default function CanvasOnboardingModal(props: CanvasOnboardingModalProps)
 
             <div className="flex items-center justify-between">
               <div className="text-xs text-gray-500">대화가 충분히 정리되면 AI가 &quot;노드를 생성할까요?&quot;라고 물어봅니다.</div>
-              <Button onClick={onFinalize} disabled={isFinalizing || !assistantSuggestedFinalize} variant={assistantSuggestedFinalize ? 'default' : 'outline'}>
-                {isFinalizing ? '초안 생성 중...' : '대화 종료 & 초안 만들기'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button onClick={onFinalize} disabled={isFinalizing || !assistantSuggestedFinalize} variant={assistantSuggestedFinalize ? 'default' : 'outline'}>
+                  대화 종료 & 초안 만들기
+                </Button>
+                {isFinalizing && (
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" aria-label="loading" />
+                )}
+              </div>
             </div>
           </div>
         )}

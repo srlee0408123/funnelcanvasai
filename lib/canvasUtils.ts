@@ -253,6 +253,34 @@ export class CanvasUtils {
     };
   }
 
+  /**
+   * Auto-arrange nodes in a flow layout with customizable spacing
+   */
+  static autoArrangeNodesWithSpacing(
+    flow: CanvasFlow,
+    options?: { startX?: number; startY?: number; xSpacing?: number; ySpacing?: number }
+  ): CanvasFlow {
+    if (flow.nodes.length === 0) return flow;
+
+    const arrangedNodes: CanvasNode[] = [];
+    const startX = options?.startX ?? 200;
+    const startY = options?.startY ?? 120;
+    const xSpacing = options?.xSpacing ?? 300;
+
+    // 간단 수평 배치: 입력 순서를 유지하며 x만 증가, y는 동일
+    flow.nodes.forEach((node, index) => {
+      arrangedNodes.push({
+        ...node,
+        position: {
+          x: startX + index * xSpacing,
+          y: startY,
+        },
+      });
+    });
+
+    return { ...flow, nodes: arrangedNodes };
+  }
+
   private static arrangeNodeHierarchy(
     node: CanvasNode,
     flow: CanvasFlow,
