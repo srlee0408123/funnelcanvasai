@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuthorization } from '@/lib/auth/withAuthorization';
 import { OpenAIService } from '@/services/openai';
-import path from 'path';
-import { promises as fs } from 'fs';
+import { ragPromptService } from '@/services/ragPromptService';
+import { DEFAULT_ONBOARDING_SYSTEM_PROMPT } from '@/services/onboardingPrompt';
 
 /**
  * onboarding/route.ts - 캔버스 최초 온보딩 대화 및 초안 생성 API
  * 
  * 주요 역할:
- * 1. ytsystemprompt.md를 시스템 프롬프트로 사용해 대화 응답 생성(action: "chat")
+ * 1. Admin이 저장한 'ONBOARDING_SYSTEM_PROMPT'를 시스템 프롬프트로 사용(없으면 코드 상수로 폴백)하여 대화 응답 생성(action: "chat")
  * 2. 대화 로그를 요약하고 노드/엣지 초안 JSON을 생성(action: "finalize")
  * 3. 최소 스펙: DB 저장 없음, 응답만 반환(클라이언트가 상태 반영)
  * 
  * 핵심 특징:
- * - 시스템 프롬프트는 런타임에 파일에서 읽어와 모듈 캐시로 재사용
+ * - 시스템 프롬프트는 Admin 관리값 우선, 없으면 코드 상수 사용. 파일 의존 없음
  * - 노드/엣지 스키마 지시를 추가하여 모델이 직접 Flow JSON을 생성
  * - withAuthorization으로 캔버스 접근 권한 검증
  * 
@@ -22,15 +22,16 @@ import { promises as fs } from 'fs';
  */
 
 const openai = new OpenAIService();
-let cachedSystemPrompt: string | null = null;
-
-async function getYtSystemPrompt(): Promise<string> {
-  if (cachedSystemPrompt) return cachedSystemPrompt;
-  const root = process.cwd();
-  const filePath = path.join(root, 'docs', 'ytsystemprompt.md');
-  const content = await fs.readFile(filePath, 'utf8');
-  cachedSystemPrompt = content;
-  return cachedSystemPrompt;
+async function getOnboardingSystemPrompt(): Promise<string> {
+  try {
+    // Admin이 관리하는 온보딩 프롬프트 이름 규약
+    const content = await ragPromptService.getInstructionByName('ONBOARDING_SYSTEM_PROMPT');
+    const trimmed = (content || '').trim();
+    if (trimmed.length > 0) return trimmed;
+  } catch (e) {
+    // 조용히 폴백 사용
+  }
+  return DEFAULT_ONBOARDING_SYSTEM_PROMPT;
 }
 
 function buildNodeFlowInstruction(): string {
@@ -109,8 +110,8 @@ export const POST = withAuthorization({ resourceType: 'canvas' }, async (req: Ne
       return NextResponse.json({ error: 'messages가 필요합니다.' }, { status: 400 });
     }
 
-    // 시스템 프롬프트는 ytsystemprompt.md 원문 그대로 사용
-    const systemPrompt = `${await getYtSystemPrompt()}`;
+    // 시스템 프롬프트는 Admin 관리값(이름: ONBOARDING_SYSTEM_PROMPT) → 폴백(코드 상수) 순으로 사용
+    const systemPrompt = await getOnboardingSystemPrompt();
 
     if (action === 'chat') {
       const conversationText = stringifyConversation(messages);
