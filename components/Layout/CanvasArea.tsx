@@ -1,7 +1,9 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { CanvasHeader, ProfileBadge } from "@/components/Canvas/CanvasHeader";
 import { useProfile } from "@/hooks/useAuth";
+import { useCanvasRole } from "@/hooks/useCanvasRole";
 import { CanvasEdges } from "@/components/Canvas/CanvasEdges";
 import FunnelNode from "@/components/Canvas/FunnelNode";
 import NodeCreationModal from "@/components/Canvas/NodeCreationModal";
@@ -11,7 +13,7 @@ import { useCanvasStore } from "@/hooks/useCanvasStore";
 import { useCanvasInteractions } from "@/hooks/use-canvas-interactions";
 import { useCanvasSync } from "@/hooks/useCanvasSync";
 import { createToastMessage } from "@/lib/messages/toast-utils";
-import { invalidateCanvasQueries } from "@/lib/queryClient";
+import { invalidateCanvasQueries, apiRequest } from "@/lib/queryClient";
 import { Mail, Monitor, Share, MessageSquare } from "lucide-react";
 import type { Canvas, CanvasState } from "@shared/schema";
 import type { FlowNode, FlowEdge, TextMemoData } from "@/types/canvas";
@@ -50,6 +52,7 @@ export default function CanvasArea({
   externalMemos,
   
 }: CanvasAreaProps) {
+  const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -57,6 +60,8 @@ export default function CanvasArea({
   // 프로필 정보 가져오기
   const { profile } = useProfile();
   const isPro = profile?.plan === 'pro';
+  const { permissions } = useCanvasRole(canvas.id);
+  const canDeleteCanvas = permissions.canDelete;
   
   // Canvas viewport state for zoom and pan (Zustand)
   const viewport = useCanvasStore(s => s.viewport);
@@ -180,6 +185,23 @@ export default function CanvasArea({
       throw error;
     }
   }, [canvas.id, canvas.title, canvas.workspaceId, queryClient, toast]);
+
+  const handleDeleteCanvas = useCallback(async () => {
+    if (isReadOnly || !canDeleteCanvas) return;
+    const confirmed = confirm(`"${canvas.title}" 캔버스를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`);
+    if (!confirmed) return;
+    try {
+      await apiRequest("DELETE", `/api/canvases/${canvas.id}`);
+      await invalidateCanvasQueries({ canvasId: canvas.id, client: queryClient, targets: ["all"] });
+      await queryClient.invalidateQueries({ queryKey: ["canvases", (canvas as any).workspaceId || (canvas as any).workspace_id] }).catch(() => {});
+      toast({ title: "캔버스가 삭제되었습니다." });
+      const wsId = (canvas as any).workspaceId || (canvas as any).workspace_id;
+      router.push(wsId ? `/workspace/${wsId}` : `/dashboard`);
+    } catch (error) {
+      console.error("Failed to delete canvas:", error);
+      toast({ title: "오류", description: "캔버스 삭제에 실패했습니다.", variant: "destructive" });
+    }
+  }, [isReadOnly, canDeleteCanvas, canvas.id, canvas.title, queryClient, router, toast, canvas]);
 
 
 
@@ -1114,7 +1136,7 @@ export default function CanvasArea({
     triggerSave("create-node", true);
     
     console.log(`Created new ${nodeData.title} node at (${nodeCreationPosition.x}, ${nodeCreationPosition.y})`);
-  }, [nodeCreationPosition, setLocalNodes, triggerSave]);
+  }, [nodeCreationPosition, setLocalNodes, triggerSave, ensureNotOverFreeLimit]);
 
   // Handle node double click for details
   const handleNodeDoubleClick = useCallback((nodeId: string) => {
@@ -1227,6 +1249,11 @@ export default function CanvasArea({
         lastSavedAt={lastSavedAt}
         isSaving={saving}
         profile={profile}
+        canDelete={canDeleteCanvas}
+        onDeleteCanvas={handleDeleteCanvas}
+        onOpenOnboarding={() => {
+          try { window.dispatchEvent(new CustomEvent('open-onboarding')); } catch {}
+        }}
       />
 
       {/* Canvas Content */}

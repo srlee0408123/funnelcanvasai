@@ -17,11 +17,79 @@ import { Share, ArrowLeft, FileText, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/database.types";
-import { useWorkspaceRole } from "@/hooks/useWorkspaceRole";
+import { useCanvasRole } from "@/hooks/useCanvasRole";
 
 interface WorkspaceClientProps {
   workspaceId: string;
   userId: string;
+}
+
+// 단일 캔버스 카드 컴포넌트: 캔버스별 권한에 따라 삭제 버튼 노출
+function CanvasCardItem({ 
+  canvas, 
+  onShare, 
+  onDelete 
+}: { 
+  canvas: Database['public']['Tables']['canvases']['Row']; 
+  onShare: () => void; 
+  onDelete: () => void; 
+}) {
+  const { isOwner } = useCanvasRole(canvas.id as unknown as string);
+  return (
+    <Card className="hover:shadow-lg transition-shadow">
+      <CardHeader>
+        <div className="flex justify-between items-start">
+          <CardTitle className="text-lg">{canvas.title}</CardTitle>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => { e.preventDefault(); onShare(); }}
+              aria-label="Share Canvas"
+              title="Share"
+            >
+              <Share className="h-4 w-4" />
+            </Button>
+            {isOwner && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => { e.preventDefault(); onDelete(); }}
+                aria-label="Delete Canvas"
+                title="Delete"
+              >
+                <Trash2 className="h-4 w-4 text-red-500" />
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="text-sm text-gray-600 mb-4">
+          <div className="flex items-center mb-1">
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            {new Date((canvas as any).created_at).toLocaleDateString()}
+          </div>
+          <div className="flex items-center">
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {new Date((canvas as any).updated_at).toLocaleDateString()}
+          </div>
+        </div>
+        <Link href={`/canvas/${canvas.id}`}>
+          <Button variant="secondary" className="w-full">
+            Open Canvas
+            <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClientProps) {
@@ -34,7 +102,6 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
 
   // 프로필 정보 가져오기
   const { profile } = useProfile();
-  const { isOwner } = useWorkspaceRole(workspaceId);
 
   // Fetch workspace details
   const { data: workspace, isLoading: workspaceLoading } = useQuery<Pick<Database['public']['Tables']['workspaces']['Row'], 'id' | 'name' | 'created_at' | 'updated_at'>>({
@@ -280,67 +347,16 @@ export default function WorkspaceClient({ workspaceId, userId }: WorkspaceClient
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {canvases.map((canvas) => (
-              <Card key={canvas.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <CardTitle className="text-lg">{canvas.title}</CardTitle>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setShareCanvas(canvas);
-                        }}
-                        aria-label="Share Canvas"
-                        title="Share"
-                      >
-                        <Share className="h-4 w-4" />
-                      </Button>
-                      {isOwner && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            if (confirm(`"${canvas.title}" 캔버스를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
-                              deleteCanvasMutation.mutate(canvas.id);
-                            }
-                          }}
-                          aria-label="Delete Canvas"
-                          title="Delete"
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-sm text-gray-600 mb-4">
-                    <div className="flex items-center mb-1">
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      {new Date(canvas.created_at).toLocaleDateString()}
-                    </div>
-                    <div className="flex items-center">
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      {new Date(canvas.updated_at).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <Link href={`/canvas/${canvas.id}`}>
-                    <Button variant="secondary" className="w-full">
-                      Open Canvas
-                      <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </Button>
-                  </Link>
-                </CardContent>
-              </Card>
+              <CanvasCardItem
+                key={canvas.id}
+                canvas={canvas}
+                onShare={() => setShareCanvas(canvas)}
+                onDelete={() => {
+                  if (confirm(`"${canvas.title}" 캔버스를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+                    deleteCanvasMutation.mutate(canvas.id as unknown as string);
+                  }
+                }}
+              />
             ))}
           </div>
         )}

@@ -1,0 +1,103 @@
+Rule Name: canvas-onboarding
+Description: "캔버스 최초 온보딩(대화형 AI 가이드 → 즉시 노드 생성) 기능 명세"
+
+## 개요
+사용자가 새 캔버스를 처음 열 때 모달로 온보딩을 안내하고, ytsystemprompt.md를 시스템 프롬프트로 사용하는 대화형 챗봇을 통해 정보를 수집한 뒤, 사용자의 승인 시 즉시 노드/엣지를 생성하여 캔버스에 반영합니다. 중간 요약/검토 단계 없이 즉시 적용합니다.
+
+## 라우터
+* POST `/api/canvases/[canvasId]/onboarding`
+  - 권한: withAuthorization(canvas)
+  - 액션
+    - action=`chat`: 누적 대화를 바탕으로 ytsystemprompt 원문으로 응답 생성(순수 텍스트, 마크다운 금지)
+    - action=`finalize`: 누적 대화를 바탕으로 워크플로우 요약과 Flow JSON({ nodes, edges }) 생성. 응답은 JSON만 출력하도록 유도하고, 코드펜스 제거 후 파싱. 실패 시 빈 플로우로 폴백
+  - 시스템 프롬프트: `docs/ytsystemprompt.md` 파일 내용을 그대로 사용(변형 금지)
+  - 사용자 프롬프트(최종 단계): 노드/엣지 JSON 스키마, 배치 규칙, JSON-only 응답 지시 추가
+  - 입력: `{ action: 'chat' | 'finalize', messages: Array<{ role: 'user'|'assistant', content: string }>} `
+  - 출력
+    - chat: `{ reply: string }`
+    - finalize: `{ summary: string, flow: { nodes: FlowNode[], edges: FlowEdge[] } }`
+
+## 클라이언트 컴포넌트/훅
+* `components/Modals/CanvasOnboardingModal.tsx`
+  - 단계: `intro | chat` (summary 단계 없음)
+  - 기능: 대화 표시, 입력, 타이핑 인디케이터, 자동 스크롤, IME(한글) Enter 처리, 버튼(도움받기/직접하기/대화 종료 & 초안 만들기)
+  - Intro 단계 모달 크기: `max-w-lg w-auto` (텍스트에 맞는 컴팩트 크기)
+  - Chat 단계 모달 크기: `calc(100vw|vh - 160px)` (넉넉한 작업 공간)
+* `hooks/useCanvasOnboarding.ts`
+  - 오픈 조건: 최초 캔버스 + 편집 가능 + 로컬스토리지 `onboarding-shown-<canvasId>` 미표시 + 초기 상태 없음
+  - 대화 전송: `canvasOnboardingService.chat()`
+  - 종료/생성: `finalize()` 호출 시 서버에서 Flow(JSON) 수신 → `useCanvasStore.setNodes/setEdges` 즉시 적용 → 모달 닫기
+  - IME 대응: 한글 조합 중 Enter는 전송하지 않음(`isComposing`, keyCode 229)
+  - 자동 스크롤: 메시지/타이핑 변경 시 하단으로 이동
+* `components/Canvas/CanvasView.tsx`
+  - 온보딩 훅 통합 및 모달 전달 Props 연결
+
+## 서비스
+* `services/canvasOnboardingService.ts`
+  - `chat(canvasId, messages) → string`
+  - `finalize(canvasId, messages) → { summary, flow: { nodes, edges } }`
+  - JSON 검증/보정: 위치/색상/타입 기본값 보정, 스키마에 맞지 않는 항목 제거
+* `services/openai.ts`
+  - `OPENAI_DEFAULT_MODEL`(기본: gpt-4o) 사용
+
+## 프롬프트 정책
+* 시스템 프롬프트: `docs/ytsystemprompt.md` 원문 100% 사용 (변경/추가 금지)
+* 대화 단계(chat): 마크다운 금지(순수 텍스트), 필요 시 종료 제안 문구(예: "노드를 생성할까요?") 포함
+* 최종 단계(finalize): 사용자 프롬프트에만 Flow JSON 스키마/규칙 주입, 응답은 JSON만 허용(코드펜스 제거)
+
+## 데이터/저장
+* 상태 적용: `useCanvasStore.setNodes/setEdges`
+* 자동 저장: `useCanvasSync`가 변경 감지 → POST `/api/canvases/:id/state` 저장(디바운스)
+* 무료 플랜 제한: `state/route.ts`에서 노드+메모+할일 합계 10 초과 시 저장 거부
+
+## UX 규칙
+* 메시지 표시: `whitespace-pre-wrap`, `break-words`, `leading-relaxed`로 가독성 확보
+* 타이핑 인디케이터: 3점 bounce 애니메이션
+* 자동 스크롤: 메시지/타이핑 변경 때 컨테이너 scrollBottom
+* 입력(IME): 한글 조합 중 Enter 전송 금지, Shift+Enter 줄바꿈 유지
+* 모달 크기: Intro는 작게, Chat은 넓게. 화면 여백은 좌우/상하 80px 유지
+
+## API 계약(예시)
+요청(chat)
+```
+POST /api/canvases/abc123/onboarding
+{ "action": "chat", "messages": [{"role":"user","content":"..."},{"role":"assistant","content":"..."}] }
+```
+응답(chat)
+```
+{ "reply": "... (plain text, no markdown)" }
+```
+요청(finalize)
+```
+POST /api/canvases/abc123/onboarding
+{ "action": "finalize", "messages": [...] }
+```
+응답(finalize)
+```
+{
+  "summary": "요약 텍스트",
+  "flow": {
+    "nodes": [ { "id":"...", "type":"custom", "data": {"title":"...","subtitle":"","icon":"📝","color":"#3B82F6"}, "position": {"x":200, "y":100} } ],
+    "edges": [ { "id":"...", "source":"...", "target":"...", "data": {"sourceAnchor":"right", "targetAnchor":"left"} } ]
+  }
+}
+```
+
+## 에러/제한 처리
+* 모델 응답 파싱 실패: 빈 플로우 반환(요약만 문자열), 클라이언트는 실패 메시지 안내
+* 저장 제한 초과: 서버에서 403 + 코드(`FREE_PLAN_LIMIT_ITEMS`) 반환 → 토스트로 안내
+* 네트워크/서버 오류: 간단한 재시도 유도 메시지 출력
+
+## 테스트 체크리스트
+1. 새 캔버스 최초 진입 시 Intro 모달 자동 오픈
+2. 대화 전송/응답 수신, 타이핑 인디케이터/자동 스크롤 정상 동작
+3. “대화 종료 & 초안 만들기” 클릭 시 즉시 노드/엣지 적용 및 모달 닫힘
+4. 저장 훅이 상태 변경을 감지하여 `/state` 저장 성공
+5. 한글 IME 입력에서 마지막 글자 유실 없이 전송 처리
+6. 무료 플랜 제한에 걸릴 때 저장 거부 및 안내 토스트 노출
+
+## 향후 개선
+* 스트리밍 응답 적용(타이핑 UX 강화)
+* 좌표 레이아웃 자동 최적화(충돌 최소화)
+* 노드 템플릿/아이콘 세트 확장
+* 대화 로그 영구 저장 옵션 및 복원

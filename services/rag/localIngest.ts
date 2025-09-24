@@ -62,11 +62,6 @@ async function replaceKnowledgeChunks(params: {
   }
 }
 
-function splitToChunks(_fullText: string): string[] {
-  // 동기 버전은 더 이상 사용하지 않습니다. buildChunks를 사용하세요.
-  return [];
-}
-
 export { buildChunks };
 
 function formatNodeLine(node: { node_id?: string; type?: string; data?: Record<string, any> }): string {

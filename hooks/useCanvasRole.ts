@@ -40,8 +40,9 @@ export function useCanvasRole(canvasId: string) {
   const permissions: CanvasPermissions = (() => {
     switch (role) {
       case 'owner':
-      case 'admin':
         return { canView: true, canEdit: true, canShare: true, canDelete: true };
+      case 'admin':
+        return { canView: true, canEdit: true, canShare: true, canDelete: false };
       case 'member':
       case 'editor':
         return { canView: true, canEdit: true, canShare: true, canDelete: false };

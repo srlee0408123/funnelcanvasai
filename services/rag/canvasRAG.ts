@@ -46,12 +46,38 @@ export class CanvasRAGService {
   async buildContext(params: BuildContextParams): Promise<BuildContextResult> {
     const { supabase, canvasId, message, historyText } = params;
     
+    console.log('🔍 [CanvasRAG] buildContext 시작:', {
+      canvasId,
+      messageLength: message.length,
+      hasHistory: !!historyText,
+      historyLength: historyText?.length || 0
+    });
+    
     const { matchedChunks, ragSuccess } = await this.searchKnowledge({ supabase, canvasId, message });
+    
+    console.log('📚 [CanvasRAG] 지식 검색 결과:', {
+      ragSuccess,
+      chunksMatched: matchedChunks.length,
+      topSimilarities: matchedChunks.slice(0, 3).map(c => ({
+        similarity: this.convertToPercentage(c.similarity),
+        textPreview: c.text.substring(0, 100) + '...'
+      }))
+    });
     
     const knowledgeContext = await this.composeKnowledgeContext({ supabase, canvasId, matchedChunks, ragSuccess });
 
+    console.log('🎯 [CanvasRAG] 지식 컨텍스트 구성 완료:', {
+      contextLength: knowledgeContext.length,
+      hasContext: knowledgeContext.length > 0
+    });
+
     // 추가: 글로벌 지식 매칭 및 컨텍스트 결합
     const globalContext = await this.composeGlobalKnowledgeContext({ supabase, message });
+    
+    console.log('🌐 [CanvasRAG] 글로벌 지식 컨텍스트 구성 완료:', {
+      globalContextLength: globalContext.length,
+      hasGlobalContext: globalContext.length > 0
+    });
     
     // 지식 우선: 충분하면 웹 검색 생략, 부족하면 검색
     const { webCitations, webContext, actionDecision } = await this.maybeSearchWeb(message, {
@@ -61,11 +87,33 @@ export class CanvasRAGService {
       globalContext,
     }, historyText);
 
+    console.log('🌍 [CanvasRAG] 웹 검색 결정 결과:', {
+      actionDecision: actionDecision?.action,
+      searchReason: actionDecision?.reason,
+      searchQuery: actionDecision?.searchQuery,
+      webContextLength: webContext.length,
+      webCitationsCount: webCitations.length,
+      hasWebSearch: webContext.length > 0
+    });
+
     const fullContext = knowledgeContext
       + (globalContext ? '\n\n🌐 글로벌 지식:\n' + globalContext : '')
       + (webContext ? '\n\n최신 웹 검색 결과:\n' + webContext : '');
 
+    console.log('📝 [CanvasRAG] 전체 컨텍스트 구성 완료:', {
+      totalContextLength: fullContext.length,
+      knowledgeLength: knowledgeContext.length,
+      globalLength: globalContext.length,
+      webLength: webContext.length
+    });
+
     const knowledgeCitations = await this.buildKnowledgeCitations({ supabase, matchedChunks });
+    
+    console.log('📖 [CanvasRAG] 인용 정보 구성 완료:', {
+      knowledgeCitationsCount: knowledgeCitations.length,
+      webCitationsCount: webCitations.length
+    });
+    
     return {
       knowledgeContext: fullContext,
       knowledgeCitations,
@@ -178,9 +226,15 @@ export class CanvasRAGService {
 
   private async searchKnowledge({ supabase, canvasId, message }: { supabase: any; canvasId: string; message: string; }): Promise<{ matchedChunks: KnowledgeChunk[]; ragSuccess: boolean; }> {
     try {
+      console.log('🔎 [CanvasRAG] 임베딩 생성 시작:', { messagePreview: message });
+      
       const embedding = await this.openaiService.generateEmbedding(message);
 
+      console.log('📊 [CanvasRAG] 임베딩 생성 완료:', { embeddingLength: embedding.length });
+
       // 캔버스 지식
+      console.log('🎯 [CanvasRAG] 캔버스 지식 검색 시작:', { canvasId, matchCount: 12, minSimilarity: 0.70 });
+      
       const { data: matchData, error: matchError } = await (supabase as any)
         .rpc('match_knowledge_chunks', {
           canvas_id: canvasId,
@@ -189,6 +243,13 @@ export class CanvasRAGService {
           min_similarity: 0.70,
         });
 
+      console.log('📋 [CanvasRAG] 캔버스 지식 검색 결과:', {
+        hasError: !!matchError,
+        errorMessage: matchError?.message,
+        chunksFound: matchData?.length || 0,
+        topSimilarities: matchData?.slice(0, 3).map((m: any) => this.convertToPercentage(m.similarity)) || []
+      });
+
       // 글로벌 지식
       const { data: globalData, error: globalError } = await (supabase as any)
         .rpc('match_global_knowledge_chunks', {
@@ -196,6 +257,13 @@ export class CanvasRAGService {
           match_count: 8,
           min_similarity: 0.70,
         });
+
+      console.log('🌍 [CanvasRAG] 글로벌 지식 검색 결과:', {
+        hasError: !!globalError,
+        errorMessage: globalError?.message,
+        chunksFound: globalData?.length || 0,
+        topSimilarities: globalData?.slice(0, 3).map((m: any) => this.convertToPercentage(m.similarity)) || []
+      });
 
       const combined: KnowledgeChunk[] = [];
 
@@ -224,11 +292,24 @@ export class CanvasRAGService {
       if (combined.length > 0) {
         combined.sort((a, b) => b.similarity - a.similarity);
         const top = combined.slice(0, 20);
+        
+        console.log('🏆 [CanvasRAG] 최종 검색 결과:', {
+          totalCombined: combined.length,
+          topSelected: top.length,
+          bestSimilarity: top.length > 0 ? this.convertToPercentage(top[0].similarity) : 0,
+          averageSimilarity: top.length > 0 ? this.convertToPercentage(top.reduce((sum, c) => sum + c.similarity, 0) / top.length) : 0
+        });
+        
         return { matchedChunks: top, ragSuccess: true };
       }
-    } catch {
-      // RAG 실패는 폴백으로 처리하므로 로깅만 하고 진행
+    } catch (error) {
+      console.error('❌ [CanvasRAG] 지식 검색 실패:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        canvasId,
+        messagePreview: message.substring(0, 100) + '...'
+      });
     }
+    console.log('⚠️ [CanvasRAG] 검색 결과 없음, 폴백 모드로 진행');
     return { matchedChunks: [], ragSuccess: false };
   }
 
@@ -348,15 +429,38 @@ export class CanvasRAGService {
       if ((historyText || '').trim().length > 0) parts.push(`🗣️ 최근 대화 맥락:\n${historyText!.trim()}`);
       const knowledgeSnippet = parts.join('\n\n');
       
+      console.log('🧠 [CanvasRAG] 액션 결정 프롬프트 생성:', {
+        knowledgeSnippetLength: knowledgeSnippet.length,
+        partsCount: parts.length
+      });
+      
       const system = buildOptimalActionDecisionPrompt(message, knowledgeSnippet);
       const decisionRaw = await this.openaiService.chat(system, '위 지시에 따라 JSON만 응답하세요.', { maxTokens: 200, temperature: 0 });
+      
+      console.log('📝 [CanvasRAG] 액션 결정 응답 수신:', {
+        responseLength: decisionRaw.length,
+        responsePreview: decisionRaw.substring(0, 200) + '...'
+      });
       
       let parsed: OptimalActionDecisionResponse | null = null;
       try {
         parsed = JSON.parse(decisionRaw) as OptimalActionDecisionResponse;
+        console.log('✅ [CanvasRAG] 액션 결정 파싱 성공:', {
+          action: parsed.action,
+          reason: parsed.reason,
+          searchQuery: parsed.searchQuery,
+          clarificationQuestion: parsed.clarificationQuestion
+        });
       } catch (parseError) {
+        console.warn('⚠️ [CanvasRAG] 액션 결정 JSON 파싱 실패:', {
+          error: parseError instanceof Error ? parseError.message : 'Unknown error',
+          responsePreview: decisionRaw.substring(0, 200) + '...'
+        });
+        
         // JSON 파싱 실패 시 웹 검색 보수적 폴백: 지식 충분성으로 대체 판단
         const hasKnowledge = this.hasSufficientKnowledge(context);
+        console.log('🔍 [CanvasRAG] 지식 충분성 휴리스틱 판단:', { hasKnowledge });
+        
         if (hasKnowledge) {
           return { webCitations: [], webContext: '', actionDecision: { action: 'KNOWLEDGE_ONLY', reason: 'Knowledge sufficient by heuristic', searchQuery: null, clarificationQuestion: null } };
         }
@@ -378,13 +482,23 @@ export class CanvasRAGService {
 
       const action: OptimalAction = parsed?.action || 'CLARIFY';
       
+      console.log('🎯 [CanvasRAG] 결정된 액션:', { action, reason: parsed?.reason });
+      
       if (action === 'KNOWLEDGE_ONLY' || action === 'CLARIFY' || action === 'CONVERSATION_SUMMARY' || action === 'KNOWLEDGE_SUMMARY') {
         // Clarify는 상위 호출부에서 후속질문을 유도하도록 처리 가능. 여기서는 검색 생략
+        console.log('📚 [CanvasRAG] 지식 기반 응답 선택:', { action });
         return { webCitations: [], webContext: '', actionDecision: parsed ?? { action, reason: 'Knowledge only/clarify/summary', searchQuery: null, clarificationQuestion: null } };
       }
 
       // WEB_SEARCH: 검색 실행
       const query = (parsed?.searchQuery && parsed.searchQuery.trim().length > 0) ? parsed.searchQuery : message;
+      
+      console.log('🌍 [CanvasRAG] 웹 검색 실행:', { 
+        action, 
+        searchQuery: query,
+        originalMessage: message,
+        customQuery: query !== message
+      });
       
       const searchResponse = await this.webSearchService.searchWeb(query, 5);
       const webCitations: WebCitation[] = (searchResponse.results || [])
@@ -399,8 +513,23 @@ export class CanvasRAGService {
         }));
 
       const webContext = this.webSearchService.formatSearchResults(searchResponse.results);
+      
+      console.log('✅ [CanvasRAG] 웹 검색 완료:', {
+        resultsCount: searchResponse.results?.length || 0,
+        webContextLength: webContext.length,
+        citationsCount: webCitations.length,
+        topResults: webCitations.slice(0, 3).map(c => ({
+          title: c.title.substring(0, 50) + '...',
+          url: c.url.substring(0, 50) + '...'
+        }))
+      });
+      
       return { webCitations, webContext, actionDecision: parsed ?? { action: 'WEB_SEARCH', reason: 'Search executed', searchQuery: query, clarificationQuestion: null } };
-    } catch {
+    } catch (error) {
+      console.error('❌ [CanvasRAG] 웹 검색 결정 실패:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        messagePreview: message.substring(0, 100) + '...'
+      });
       return { webCitations: [], webContext: '', actionDecision: { action: 'KNOWLEDGE_ONLY', reason: 'Search failed; fallback to knowledge', searchQuery: null, clarificationQuestion: null } };
     }
   }

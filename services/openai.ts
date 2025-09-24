@@ -30,7 +30,6 @@ export class OpenAIService {
   // 기본/비전/임베딩 모델은 환경 변수로 제어
   private readonly chatModel = process.env.OPENAI_DEFAULT_MODEL || "gpt-4o";
   private readonly visionModel = process.env.OPENAI_VISION_MODEL || "gpt-4o";
-  // Unify on GPT embeddings v3 (small): 1536 dims, cost-effective
   private readonly embeddingsModel = process.env.OPENAI_EMBEDDINGS_MODEL || "text-embedding-3-small";
 
   public getChatModelName(): string {
