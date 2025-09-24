@@ -17,8 +17,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { canvasOnboardingService, type OnboardingChatMessage } from '@/services/canvasOnboardingService';
+import { CanvasUtils, type CanvasFlow } from '@/lib/canvasUtils';
 import { useCanvasStore } from '@/hooks/useCanvasStore';
-import type { FlowNode, FlowEdge } from '@/types/canvas';
 
 type Step = 'intro' | 'chat';
 
@@ -128,7 +128,36 @@ export function useCanvasOnboarding(canvasId: string, options: UseCanvasOnboardi
       const result = await canvasOnboardingService.finalize(canvasId, messages);
       const nodes = result.flow.nodes || [];
       const edges = result.flow.edges || [];
-      setNodes(nodes);
+
+      // 간격 자동 배치: 겹치지 않게 넓은 간격으로 재배치
+      const arrangeFlow: CanvasFlow = {
+        nodes: nodes.map((n) => ({
+          id: n.id,
+          type: n.type,
+          data: {
+            title: n.data.title,
+            subtitle: n.data.subtitle,
+            icon: n.data.icon,
+            color: n.data.color,
+          },
+          position: { x: n.position.x, y: n.position.y },
+        })),
+        edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target })),
+      };
+
+      const arranged = CanvasUtils.autoArrangeNodesWithSpacing(arrangeFlow, {
+        startX: 200,
+        startY: 120,
+        xSpacing: 300,
+        ySpacing: 220,
+      });
+      const positionById = new Map(arranged.nodes.map((n) => [n.id, n.position]));
+      const spacedNodes = nodes.map((n) => ({
+        ...n,
+        position: positionById.get(n.id) || n.position,
+      }));
+
+      setNodes(spacedNodes);
       setEdges(edges);
       markShown();
       setIsOpen(false);

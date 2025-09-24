@@ -253,6 +253,54 @@ export class CanvasUtils {
     };
   }
 
+  /**
+   * Auto-arrange nodes in a flow layout with customizable spacing
+   */
+  static autoArrangeNodesWithSpacing(
+    flow: CanvasFlow,
+    options?: { startX?: number; startY?: number; xSpacing?: number; ySpacing?: number }
+  ): CanvasFlow {
+    if (flow.nodes.length === 0) return flow;
+
+    const arrangedNodes: CanvasNode[] = [];
+    const visited = new Set<string>();
+    const startX = options?.startX ?? 200;
+    const startY = options?.startY ?? 120;
+    const xSpacing = options?.xSpacing ?? 280;
+    const ySpacing = options?.ySpacing ?? 200;
+
+    // Find root nodes (nodes with no incoming edges)
+    const rootNodes = flow.nodes.filter(node =>
+      !flow.edges.some(edge => edge.target === node.id)
+    );
+
+    // If no root nodes, use the first node
+    if (rootNodes.length === 0 && flow.nodes.length > 0) {
+      rootNodes.push(flow.nodes[0]);
+    }
+
+    let currentY = startY;
+
+    // Arrange nodes level by level
+    rootNodes.forEach((rootNode, rootIndex) => {
+      const levelY = currentY + (rootIndex * ySpacing);
+      this.arrangeNodeHierarchy(
+        rootNode,
+        flow,
+        { x: startX, y: levelY },
+        xSpacing,
+        ySpacing,
+        arrangedNodes,
+        visited
+      );
+    });
+
+    return {
+      ...flow,
+      nodes: arrangedNodes,
+    };
+  }
+
   private static arrangeNodeHierarchy(
     node: CanvasNode,
     flow: CanvasFlow,

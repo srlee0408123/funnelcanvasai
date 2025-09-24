@@ -92,7 +92,7 @@ export default function CanvasOnboardingModal(props: CanvasOnboardingModalProps)
         )}
 
         {step === 'chat' && (
-          <div className="flex flex-col gap-3 h-full min-h-0">
+          <div className="flex flex-col gap-3 h-full min-h-0 relative">
             <div className="flex-1 min-h-0 overflow-y-auto border rounded-md p-3 bg-white" id="onboarding-chat-scroll" ref={scrollRef}>
               {messages.map((m, idx) => (
                 <div key={idx} className={m.role === 'user' ? 'text-right' : 'text-left'}>
@@ -143,6 +143,15 @@ export default function CanvasOnboardingModal(props: CanvasOnboardingModalProps)
                 {isFinalizing ? '초안 생성 중...' : '대화 종료 & 초안 만들기'}
               </Button>
             </div>
+
+            {isFinalizing && (
+              <div className="absolute inset-0 bg-white/70 flex items-center justify-center rounded-md">
+                <div className="flex items-center gap-2 text-sm text-gray-700">
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent"></div>
+                  노드 생성 중입니다...
+                </div>
+              </div>
+            )}
           </div>
         )}
 
