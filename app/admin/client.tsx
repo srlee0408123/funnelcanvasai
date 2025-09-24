@@ -15,6 +15,7 @@ import UploadModal from "@/components/Modals/UploadModal";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { DEFAULT_ONBOARDING_SYSTEM_PROMPT } from "@/services/onboardingPrompt";
+import PromptLogsModal from "@/components/Admin/PromptLogsModal";
 
 interface AdminStats {
   totalUsers: number;
@@ -116,6 +117,7 @@ export default function AdminClient() {
   // 온보딩 프롬프트 편집 상태
   const [onboardingContent, setOnboardingContent] = useState("");
   const [onboardingInitial, setOnboardingInitial] = useState("");
+  const [showLogsModal, setShowLogsModal] = useState(false);
 
   // ragPrompts 로드 시 온보딩 프롬프트 내용 초기화
   useEffect(() => {
@@ -554,10 +556,18 @@ export default function AdminClient() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setOnboardingContent(onboardingInitial)}
+                        onClick={() => setOnboardingContent(DEFAULT_ONBOARDING_SYSTEM_PROMPT)}
                         disabled={saveOnboardingPromptMutation.isPending}
                       >
-                        되돌리기
+                        기본 프롬프트
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowLogsModal(true)}
+                        disabled={(ragPrompts as any[])?.find((p) => String(p.name) === "ONBOARDING_SYSTEM_PROMPT")?.id ? false : true}
+                      >
+                        변경로그
                       </Button>
                       <Button
                         variant="outline"
@@ -708,6 +718,16 @@ export default function AdminClient() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* 프롬프트 로그 모달: 온보딩 전용 */}
+      {showLogsModal && (
+        <PromptLogsModal
+          open={showLogsModal}
+          promptName="ONBOARDING_SYSTEM_PROMPT"
+          onClose={() => setShowLogsModal(false)}
+          limit={20}
+        />
+      )}
 
       {/* 업로드 모달 - 기존 모달 재사용 */}
       {showUploadModal && (

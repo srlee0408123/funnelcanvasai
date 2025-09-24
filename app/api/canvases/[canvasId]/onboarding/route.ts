@@ -139,6 +139,7 @@ export const POST = withAuthorization({ resourceType: 'canvas' }, async (req: Ne
         '아래 대화를 요약하여 워크플로우 기획서(summary)를 만들고,',
         '정확히 지정된 JSON 스키마에 따라 flow(nodes, edges)를 생성하세요.',
         '응답은 JSON만 출력하세요. 불필요한 텍스트, 마크다운 코드펜스는 금지합니다.',
+        '모든 텍스트 필드(title, subtitle, summary 등)는 반드시 한국어로 작성하세요. 영어를 사용하지 마세요.',
         '',
         buildNodeFlowInstruction(),
         '---',
